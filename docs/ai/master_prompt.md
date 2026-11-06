@@ -79,6 +79,83 @@ Rules:
 
 ---
 
+## 4.5 Boss Design Framework
+
+**กฎเหล็ก: Developer เขียน 6 ข้อ — AI เติมทุกอย่างที่เหลือ**
+
+### 6 ข้อที่ Developer ต้องให้ (คอนเซปเท่านั้น — ไม่ต้องมีตัวเลข)
+
+1. **ชื่อ**
+2. **Asset** (รูปอะไร — เช่น "รูปวัวกระทิง")
+3. **ท่าโจมตี 1** (สั้น ๆ เช่น "กระทืบพื้นรอบตัว")
+4. **ท่าโจมตี 2** (เช่น "ขวิดกวาด")
+5. **ท่าโจมตี 3** (เช่น "พุ่งชนเส้นตรง")
+6. **Enrage: trigger → ผล** (เช่น "HP ต่ำ → เพิ่มพลังโจมตี")
+
+### งานของ AI (ห้ามถาม Developer)
+
+- HP, Speed, Damage numbers
+- วิธีหลบของแต่ละท่า (counterplay)
+- ระยะที่บอสชอบอยู่ (preferred range)
+- Phase change + visual
+- Loot reward + drop rate
+- บาลานซ์เทียบบอสตัวอื่น
+- Implementation ในโค้ด
+- เลือก attack kind ที่เหมาะ (slam / charge / beam / projectile / shockwave)
+
+### ตัวอย่าง (ตกลงแล้ว)
+
+```
+1. กระทิง
+2. รูปวัวกระทิง
+3. กระทืบพื้นรอบตัว
+4. ขวิด (โจมตีกวาด)
+5. พุ่งชนเป็นเส้นตรง
+6. โหมดคลั่ง: เพิ่มพลังโจมตี
+```
+
+→ AI เติมเอง: HP 40, Speed 60, กระทืบ=วงรอบตัว/หลบด้วยการออก, ขวิด=กว้างข้างหน้า/หลบด้วยการถอย, พุ่งชน=เส้นตรง/หลบข้าง, Enrage ที่ HP<40%
+
+### Anti-pattern (ห้ามทำ)
+
+- ❌ ขอให้ Developer เขียนตารางบาลานซ์
+- ❌ ถามเรื่อง phase / preferred range / AI behavior
+- ❌ ถาม counterplay ของแต่ละท่า
+- ❌ ถาม loot / reward
+
+### เมื่อไหร่ถึงถาม Developer
+
+- ✅ เมื่อท่า 2 ท่าขัดกันในคอนเซป (เช่น "ท่าที่ 3 ควรเป็นระเบิดตัวเองไหม?")
+- ✅ เมื่อคอนเซปกำกวม (เช่น "ขวิดกวาด = 180° หรือ 360°?")
+- ✅ เมื่อต้องเลือกทิศทางที่กระทบ fun (เช่น "ตัวนี้ควรเน้นบุกหรือตั้งรับ?")
+
+### ไฟล์บอส — แยกตัว 1 ไฟล์
+
+```
+src/data/bosses/
+  _types.ts         ← interface บังคับ (โครงสร้าง 8 block)
+  _template.md      ← template เปล่าสำหรับกรอก
+  bull.ts           ← กระทิง
+  fire_slime.ts     ← สไลม์เพลิง
+  ...
+  index.ts          ← รวมทุกบอส
+```
+
+**เหตุผล:** Review บาลานซ์ทีละตัวได้ เปิด 2 ไฟล์เทียบกันง่าย
+
+### 8 Block ภายใน (AI กรอก — Developer ไม่ต้องสนใจ)
+
+1. Identity (id, name, codename, role, lore, difficulty)
+2. Assets (sprite, scale, tint, idle anim)
+3. Stats (hp, speed, defense, radius)
+4. Attacks (name, kind, dmg, telegraph, recover, cooldown, range, counterplay)
+5. AI (preferred range, retreat distance, attack weight)
+6. Phases (threshold, unlock, speedMult, visual)
+7. Enrage (trigger, effect, visual, duration, cooldown)
+8. Reward (lootMult, specialDrop, weakness)
+
+---
+
 ## 5. Tech Stack Options
 
 **Decision Made: Web Game**
@@ -129,34 +206,54 @@ The basic combat prototype is playable. The current work is to complete the item
   - กระเป๋าจำข้ามรอบการล่า (HuntSession singleton)
   - EquipmentSystem ยังใช้สู้ได้ที่ Lv.1 แต่การอัปเกรดจะเกิดขึ้น "นอกการล่า" (Base Screen)
 
-**Round 5 — Base Screen & Progression Loop** (NEXT)
-- [ ] สร้างหน้า Base (จอนอกการล่า): แสดงกระเป๋า + อุปกรณ์ 3 ช่อง + ปุ่มอัปเกรด + ปุ่มเริ่มล่า
-- [ ] เชื่อมต่อ HuntSession (กระเป๋า) กับ EquipmentSystem (ใช้อุปกรณ์สะสมเป็นวัตถุดิบอัปเกรด)
-- [ ] ทำให้ลูปสมบูรณ์: ล่า → เก็บของ → กลับฐาน → อัปเกรด → ล่าต่อ
-- [ ] (Future) ขยาย Arena ใหม่โดยไม่พัง UI (camera bounds + scrollFactor)
+**Round 5 — Base Screen & Progression Loop** (COMPLETE)
+- [x] สร้างหน้า Base (จอนอกการล่า): แสดงกระเป๋า + อุปกรณ์ 3 ช่อง + ปุ่มอัปเกรด + ปุ่มเริ่มล่า
+- [x] เชื่อมต่อ HuntSession (กระเป๋า) กับ EquipmentSystem
+- [x] ลูปสมบูรณ์: ล่า → เก็บของ → กลับฐาน → อัปเกรด → ล่าต่อ
+- [x] แก้ main.ts ให้เริ่มที่ BaseScene (ไม่ใช่ GameScene)
+- [x] เพิ่ม SaveGame (localStorage) — กระเป๋า + เลเวลอุปกรณ์จำข้ามเซสชัน
+- [ ] (Future) ขยาย Arena ใหม่โดยไม่พัง UI
+
+**Round 6 — Boss Rework + Variety** (IN PROGRESS)
+- [x] เพิ่มมอน 3 ตัว (fire_slime, frost_slime, shadow_slime)
+- [x] เพิ่ม attack kind: `beam` + `projectile` (Projectile.ts)
+- [x] Visual identity: pulse (fire), flicker (shadow)
+- [x] Weapon level VFX: Lv.2 = ฟ้า, Lv.3 = ทอง + ring
+- [x] Gear notice แจ้งเลเวลตอนเริ่มล่า
+- [ ] **Rework บอสตาม framework 4.5** (6-item concept)
+- [ ] แยกไฟล์ `src/data/bosses/*.ts`
+- [ ] สร้าง `_types.ts` + `_template.md`
+- [ ] ทำ "กระทิง" เป็น pilot boss
+- [ ] แยก sprite แต่ละตัว (รอ asset)
+- [ ] (Future) Parallax 3 ชั้น
 
 ### Current code structure
 
 ```text
 src/
-  main.ts                    # Phaser setup and GameScene startup
+  main.ts                    # Phaser setup — เริ่มที่ BaseScene
   config.ts                  # Shared game constants and draw-depth values
+  scenes/BaseScene.ts        # หน้าฐาน: กระเป๋า + อัปเกรด + เริ่มล่า
   scenes/GameScene.ts        # Player input/combat and encounter orchestration
   entities/Monster.ts        # Monster runtime behavior and state machine
-  entities/LootBox.ts        # Item drop box (spawns on death, press E to open → spawns DroppedItem)
+  entities/Projectile.ts     # กระสุนที่มอนยิง (beam / projectile)
+  entities/LootBox.ts        # Item drop box
   entities/DroppedItem.ts    # ไอเทมบนพื้น กด E เก็บเข้ากระเป๋า
-  entities/ExitPortal.ts     # ประตูทางออก กด E เพื่อกลับฐาน (จบการล่า)
-  data/monsters.ts           # Monster stats, attack pools, and phases
+  entities/ExitPortal.ts     # ประตูทางออก กด E กลับฐาน
+  data/monsters.ts           # Monster stats, attack pools, phases (จะย้ายไป bosses/)
   data/monsterAttacks.ts     # Attack behavior/timing definitions
   data/equipment.ts          # Equipment stats (weapon, armor, helmet)
-  data/loot.ts               # ตารางของล่า (Loot Table) + weighted random
+  data/upgrades.ts           # ราคาอัปเกรดต่อช่องต่อเลเวล
+  data/loot.ts               # Loot Table + weighted random
   systems/effects.ts         # Reusable combat and visual effects
-  systems/EquipmentSystem.ts # Manages equipment levels and upgrades
-  systems/HuntSession.ts     # กระเป๋าเก็บของ (session-persistent singleton)
+  systems/EquipmentSystem.ts # Equipment levels + upgrade logic
+  systems/HuntSession.ts     # กระเป๋าเก็บของ (singleton)
+  systems/SaveGame.ts        # Save/Load localStorage
+  systems/sfx.ts             # Web Audio synthesized SFX
   ui/PlayerHUD.ts            # Player HP display
   ui/BossHUD.ts              # Monster/Boss HP display
   ui/GameOverScreen.ts       # Win/lose overlay
-  ui/HuntSummaryScreen.ts    # Loot Report (แสดงของที่เก็บได้ + เวลา + กระเป๋า)
+  ui/HuntSummaryScreen.ts    # Loot Report
 ```
 
 ---
@@ -182,6 +279,7 @@ src/
 - Assume I know technical terms.
 - Steer the direction of the game.
 - Recommend paid tools or tools that need local installation without asking first.
+- **Ask me to fill balance numbers** — ตาม Section 4.5 (AI เติมเอง)
 
 ---
 
@@ -201,6 +299,11 @@ src/
 | 2026-11-06 | สร้าง Hunt Summary Screen แยกเฉพาะ | เพื่อให้ผู้เล่นเห็น Progress (เวลา/เลเวลอุปกรณ์) ชัดเจนตอนชนะ | Hunt Loop สมบูรณ์ในเชิงระบบ UI |
 | 2026-11-06 | ใส่ Asset จริงให้ LootBox + ไอเทม | สี่เหลี่ยมสีน้ำตาลดูไม่เป็นเกม ใช้รูปหีบปิด/เปิด + ขวดยาเขียว | เกมดูดีขึ้นทันที รองรับ graceful degradation |
 | 2026-11-06 | เปลี่ยนคอนเซปต์จาก "อัปเกรดใน Arena" เป็น "ระบบกระเป๋า" | การล่า = ออกไปหาของและนำกลับมา อัปเกรดต้องอยู่นอกการล่า | รื้อ awardLoot() ทิ้ง, เพิ่ม DroppedItem + ExitPortal + HuntSession, Loot Report แทน End Screen |
+| 2026-11-06 | **Boss concept = 6 items เท่านั้น** (ชื่อ/asset/3 ท่า/enrage) | Developer ต้องการคิดคอนเซป ไม่ต้องเขียนบาลานซ์ | AI เติมทุกอย่างที่เหลือ (ตัวเลข/counterplay/phase/reward) |
+| 2026-11-06 | **บอสแยกไฟล์** `data/bosses/*.ts` | Review ทีละตัว เปรียบเทียบง่าย | ยังไม่เริ่มทำ — planned |
+| 2026-11-06 | **Boss framework 8 block (internal)** | โครงสร้างภายในสำหรับ AI | ครบทุกบอส — ใช้เป็นแม่พิมพ์ |
+| 2026-11-06 | **เพิ่ม attack kind: beam + projectile** | เพิ่ม pattern หลบให้หลากหลาย | ทำแล้วใน Monster.ts, Projectile.ts |
+| 2026-11-06 | **เริ่มเกมที่ BaseScene** | ควรเห็นฐานก่อนเข้าไปล่า | แก้ `main.ts` scene array |
 
 ---
 
@@ -220,38 +323,48 @@ src/
 ## 10. Asset Inventory
 
 - **Characters:** `hero.png` (Player)
-- **Enemies:** `slime.png` (Basic Enemy)
+- **Enemies:** 
+  - `slime.png` (ใช้ร่วมกันทั้ง 5 ตัว + tint — **ชั่วคราว**)
+  - รอ asset แยกตัว: `monster_bull.png`, `monster_fire.png`, `monster_frost.png`, `monster_shadow.png`
 - **Backgrounds:** `floor.png`, `wall.png`
 - **UI/Loot:**
   - `loot_box_closed.png` (กล่องสมบัติปิด)
   - `loot_box_open.png` (กล่องสมบัติเปิด)
-  - `green_potion.png` (ไอเทมทั่วไป — ใช้กับสมุนไพร/ธาตุสกัด/ชิ้นส่วนโบราณ ชั่วคราว)
-- **Audio (SFX and music):** [not decided] (Will use Kenney SFX later)
+  - `green_potion.png` (ไอเทมทั่วไป)
+- **Audio (SFX and music):** [not decided] (ใช้ Web Audio synth ใน `sfx.ts` — ไม่มีไฟล์เสียง)
 
 ---
 
 ## 11. Session Context
 
 ```text
-Current state:      Single-player Hunt MVP (Round 4 COMPLETE → Round 5 NEXT)
+Current state:      Single-player Hunt MVP — Round 6 (Boss Rework) IN PROGRESS
 Done and working:   
-- Basic systems: Movement (WASD), Dash (Shift + i-frames), Attack (Space).
-- Monster system: Random spawn, phases, attacks (Slam, Charge, Shockwave).
-- Equipment: Weapon range, Thorn Armor reflect, Hunter Helmet heal (Lv.1 ระหว่างล่า).
-- Hunt Loop (กระเป๋า): มอนตาย → กล่องตก → [E] เปิด → ไอเทมตกพื้น → [E] เก็บ → ประตูฟ้า → [E] กลับฐาน → Loot Report.
-- กระเป๋าจำข้ามรอบ (HuntSession singleton), ของไม่หายเมื่อกด R.
-- Asset จริง: หีบปิด/เปิด + ขวดยาเขียว (graceful degradation ถ้ารูปหาย).
-In progress:        ไม่มี (Round 4 เสร็จสมบูรณ์)
-Blockers:           ไม่มี
+- Round 5 complete: ลูป ฐาน → ล่า → เก็บ → กลับฐาน → อัปเกรด → ล่าต่อ
+- SaveGame (localStorage): กระเป๋า + เลเวลอุปกรณ์จำข้ามเซสชัน
+- 5 monsters in data/monsters.ts (big/purple/fire/frost/shadow)
+- Attack kinds: slam, charge, shockwave, beam, projectile
+- Projectile system: src/entities/Projectile.ts (trail + collision)
+- Visual identity: pulse (fire), flicker (shadow)
+- Weapon level VFX: Lv.2 = ฟ้า, Lv.3 = ทอง + ring
+- Gear notice แจ้งเลเวลตอนเริ่มล่า
+In progress:        
+- Rework bosses ตาม 6-item concept framework (Section 4.5)
+- ยังใช้ slime.png + tint อยู่ — ต้องแยก sprite ต่อตัว
+- ยังไม่แยกไฟล์ — ยังอยู่ใน data/monsters.ts
+Blockers:           
+- ไม่มี per-boss sprite asset (รอเจน AI หรือหา Kenney pack)
+- framework files (data/bosses/_types.ts, _template.md) ยังไม่สร้าง
 Next planned work:  
-- สร้างหน้า Base (จอจัดการกระเป๋า + อัปเกรดอุปกรณ์ + เริ่มล่า) ← งานหลัก Round 5
-- เชื่อม HuntSession ↔ EquipmentSystem (ใช้ของสะสมอัปเกรด)
-- (Future) ขยาย Arena ใหม่โดยไม่พัง UI
+1. สร้าง boss framework files (_types.ts + _template.md)
+2. ทำ "กระทิง" เป็น pilot boss (ตามคอนเซปที่ตกลง)
+3. ทดสอบ fun 1-on-1 ก่อนขยายตัวอื่น
+4. (Future) Parallax 3 ชั้น / sprite แยกตัว
 Recent decisions:   
-- เปลี่ยนคอนเซปต์เป็น "ระบบกระเป๋า" (ไม่อัปเกรดระหว่างล่า)
-- ใส่ Asset จริงให้ LootBox + ไอเทม
-- สร้าง Hunt Summary Screen (Loot Report)
-Goal of next chat:  สร้างหน้า Base Screen ให้ลูป "ล่า → เก็บ → กลับฐาน → อัปเกรด → ล่าต่อ" สมบูรณ์
+- Boss concept = 6 items (Section 4.5) — AI fills rest
+- Boss แยกไฟล์ planned (ยังไม่ทำ)
+- กระทิง = ตัวแรกที่จะทำจริง
+Goal of next chat:  สร้าง framework + ทำกระทิงตัวแรกให้เล่นได้จริง
 ```
 
 ---
@@ -280,5 +393,19 @@ Goal of next chat:  สร้างหน้า Base Screen ให้ลูป "
 
 ---
 
-**Version:** 4.0 (Hunt Loop with Bag System complete, Round 4 done, 2026-11-06)
+**Version:** 4.1 (Boss Framework + Round 5 complete, Round 6 in progress, 2026-11-06)
 ```
+
+---
+
+## 🔍 สรุปการเปลี่ยนแปลง
+
+| Section | เปลี่ยนอะไร |
+|---|---|
+| **4.5 (ใหม่)** | Boss Design Framework — 6-item concept, AI เติมทุกอย่าง |
+| **6** | Round 5 = COMPLETE, Round 6 = IN PROGRESS, code structure อัปเดต |
+| **7** | เพิ่ม "ห้ามถาม developer เขียนบาลานซ์" |
+| **8** | เพิ่ม 5 decision log entries |
+| **10** | Asset inventory — ระบุว่า slime.png ใช้ชั่วคราว |
+| **11** | Session Context ใหม่ทั้งหมด |
+| **Version** | 4.0 → 4.1 |

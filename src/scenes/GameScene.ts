@@ -10,7 +10,7 @@ import {
   AIM_ASSIST_RANGE,
   AIM_ASSIST_ANGLE
 } from '../config';
-import { showDamage, burst, spawnThrustDir, spawnAfterimage, makeVignette } from '../systems/effects';
+import { showDamage, burst, spawnThrustDir, spawnAfterimage, makeVignette, ringEffect } from '../systems/effects';
 import { sfx } from '../systems/sfx';
 import { PlayerHUD } from '../ui/PlayerHUD';
 import { BossHUD } from '../ui/BossHUD';
@@ -157,6 +157,9 @@ export class GameScene extends Phaser.Scene {
 
     // UI
     this.hud = new PlayerHUD(this, this.maxPlayerHP);
+
+    // แจ้งระดับอุปกรณ์ตอนเริ่มล่า — ให้เห็นทันทีว่าอัปเกรดมาจากฐาน
+    this.showGearNotice();
 
     // กล้อง
     this.cameras.main.setBounds(0, 0, W, H);
@@ -382,7 +385,9 @@ export class GameScene extends Phaser.Scene {
     this.swingRange = weaponRange;
     if (Math.abs(dir.x) > 0.3) this.player.setFlipX(dir.x < 0);
 
-    spawnThrustDir(this, this.player.x, this.player.y, dir.x, dir.y, weaponRange);
+    // ส่งเลเวลอาวุธเข้าไปด้วย — หอกจะหนา/สีเปลี่ยนตามเลเวล
+    const wLv = this.equipment.getLevel('weapon');
+    spawnThrustDir(this, this.player.x, this.player.y, dir.x, dir.y, weaponRange, wLv);
     this.cameras.main.shake(100, 0.003);
 
     this.time.delayedCall(200, () => {
@@ -408,8 +413,23 @@ export class GameScene extends Phaser.Scene {
     sfx.hit();
     this.monster.takeDamage(PLAYER_ATTACK_DAMAGE);
     this.bossHud.update(this.monster.hp);
-    this.cameras.main.shake(150, 0.01);
-    this.hitStop(55);
+
+    const wLv = this.equipment.getLevel('weapon');
+    const m = this.monster.sprite;
+
+    // Lv.2+: ประกายฟ้าเพิ่มเติม (อัปเกรดแล้วรู้สึกได้)
+    if (wLv >= 2) {
+      burst(this, m.x, m.y, 0x9de7ff, 8, 70, 5);
+    }
+    // Lv.3: วงแหวนทอง + ประกายทอง = "อาจารย์หอก"
+    if (wLv >= 3) {
+      ringEffect(this, m.x, m.y, 60, 0xffd54a, 280);
+      burst(this, m.x, m.y, 0xffd54a, 10, 90, 6);
+    }
+
+    // สั่นแรงขึ้น + hit-stop นานขึ้นตามเลเวล
+    this.cameras.main.shake(150, 0.01 + (wLv - 1) * 0.005);
+    this.hitStop(55 + (wLv - 1) * 15);
   }
 
   // หยุดเกมชั่วคราว (ms) — เอาค่าที่นานกว่าเสมอ
@@ -477,7 +497,7 @@ export class GameScene extends Phaser.Scene {
     this.player.setTint(0x555555);
     this.player.setAlpha(1);
     burst(this, this.player.x, this.player.y, 0xff3333, 16, 70, 7);
-    showEndScreen(this, 'GAME OVER', '#ff4444', 'กด R เพื่อเล่นใหม่');
+    showEndScreen(this, 'GAME OVER', '#ff4444', 'กด R เพื่อกลับฐาน');
   }
 
   private onMonsterDeath() {
@@ -503,5 +523,38 @@ export class GameScene extends Phaser.Scene {
     this.lootBox = new LootBox(this, this.monster.sprite.x, this.monster.sprite.y);
 
     if (this.bossCollider) this.bossCollider.destroy();
+  }
+
+  // แจ้งระดับอุปกรณ์ตอนเริ่มล่า แล้วจางหายไปใน 2.2 วินาที
+  private showGearNotice() {
+    const wLv = this.equipment.getLevel('weapon');
+    const aLv = this.equipment.getLevel('armor');
+    const hLv = this.equipment.getLevel('helmet');
+    const label = `ATK Lv.${wLv}   ·   DEF Lv.${aLv}   ·   HP+ Lv.${hLv}`;
+
+    const notice = this.add.text(GAME_WIDTH / 2, 60, label, {
+      fontFamily: '"Noto Sans Thai", monospace',
+      fontSize: '16px',
+      fontStyle: 'bold',
+      color: '#9de7ff',
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      padding: { x: 12, y: 6 },
+      stroke: '#000000',
+      strokeThickness: 3
+    })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.HUD)
+      .setScrollFactor(0)
+      .setAlpha(0);
+
+    // เฟดเข้า → ค้าง → เฟดออก → ทำลาย
+    this.tweens.add({ targets: notice, alpha: 1, duration: 250 });
+    this.tweens.add({
+      targets: notice,
+      alpha: 0,
+      delay: 2200,
+      duration: 500,
+      onComplete: () => notice.destroy()
+    });
   }
 }

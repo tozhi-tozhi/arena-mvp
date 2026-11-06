@@ -110,8 +110,7 @@ export class EquipmentSystem {
   }
 
   // อุปกรณ์ของผู้เล่น — ตัวเดียวทั้งเกม (หน้า Base อัปเกรด, GameScene ใช้)
-  export const playerEquipment = new EquipmentSystem();
-  reset(): void {
+    reset(): void {
     this.levels = {
       weapon: 1,
       armor: 1,
@@ -119,3 +118,4 @@ export class EquipmentSystem {
     };
   }
 }
+export const playerEquipment = new EquipmentSystem();

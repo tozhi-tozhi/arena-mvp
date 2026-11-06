@@ -1,12 +1,12 @@
 // มอนสเตอร์/บอส — ขับด้วย "ท่า" และสถานะ:
 //   เดินไล่ -> เตือน(telegraph) -> โจมตี -> พัก(recover) -> เดินไล่ ...
-// ไม่ผูกกับผู้เล่นคนเดียว: ถามเป้าหมายจาก hooks.getTargets() (รองรับหลายผู้เล่นในอนาคต)
 import Phaser from 'phaser';
 import { DEPTH } from '../config';
 import type { MonsterDef } from '../data/monsters';
 import { ATTACKS } from '../data/monsterAttacks';
 import type { AttackDef } from '../data/monsterAttacks';
 import { burst, showDamage, ringEffect } from '../systems/effects';
+import { Projectile } from './Projectile';
 
 type MonsterState = 'chase' | 'telegraph' | 'attack' | 'recover' | 'dead';
 
@@ -25,21 +25,24 @@ export class Monster {
   private scene: Phaser.Scene;
   private hooks: MonsterHooks;
   private shadow: any;
-  private gfx: any; // วาดเครื่องหมายเตือน
+  private gfx: any;
 
   private state: MonsterState = 'chase';
-  private timer: number = 0;   // เวลาที่เหลือของสถานะนี้ (ms)
-  private elapsed: number = 0; // เวลาที่ผ่านไปในสถานะนี้ (ms)
+  private timer: number = 0;
+  private elapsed: number = 0;
 
-  private pool: string[];      // ท่าที่ใช้ได้ตอนนี้
+  private pool: string[];
   private lastAttackId: string = '';
   private current: AttackDef | null = null;
-  private dir = { x: 1, y: 0 }; // ทิศพุ่ง (ล็อกตอนเริ่มเตือน)
+  private dir = { x: 1, y: 0 };
   private hitTargets: any[] = [];
 
   private phaseIndex: number = 0;
   private speedMult: number = 1;
   private baseScale: number;
+
+  // กระสุนที่มอนยิงออกมา — เก็บไว้เพื่ออัปเดตทุกเฟรม
+  private projectiles: Projectile[] = [];
 
   constructor(scene: Phaser.Scene, def: MonsterDef, x: number, y: number, hooks: MonsterHooks) {
     this.scene = scene;
@@ -53,7 +56,7 @@ export class Monster {
     this.sprite.setCollideWorldBounds(true);
     this.sprite.setDepth(DEPTH.ENEMY);
     this.sprite.setScale(def.scale);
-    this.sprite.body.setImmovable(true); // ผู้เล่นดันบอสไม่ได้
+    this.sprite.body.setImmovable(true);
 
     this.shadow = scene.add
       .ellipse(x, y, this.sprite.displayWidth * 0.85, this.sprite.displayHeight * 0.25, 0x000000, 0.35)
@@ -62,15 +65,39 @@ export class Monster {
     this.gfx = scene.add.graphics();
     this.gfx.setDepth(DEPTH.TELEGRAPH);
 
+    this.applyVisualStyle(def);
     this.resetTint();
     this.enterChase();
+  }
+
+  // ลูกเล่นภาพระบุตัวตน — pulse (ตัวเต้น) / flicker (ตัวจาง)
+  private applyVisualStyle(def: MonsterDef) {
+    if (def.visualStyle === 'pulse') {
+      this.scene.tweens.add({
+        targets: this.sprite,
+        scaleX: this.baseScale * 1.08,
+        scaleY: this.baseScale * 1.08,
+        duration: 350,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+    } else if (def.visualStyle === 'flicker') {
+      this.scene.tweens.add({
+        targets: this.sprite,
+        alpha: 0.55,
+        duration: 280,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+    }
   }
 
   get isAlive(): boolean {
     return this.state !== 'dead';
   }
 
-  // รัศมีลำตัว (ใช้ตรวจการชนตอนพุ่ง)
   private get radius(): number {
     return this.sprite.width * this.baseScale * 0.4;
   }
@@ -81,6 +108,9 @@ export class Monster {
     this.shadow.setPosition(this.sprite.x, this.sprite.y + this.sprite.displayHeight / 2 - 4);
     this.elapsed += delta;
 
+    // อัปเดตกระสุนทุกเฟรม (ยกเว้นตอนตาย)
+    this.updateProjectiles(delta);
+
     switch (this.state) {
       case 'chase': this.updateChase(delta); break;
       case 'telegraph': this.updateTelegraph(delta); break;
@@ -89,12 +119,18 @@ export class Monster {
     }
   }
 
-  // ---------- ผู้เล่นทำดาเมจใส่มอน ----------
+  private updateProjectiles(delta: number) {
+    const targets = this.hooks.getTargets();
+    for (const p of this.projectiles) {
+      p.update(delta, targets);
+    }
+    this.projectiles = this.projectiles.filter((p) => p.isAlive());
+  }
+
   takeDamage(amount: number) {
     if (this.state === 'dead') return;
     this.hp = Math.max(0, this.hp - amount);
 
-    // กะพริบขาว + บีบตัว
     this.sprite.setTint(0xffffff);
     this.scene.time.delayedCall(100, () => {
       if (this.state !== 'dead') this.resetTint();
@@ -117,7 +153,7 @@ export class Monster {
     this.checkPhase();
   }
 
-  // ---------- สถานะ: เดินไล่ ----------
+  // ---------- chase ----------
   private enterChase() {
     this.state = 'chase';
     this.elapsed = 0;
@@ -146,7 +182,7 @@ export class Monster {
     }
   }
 
-  // ---------- สถานะ: เตือน ----------
+  // ---------- telegraph ----------
   private startTelegraph(id: string, target: any) {
     this.current = ATTACKS[id];
     this.lastAttackId = id;
@@ -155,7 +191,8 @@ export class Monster {
     this.timer = this.current.telegraphMs;
     this.sprite.setVelocity(0);
 
-    if (this.current.kind === 'charge') {
+    // beam / charge ต้องล็อกทิศตอนเริ่มเตือน
+    if (this.current.kind === 'charge' || this.current.kind === 'beam') {
       const dx = target.x - this.sprite.x;
       const dy = target.y - this.sprite.y;
       const len = Math.max(1, Math.sqrt(dx * dx + dy * dy));
@@ -172,7 +209,6 @@ export class Monster {
     const progress = Phaser.Math.Clamp(1 - this.timer / a.telegraphMs, 0, 1);
     this.drawTelegraph(a, progress);
 
-    // ตัวมอนกะพริบแดง
     if (Math.floor(this.elapsed / 100) % 2 === 0) this.sprite.setTint(0xff5555);
     else this.resetTint();
 
@@ -192,7 +228,7 @@ export class Monster {
       g.lineStyle(3, 0xff5555, 0.9);
       g.strokeCircle(x, y, r);
       g.fillStyle(0xff3333, 0.3);
-      g.fillCircle(x, y, r * p); // วงในค่อย ๆ โตเต็ม = ใกล้โจมตี
+      g.fillCircle(x, y, r * p);
     } else if (a.kind === 'charge') {
       const len = ((a.speed ?? 0) * (a.durationMs ?? 0)) / 1000;
       const hw = this.radius * 0.9;
@@ -213,13 +249,48 @@ export class Monster {
     } else if (a.kind === 'shockwave') {
       const r = a.radius ?? 250;
       g.lineStyle(3, 0xff5555, 0.6);
-      g.strokeCircle(x, y, r);          // ขอบเขตที่คลื่นจะไปถึง
+      g.strokeCircle(x, y, r);
       g.lineStyle(4, 0xff5555, 0.9);
-      g.strokeCircle(x, y, r * p);      // วงที่กำลังโตขึ้น
+      g.strokeCircle(x, y, r * p);
+    } else if (a.kind === 'beam') {
+      const len = a.length ?? 350;
+      const w = a.width ?? 40;
+      const nx = -this.dir.y;
+      const ny = this.dir.x;
+      const x2 = x + this.dir.x * len;
+      const y2 = y + this.dir.y * len;
+      g.fillStyle(0xff3333, 0.15 + 0.3 * p);
+      g.beginPath();
+      g.moveTo(x + nx * (w / 2), y + ny * (w / 2));
+      g.lineTo(x2 + nx * (w / 2), y2 + ny * (w / 2));
+      g.lineTo(x2 - nx * (w / 2), y2 - ny * (w / 2));
+      g.lineTo(x - nx * (w / 2), y - ny * (w / 2));
+      g.closePath();
+      g.fillPath();
+      g.lineStyle(3, 0xff5555, 0.9);
+      g.strokePath();
+    } else if (a.kind === 'projectile') {
+      // วาดจุดยิง + เส้นเล็งสั้น ๆ
+      const t = this.nearestTarget();
+      if (!t) return;
+      const dx = t.x - x;
+      const dy = t.y - y;
+      const len = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      const nx = dx / len;
+      const ny = dy / len;
+      const muzzleX = x + nx * (this.radius + 6);
+      const muzzleY = y + ny * (this.radius + 6);
+      g.lineStyle(2, 0xff5555, 0.4 + 0.4 * p);
+      g.beginPath();
+      g.moveTo(muzzleX, muzzleY);
+      g.lineTo(muzzleX + nx * 70, muzzleY + ny * 70);
+      g.strokePath();
+      g.fillStyle(0xff5555, 0.6 + 0.4 * p);
+      g.fillCircle(muzzleX, muzzleY, 6 + 3 * p);
     }
   }
 
-  // ---------- สถานะ: โจมตี ----------
+  // ---------- attack ----------
   private startAttack(a: AttackDef) {
     this.gfx.clear();
     this.resetTint();
@@ -236,6 +307,10 @@ export class Monster {
       this.sprite.setVelocity(this.dir.x * speed, this.dir.y * speed);
     } else if (a.kind === 'shockwave') {
       this.scene.cameras.main.shake(150, 0.008);
+    } else if (a.kind === 'beam') {
+      this.doBeam(a);
+    } else if (a.kind === 'projectile') {
+      this.doProjectile(a);
     }
   }
 
@@ -249,7 +324,98 @@ export class Monster {
       const d = Phaser.Math.Distance.Between(this.sprite.x, this.sprite.y, t.x, t.y);
       if (d <= r) this.hit(t, a);
     }
-    this.enterRecover(a.recoverMs); // กระแทกครั้งเดียว แล้วพักเลย
+    this.enterRecover(a.recoverMs);
+  }
+
+  // ---------- beam: ยิงลำแสงตรงทันที ----------
+  private doBeam(a: AttackDef) {
+    const len = a.length ?? 350;
+    const w = a.width ?? 40;
+    const x = this.sprite.x;
+    const y = this.sprite.y;
+    const dirX = this.dir.x;
+    const dirY = this.dir.y;
+
+    // วาด flash ลำแสง
+    const g = this.scene.add.graphics();
+    g.setDepth(DEPTH.SLASH);
+    const nx = -dirY;
+    const ny = dirX;
+    const x2 = x + dirX * len;
+    const y2 = y + dirY * len;
+    g.fillStyle(0xff5555, 0.75);
+    g.beginPath();
+    g.moveTo(x + nx * (w / 2), y + ny * (w / 2));
+    g.lineTo(x2 + nx * (w / 2), y2 + ny * (w / 2));
+    g.lineTo(x2 - nx * (w / 2), y2 - ny * (w / 2));
+    g.lineTo(x - nx * (w / 2), y - ny * (w / 2));
+    g.closePath();
+    g.fillPath();
+    this.scene.tweens.add({
+      targets: g,
+      alpha: 0,
+      duration: 280,
+      onComplete: () => g.destroy()
+    });
+    this.scene.cameras.main.shake(200, 0.012);
+
+    // ตรวจ hit: target ที่อยู่ในกรอบยาวและแคบ
+    for (const t of this.hooks.getTargets()) {
+      const dx = t.x - x;
+      const dy = t.y - y;
+      const along = dx * dirX + dy * dirY;
+      if (along < 0 || along > len) continue;
+      const perpX = dx - dirX * along;
+      const perpY = dy - dirY * along;
+      const perp = Math.sqrt(perpX * perpX + perpY * perpY);
+      if (perp <= w / 2 + 16) this.hit(t, a);
+    }
+
+    this.enterRecover(a.recoverMs);
+  }
+
+  // ---------- projectile: ยิงกระสุน (1 ลูก หรือกระจาย 3 ลูก) ----------
+  private doProjectile(a: AttackDef) {
+    const count = a.projectileCount ?? 1;
+    const spreadDeg = a.projectileSpread ?? 0;
+    const speed = a.projectileSpeed ?? 180;
+    const radius = a.projectileRadius ?? 10;
+    const life = a.projectileLife ?? 3000;
+    const color = this.def.color;
+
+    const target = this.nearestTarget();
+    if (!target) {
+      this.enterRecover(a.recoverMs);
+      return;
+    }
+
+    const baseAngle = Math.atan2(target.y - this.sprite.y, target.x - this.sprite.x);
+
+    for (let i = 0; i < count; i++) {
+      const offset = (i - (count - 1) / 2) * spreadDeg * (Math.PI / 180);
+      const angle = baseAngle + offset;
+      const dx = Math.cos(angle);
+      const dy = Math.sin(angle);
+      const p = new Projectile(
+        this.scene,
+        this.sprite.x,
+        this.sprite.y,
+        dx,
+        dy,
+        speed,
+        a.damage,
+        radius,
+        color,
+        life,
+        (t, dmg, px, py) => this.hooks.onHitTarget(t, dmg, px, py)
+      );
+      this.projectiles.push(p);
+    }
+
+    burst(this.scene, this.sprite.x, this.sprite.y, color, 8, 50, 4);
+    this.scene.cameras.main.shake(100, 0.005);
+
+    this.enterRecover(a.recoverMs);
   }
 
   private updateAttack(delta: number) {
@@ -293,7 +459,7 @@ export class Monster {
     this.hooks.onHitTarget(target, a.damage, this.sprite.x, this.sprite.y);
   }
 
-  // ---------- สถานะ: พัก (ช่วงที่ผู้เล่นสวนได้) ----------
+  // ---------- recover ----------
   private enterRecover(ms: number) {
     this.state = 'recover';
     this.elapsed = 0;
@@ -307,7 +473,7 @@ export class Monster {
     if (this.timer <= 0) this.enterChase();
   }
 
-  // ---------- เฟส ----------
+  // ---------- phase ----------
   private checkPhase() {
     const phases = this.def.phases;
     if (this.phaseIndex >= phases.length) return;
@@ -319,21 +485,31 @@ export class Monster {
       }
       this.speedMult *= ph.speedMult ?? 1;
 
-      // หยุดท่าที่ทำอยู่ แล้วคำราม (เปิดช่องให้ผู้เล่นสวน)
       this.gfx.clear();
       this.enterRecover(1200);
       ringEffect(this.scene, this.sprite.x, this.sprite.y, 160, 0xff3333, 500);
       burst(this.scene, this.sprite.x, this.sprite.y, 0xff5555, 16, 90, 7);
       this.scene.cameras.main.shake(400, 0.02);
-      showDamage(this.scene, this.sprite.x, this.sprite.y - this.sprite.displayHeight / 2 - 20, 'RAGE!', '#ff5555');
+      showDamage(
+        this.scene,
+        this.sprite.x,
+        this.sprite.y - this.sprite.displayHeight / 2 - 20,
+        'RAGE!',
+        '#ff5555'
+      );
       this.hooks.onPhaseChange?.();
     }
   }
 
-  // ---------- ตาย ----------
+  // ---------- die ----------
   private die() {
     this.state = 'dead';
     this.gfx.clear();
+
+    // เคลียร์กระสุนที่ยังลอยอยู่
+    for (const p of this.projectiles) p.destroy();
+    this.projectiles = [];
+
     const x = this.sprite.x;
     const y = this.sprite.y;
 
@@ -349,7 +525,7 @@ export class Monster {
     this.hooks.onDeath();
   }
 
-  // ---------- ตัวช่วย ----------
+  // ---------- helpers ----------
   private pickAttack(): string {
     const options = this.pool.length > 1 ? this.pool.filter((id) => id !== this.lastAttackId) : this.pool;
     return options[Phaser.Math.Between(0, options.length - 1)];
@@ -368,7 +544,6 @@ export class Monster {
     return best;
   }
 
-  // สีตัวมอน: เฟสโกรธ = อมชมพู, มีสีประจำตัว = ย้อมตามนั้น, ไม่งั้นสีปกติ
   private resetTint() {
     if (this.phaseIndex > 0) this.sprite.setTint(0xff9999);
     else if (this.def.baseTint !== undefined) this.sprite.setTint(this.def.baseTint);

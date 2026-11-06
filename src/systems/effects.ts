@@ -164,33 +164,49 @@ export function ringEffect(
     onComplete: () => ring.destroy()
   });
 }
-// เส้นแทงหอก หมุนไปตามทิศใดก็ได้ (dx, dy คือทิศที่แทง)
+// เส้นแทงหอก หมุนไปตามทิศใดก็ได้ — level สูงขึ้น = หอกหนาขึ้น/สีเปลี่ยน
 export function spawnThrustDir(
   scene: Phaser.Scene,
   x: number,
   y: number,
   dx: number,
   dy: number,
-  length: number
+  length: number,
+  level: number = 1
 ) {
   const g = scene.add.graphics();
   g.setPosition(x, y);
   g.setDepth(DEPTH.SLASH);
-  g.setRotation(Math.atan2(dy, dx)); // หมุนทั้งก้อน แล้ววาดตรงไปทางแกน +x
+  g.setRotation(Math.atan2(dy, dx));
 
-  g.lineStyle(5, 0xf4f8ff, 0.95);
+  // เลเวลกำหนดความหนา + สี (Lv.1 = ขาว, Lv.2 = ฟ้า, Lv.3 = ทอง)
+  const thickness = 4 + level * 1.5;
+  const color = level >= 3 ? 0xffd54a : level >= 2 ? 0x9de7ff : 0xf4f8ff;
+
+  // ก้านหอก
+  g.lineStyle(thickness, color, 0.95);
   g.beginPath();
   g.moveTo(8, 0);
   g.lineTo(length, 0);
   g.strokePath();
 
-  g.fillStyle(0x9de7ff, 1);
+  // ปลายแหลม (ใหญ่ขึ้นตามเลเวล)
+  g.fillStyle(color, 1);
   g.beginPath();
   g.moveTo(length, 0);
-  g.lineTo(length - 14, -7);
-  g.lineTo(length - 14, 7);
+  g.lineTo(length - 14 - level * 2, -7 - level);
+  g.lineTo(length - 14 - level * 2, 7 + level);
   g.closePath();
   g.fillPath();
+
+  // Lv.3+: เพิ่มเส้นเรืองรอง (glow) รอบก้าน
+  if (level >= 3) {
+    g.lineStyle(11, color, 0.2);
+    g.beginPath();
+    g.moveTo(8, 0);
+    g.lineTo(length, 0);
+    g.strokePath();
+  }
 
   scene.tweens.add({
     targets: g,

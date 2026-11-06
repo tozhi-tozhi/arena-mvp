@@ -1,8 +1,8 @@
 // จุดเริ่มต้นของเกม — แค่ตั้งค่าแล้วสร้างเกม (ตรรกะอยู่ใน scenes/)
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from './config';
-import { GameScene } from './scenes/GameScene';
 import { BaseScene } from './scenes/BaseScene';
+import { GameScene } from './scenes/GameScene';
 
 const config = {
   type: Phaser.AUTO,
@@ -23,7 +23,8 @@ const config = {
       debug: false
     }
   },
-  scene: [GameScene]
+  // ลำดับสำคัญ: ตัวแรกใน array = ฉากที่ Phaser สตาร์ทอัตโนมัติ
+  scene: [BaseScene, GameScene]
 };
 
 new Phaser.Game(config);
