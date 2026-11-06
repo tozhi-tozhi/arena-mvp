@@ -87,11 +87,30 @@ export class EquipmentSystem {
       effectValue: this.getEffectValue(slot)
     };
   }
+    // อัปเกรดช่องที่เลือก 1 เลเวล (คืน true ถ้าสำเร็จ)
+  upgradeSlot(slot: EquipmentSlot): boolean {
+    if (this.levels[slot] >= EQUIPMENT[slot].maxLevel) return false;
+    this.levels[slot] += 1;
+    return true;
+  }
 
+  // สำหรับเซฟ/โหลด
+  exportLevels(): Record<EquipmentSlot, number> {
+    return { ...this.levels };
+  }
+
+  importLevels(saved: Partial<Record<EquipmentSlot, number>>): void {
+    for (const slot of EQUIPMENT_SLOTS) {
+      const lv = Math.floor(Number(saved[slot]));
+      if (lv >= 1) this.levels[slot] = Math.min(lv, EQUIPMENT[slot].maxLevel);
+    }
+  }
   isMaxLevel(slot: EquipmentSlot): boolean {
     return this.levels[slot] >= EQUIPMENT[slot].maxLevel;
   }
 
+  // อุปกรณ์ของผู้เล่น — ตัวเดียวทั้งเกม (หน้า Base อัปเกรด, GameScene ใช้)
+  export const playerEquipment = new EquipmentSystem();
   reset(): void {
     this.levels = {
       weapon: 1,

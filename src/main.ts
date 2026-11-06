@@ -2,6 +2,7 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from './config';
 import { GameScene } from './scenes/GameScene';
+import { BaseScene } from './scenes/BaseScene';
 
 const config = {
   type: Phaser.AUTO,

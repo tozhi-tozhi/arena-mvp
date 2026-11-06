@@ -164,3 +164,40 @@ export function ringEffect(
     onComplete: () => ring.destroy()
   });
 }
+// เส้นแทงหอก หมุนไปตามทิศใดก็ได้ (dx, dy คือทิศที่แทง)
+export function spawnThrustDir(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  dx: number,
+  dy: number,
+  length: number
+) {
+  const g = scene.add.graphics();
+  g.setPosition(x, y);
+  g.setDepth(DEPTH.SLASH);
+  g.setRotation(Math.atan2(dy, dx)); // หมุนทั้งก้อน แล้ววาดตรงไปทางแกน +x
+
+  g.lineStyle(5, 0xf4f8ff, 0.95);
+  g.beginPath();
+  g.moveTo(8, 0);
+  g.lineTo(length, 0);
+  g.strokePath();
+
+  g.fillStyle(0x9de7ff, 1);
+  g.beginPath();
+  g.moveTo(length, 0);
+  g.lineTo(length - 14, -7);
+  g.lineTo(length - 14, 7);
+  g.closePath();
+  g.fillPath();
+
+  scene.tweens.add({
+    targets: g,
+    alpha: 0,
+    x: x + dx * 8,
+    y: y + dy * 8,
+    duration: 140,
+    onComplete: () => g.destroy()
+  });
+}

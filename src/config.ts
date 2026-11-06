@@ -27,3 +27,10 @@ export const DEPTH = {
   OVERLAY: 120,
   OVERLAY_TEXT: 121
 } as const;
+// ปรับความรู้สึกการควบคุม
+export const DASH_COOLDOWN_MS = 700;   // พัก dash กี่ ms
+export const AIM_ASSIST_RANGE = 190;   // บอสอยู่ใกล้กว่านี้ ถึงจะช่วยเล็ง
+export const AIM_ASSIST_ANGLE = 75;    // กรวยช่วยเล็ง (องศา จากทิศที่หันอยู่)
+
+// เครื่องมือช่วยทดสอบ (หน้า Base: F2 แจกของ, F9 ล้างเซฟ) — ปิดก่อนปล่อยเกมจริง
+export const DEV_TOOLS = true;

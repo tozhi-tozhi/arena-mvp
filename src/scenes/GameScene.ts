@@ -1,12 +1,24 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, WALL_THICKNESS, SPRITE_SCALE, DEPTH, PLAYER_ATTACK_DAMAGE } from '../config';
-import { showDamage, burst, spawnThrust, spawnAfterimage, makeVignette } from '../systems/effects';
+import {
+  GAME_WIDTH,
+  GAME_HEIGHT,
+  WALL_THICKNESS,
+  SPRITE_SCALE,
+  DEPTH,
+  PLAYER_ATTACK_DAMAGE,
+  DASH_COOLDOWN_MS,
+  AIM_ASSIST_RANGE,
+  AIM_ASSIST_ANGLE
+} from '../config';
+import { showDamage, burst, spawnThrustDir, spawnAfterimage, makeVignette } from '../systems/effects';
+import { sfx } from '../systems/sfx';
 import { PlayerHUD } from '../ui/PlayerHUD';
 import { BossHUD } from '../ui/BossHUD';
 import { showEndScreen } from '../ui/GameOverScreen';
 import { Monster } from '../entities/Monster';
 import { MONSTERS, pickRandomMonsterId } from '../data/monsters';
-import { EquipmentSystem } from '../systems/EquipmentSystem';
+import { EquipmentSystem, playerEquipment } from '../systems/EquipmentSystem';
+import { saveGame } from '../systems/SaveGame';
 import { LootBox } from '../entities/LootBox';
 import { showHuntSummary } from '../ui/HuntSummaryScreen';
 import { DroppedItem } from '../entities/DroppedItem';
@@ -26,11 +38,19 @@ export class GameScene extends Phaser.Scene {
   private keyAttack: any;
   private keyRestart: any;
   private keyInteract: any;
+  private keyMute: any;
 
-  private attackHitbox: any;
   private isAttacking: boolean = false;
   private hitThisSwing: boolean = false;
   private isDashing: boolean = false;
+
+  // ---------- ทิศทาง / การแทง / hit-stop ----------
+  private facing = new Phaser.Math.Vector2(1, 0);   // ทิศที่ตัวละครหันอยู่
+  private swingOrigin = new Phaser.Math.Vector2();  // จุดที่เริ่มแทงครั้งล่าสุด
+  private swingDir = new Phaser.Math.Vector2(1, 0); // ทิศที่แทงครั้งล่าสุด
+  private swingRange: number = 0;
+  private lastDashAt: number = -9999;
+  private hitStopUntil: number = 0;
 
   private playerHP: number = 5;
   private maxPlayerHP: number = 5;
@@ -43,7 +63,6 @@ export class GameScene extends Phaser.Scene {
 
   private monster!: Monster;
   private bossHud!: BossHUD;
-  private hitCollider: any;
   private bossCollider: any;
 
   // ---------- ระบบเก็บของ (กระเป๋า) ----------
@@ -71,7 +90,7 @@ export class GameScene extends Phaser.Scene {
   create() {
     // รีเซ็ตสถานะทุกครั้งที่เริ่มใหม่
     this.playerHP = this.maxPlayerHP;
-    this.equipment = new EquipmentSystem();
+    this.equipment = playerEquipment; // ตัวเดียวกับที่อัปเกรดไว้ที่ฐาน
     this.isAttacking = false;
     this.hitThisSwing = false;
     this.isDashing = false;
@@ -79,6 +98,9 @@ export class GameScene extends Phaser.Scene {
     this.isStunned = false;
     this.isDead = false;
     this.isVictory = false;
+    this.facing.set(1, 0);
+    this.lastDashAt = -9999;
+    this.hitStopUntil = 0;
 
     // รีเซ็ตระบบเก็บของ
     this.lootBox = null;
@@ -119,6 +141,7 @@ export class GameScene extends Phaser.Scene {
     this.keyAttack = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.keyRestart = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     this.keyInteract = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+    this.keyMute = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
 
     // สร้างบอส
     const def = MONSTERS[pickRandomMonsterId()];
@@ -129,13 +152,7 @@ export class GameScene extends Phaser.Scene {
     });
     this.bossHud = new BossHUD(this, def.name, def.hp);
 
-    // Hitbox
-    this.attackHitbox = this.add.rectangle(0, 0, 40, 40, 0x00ff00, 0.5);
-    this.physics.add.existing(this.attackHitbox, false);
-    this.attackHitbox.setVisible(false);
-
-    // Collider
-    this.hitCollider = this.physics.add.overlap(this.attackHitbox, this.monster.sprite, this.handleHit, undefined, this);
+    // Collider (ตัวผู้เล่นชนตัวบอส) — การตีใช้การคำนวณเส้นหอกแทน ไม่ใช้ hitbox แล้ว
     this.bossCollider = this.physics.add.collider(this.player, this.monster.sprite);
 
     // UI
@@ -154,40 +171,56 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     if (!this.player) return;
 
+    // กด M สลับเปิด/ปิดเสียง
+    if (Phaser.Input.Keyboard.JustDown(this.keyMute)) {
+      const nowMuted = sfx.toggleMute();
+      showDamage(this, this.player.x, this.player.y - 40, nowMuted ? 'ปิดเสียง' : 'เปิดเสียง', '#ffffff', 900);
+    }
+
     if (this.isDead) {
       if (this.keyRestart && Phaser.Input.Keyboard.JustDown(this.keyRestart)) {
-        this.scene.restart();
+        this.scene.start('BaseScene');
       }
       return;
     }
     if (this.isVictory) {
       if (this.keyRestart && Phaser.Input.Keyboard.JustDown(this.keyRestart)) {
-        this.scene.restart();
+        this.scene.start('BaseScene');
       }
       return;
     }
 
+    // hit-stop: ช่วงภาพหยุดแวบหนึ่ง (เกมหยุดนิ่ง แต่เอฟเฟกต์ยังเล่นต่อ)
+    if (this.time.now < this.hitStopUntil) return;
+    if (this.physics.world.isPaused) this.physics.world.resume();
+
     const speed = 160;
 
     if (!this.isDashing && !this.isStunned) {
-      this.player.setVelocity(0);
+      let vx = 0;
+      let vy = 0;
+      if (this.keyA.isDown) vx -= 1;
+      if (this.keyD.isDown) vx += 1;
+      if (this.keyW.isDown) vy -= 1;
+      if (this.keyS.isDown) vy += 1;
 
-      if (this.keyA.isDown) {
-        this.player.setVelocityX(-speed);
-        this.player.setFlipX(true);
-      } else if (this.keyD.isDown) {
-        this.player.setVelocityX(speed);
-        this.player.setFlipX(false);
+      if (vx !== 0 || vy !== 0) {
+        const len = Math.hypot(vx, vy); // ทำให้เดินทแยงไม่เร็วกว่าเดินตรง
+        vx /= len;
+        vy /= len;
+        this.facing.set(vx, vy);
+        if (vx !== 0) this.player.setFlipX(vx < 0);
       }
-
-      if (this.keyW.isDown) {
-        this.player.setVelocityY(-speed);
-      } else if (this.keyS.isDown) {
-        this.player.setVelocityY(speed);
-      }
+      this.player.setVelocity(vx * speed, vy * speed);
     }
 
-    if (this.keyDash && Phaser.Input.Keyboard.JustDown(this.keyDash) && !this.isDashing && !this.isStunned) {
+    if (
+      this.keyDash &&
+      Phaser.Input.Keyboard.JustDown(this.keyDash) &&
+      !this.isDashing &&
+      !this.isStunned &&
+      this.time.now - this.lastDashAt >= DASH_COOLDOWN_MS
+    ) {
       this.performDash();
     }
 
@@ -196,6 +229,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.monster.update(delta);
+
+    // ตรวจว่าหอกแทงโดนบอสไหม (ตลอด 200ms ที่กำลังแทง)
+    if (this.isAttacking && !this.hitThisSwing && this.monster.isAlive && this.swingHitsMonster()) {
+      this.applyPlayerHit();
+    }
 
     // ---------- ระบบเก็บของ (3 ขั้นตอน: กล่อง -> ไอเทม -> ประตู) ----------
     const justPressedE = Phaser.Input.Keyboard.JustDown(this.keyInteract);
@@ -211,6 +249,7 @@ export class GameScene extends Phaser.Scene {
           this.player.y
         );
         if (dist <= 60) {
+          sfx.open();
           this.lootBox.open(() => {
             const boxX = this.lootBox!.sprite.x;
             const boxY = this.lootBox!.sprite.y;
@@ -235,7 +274,9 @@ export class GameScene extends Phaser.Scene {
         if (dist <= 50) {
           const loot = this.droppedItem.loot;
           this.droppedItem.collect(() => {
+            sfx.pickup();
             huntSession.addItem(loot);        // เข้ากระเป๋า (จำข้ามรอบ)
+            saveGame();
             this.huntLoot.push(loot);         // บันทึกของรอบนี้
             this.droppedItem = null;
             showDamage(this, this.player.x, this.player.y - 40, `+ ${loot.name}`, loot.color, 1500);
@@ -258,6 +299,7 @@ export class GameScene extends Phaser.Scene {
         );
         if (dist <= 55) {
           this.exitPortal.enter(() => {
+            sfx.pickup();
             this.exitPortal = null;
             this.isVictory = true;
             this.player.setVelocity(0);
@@ -279,9 +321,19 @@ export class GameScene extends Phaser.Scene {
 
   private performDash() {
     this.isDashing = true;
+    this.lastDashAt = this.time.now;
+    sfx.dash();
+
     const dashSpeed = 400;
-    const direction = this.player.flipX ? -1 : 1;
-    this.player.setVelocityX(dashSpeed * direction);
+    // dash ไปทางที่กำลังกดเดิน ถ้าไม่ได้กดอะไรให้ไปทางที่หันอยู่
+    let dx = (this.keyD.isDown ? 1 : 0) - (this.keyA.isDown ? 1 : 0);
+    let dy = (this.keyS.isDown ? 1 : 0) - (this.keyW.isDown ? 1 : 0);
+    if (dx === 0 && dy === 0) {
+      dx = this.facing.x;
+      dy = this.facing.y;
+    }
+    const len = Math.hypot(dx, dy) || 1;
+    this.player.setVelocity((dx / len) * dashSpeed, (dy / len) * dashSpeed);
     this.player.setAlpha(0.6);
 
     this.time.addEvent({
@@ -299,25 +351,38 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  // ทิศที่จะแทง: ปกติคือทิศที่หันอยู่ แต่ถ้าบอสอยู่ในกรวยหน้าตัวจะล็อกเข้าหาบอส (aim assist)
+  private getAttackDir(): Phaser.Math.Vector2 {
+    const dir = this.facing.clone();
+    if (!this.monster.isAlive) return dir;
+
+    const m = this.monster.sprite;
+    const toBoss = new Phaser.Math.Vector2(m.x - this.player.x, m.y - this.player.y);
+    const dist = toBoss.length();
+    if (dist > 0 && dist < AIM_ASSIST_RANGE) {
+      toBoss.normalize();
+      if (dir.dot(toBoss) > Math.cos(Phaser.Math.DegToRad(AIM_ASSIST_ANGLE))) {
+        return toBoss;
+      }
+    }
+    return dir;
+  }
+
   private performAttack() {
     this.isAttacking = true;
     this.hitThisSwing = false;
+    sfx.swing();
 
     const weaponRange = this.equipment.getEffectValue('weapon');
-    const hitboxHeight = 26;
-    const direction = this.player.flipX ? -1 : 1;
-    const centerOffset = weaponRange / 2;
+    const dir = this.getAttackDir();
 
-    this.attackHitbox.setSize(weaponRange, hitboxHeight);
-    if (this.attackHitbox.body) {
-      this.attackHitbox.body.setSize(weaponRange, hitboxHeight);
-    }
-    this.attackHitbox.setPosition(
-      this.player.x + direction * centerOffset,
-      this.player.y
-    );
+    // จำจุดและทิศที่แทง ไว้ให้ swingHitsMonster() ใช้ตรวจ
+    this.swingOrigin.set(this.player.x, this.player.y);
+    this.swingDir.copy(dir);
+    this.swingRange = weaponRange;
+    if (Math.abs(dir.x) > 0.3) this.player.setFlipX(dir.x < 0);
 
-    spawnThrust(this, this.player.x, this.player.y, this.player.flipX, weaponRange);
+    spawnThrustDir(this, this.player.x, this.player.y, dir.x, dir.y, weaponRange);
     this.cameras.main.shake(100, 0.003);
 
     this.time.delayedCall(200, () => {
@@ -325,14 +390,32 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private handleHit(_hitbox: any, _target: any) {
-    if (!this.isAttacking || this.hitThisSwing) return;
-    if (this.isDead || this.isVictory || !this.monster.isAlive) return;
+  // เช็คว่าเส้นหอก (จากจุดแทง ยาวตามระยะอาวุธ) แตะตัวบอสไหม — ใช้ได้ทุกมุม
+  private swingHitsMonster(): boolean {
+    const m = this.monster.sprite;
+    const reach = m.displayWidth * 0.4 + 14; // รัศมีตัวบอส + ความหนาหอก (ปรับเลข 14 ให้ตีง่าย/ยากขึ้น)
+    let t =
+      (m.x - this.swingOrigin.x) * this.swingDir.x +
+      (m.y - this.swingOrigin.y) * this.swingDir.y;
+    t = Phaser.Math.Clamp(t, 0, this.swingRange);
+    const px = this.swingOrigin.x + this.swingDir.x * t;
+    const py = this.swingOrigin.y + this.swingDir.y * t;
+    return Phaser.Math.Distance.Between(px, py, m.x, m.y) <= reach;
+  }
 
+  private applyPlayerHit() {
     this.hitThisSwing = true;
+    sfx.hit();
     this.monster.takeDamage(PLAYER_ATTACK_DAMAGE);
     this.bossHud.update(this.monster.hp);
     this.cameras.main.shake(150, 0.01);
+    this.hitStop(55);
+  }
+
+  // หยุดเกมชั่วคราว (ms) — เอาค่าที่นานกว่าเสมอ
+  private hitStop(ms: number) {
+    this.hitStopUntil = Math.max(this.hitStopUntil, this.time.now + ms);
+    this.physics.world.pause();
   }
 
   private damagePlayer(player: any, amount: number, fromX: number, fromY: number) {
@@ -340,6 +423,8 @@ export class GameScene extends Phaser.Scene {
 
     this.playerHP = Math.max(0, this.playerHP - amount);
     this.hud.update(this.playerHP);
+    sfx.hurt();
+    this.hitStop(80);
 
     const dx = player.x - fromX;
     const dy = player.y - fromY;
@@ -398,6 +483,9 @@ export class GameScene extends Phaser.Scene {
   private onMonsterDeath() {
     this.player.setAlpha(1);
     this.bossHud.update(0);
+    sfx.bossDie();
+    this.hitStop(180);
+    this.cameras.main.shake(300, 0.02);
 
     // Hunter Helmet
     const heal = this.equipment.getEffectValue('helmet');
@@ -414,7 +502,6 @@ export class GameScene extends Phaser.Scene {
     // Item Drop
     this.lootBox = new LootBox(this, this.monster.sprite.x, this.monster.sprite.y);
 
-    if (this.hitCollider) this.hitCollider.destroy();
     if (this.bossCollider) this.bossCollider.destroy();
   }
 }
