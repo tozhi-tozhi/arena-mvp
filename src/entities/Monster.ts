@@ -14,6 +14,7 @@ export interface MonsterHooks {
   getTargets: () => any[];
   onHitTarget: (target: any, damage: number, fromX: number, fromY: number) => void;
   onDeath: () => void;
+  onPhaseChange?: () => void;
 }
 
 export class Monster {
@@ -325,6 +326,7 @@ export class Monster {
       burst(this.scene, this.sprite.x, this.sprite.y, 0xff5555, 16, 90, 7);
       this.scene.cameras.main.shake(400, 0.02);
       showDamage(this.scene, this.sprite.x, this.sprite.y - this.sprite.displayHeight / 2 - 20, 'RAGE!', '#ff5555');
+      this.hooks.onPhaseChange?.();
     }
   }
 

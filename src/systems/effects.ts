@@ -3,7 +3,7 @@ import Phaser from 'phaser';
 import { DEPTH, GAME_WIDTH, GAME_HEIGHT } from '../config';
 
 // ตัวเลขดาเมจลอยขึ้นแล้วจาง
-export function showDamage(scene: Phaser.Scene, x: number, y: number, text: string, color: string) {
+export function showDamage(scene: Phaser.Scene, x: number, y: number, text: string, color: string, durationMs: number = 600) {
   const label = scene.add.text(x, y - 20, text, {
     fontFamily: 'monospace',
     fontSize: '22px',
@@ -18,7 +18,7 @@ export function showDamage(scene: Phaser.Scene, x: number, y: number, text: stri
     targets: label,
     y: y - 55,
     alpha: 0,
-    duration: 600,
+    duration: durationMs,
     onComplete: () => label.destroy()
   });
 }

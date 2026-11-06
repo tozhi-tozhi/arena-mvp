@@ -104,7 +104,8 @@ export class GameScene extends Phaser.Scene {
     this.monster = new Monster(this, def, 600, 300, {
       getTargets: () => (this.isDead ? [] : [this.player]),
       onHitTarget: (target, damage, fromX, fromY) => this.damagePlayer(target, damage, fromX, fromY),
-      onDeath: () => this.onMonsterDeath()
+      onDeath: () => this.onMonsterDeath(),
+      // onPhaseChange: () => this.awardLoot('combat') // ⬅️ ปิดไว้ รอทำระบบไอเทมดรอป
     });
     this.bossHud = new BossHUD(this, def.name, def.hp);
 
@@ -265,8 +266,16 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.flash(120, 255, 0, 0);
     showDamage(this, player.x, player.y, '-' + amount, '#ff5555');
     burst(this, player.x, player.y, 0xff3333, 8, 36, 5);
+    // --- Thorn Armor: สะท้อนดาเมจกลับไปยังมอนสเตอร์ ---
+    if (this.monster.isAlive) {
+      const reflect = this.equipment.getEffectValue('armor');
+      if (reflect > 0) {
+        this.monster.takeDamage(reflect);
+        this.bossHud.update(this.monster.hp);
+      }
+    }
 
-    if (this.playerHP <= 0) {
+    if (this.playerHP <= 0 && !this.isVictory) {
       this.gameOver();
       return;
     }
@@ -295,14 +304,46 @@ export class GameScene extends Phaser.Scene {
     showEndScreen(this, 'GAME OVER', '#ff4444', 'กด R เพื่อเล่นใหม่');
   }
 
+  private awardLoot(source: 'combat' | 'victory') {
+    const result = this.equipment.upgradeRandomSlot();
+    if (!result) {
+      showDamage(this, this.player.x, this.player.y - 50, 'MAX GEAR', '#ffd54a');
+      return;
+    }
+
+    const label = source === 'victory' ? 'VICTORY LOOT' : 'UPGRADE!';
+    const slotLabel = result.slot.toUpperCase();
+    showDamage(
+      this,
+      this.player.x,
+      this.player.y - 60,
+      `${label} ${slotLabel} Lv.${result.newLevel}`,
+      '#ffd54a',
+      2500 // ⬅️ ค้างบนจอ 2.5 วินาที อ่านทันแน่นอน
+    );
+    burst(this, this.player.x, this.player.y, 0xffd54a, 12, 60, 5);
+  }
+
   // บอสตาย = ล่าสำเร็จ
   private onMonsterDeath() {
     this.isVictory = true;
     this.player.setVelocity(0);
     this.player.setAlpha(1);
     this.bossHud.update(0);
-    if (this.hitCollider) this.hitCollider.destroy();
-    if (this.bossCollider) this.bossCollider.destroy();
+  // --- Hunter Helmet: ฟื้น HP เมื่อกำจัดมอนสเตอร์ ---
+    const heal = this.equipment.getEffectValue('helmet');
+    if (heal > 0 && this.playerHP < this.maxPlayerHP) {
+      const before = this.playerHP;
+      this.playerHP = Math.min(this.maxPlayerHP, this.playerHP + heal);
+      const gained = this.playerHP - before;
+      if (gained > 0) {
+        this.hud.update(this.playerHP);
+        showDamage(this, this.player.x, this.player.y - 20, '+' + gained, '#66ff88');
+      }
+    }
+
+    // --- Loot: ได้รับการอัปเกรดหลังชนะ ---
+    // this.awardLoot('victory'); // ⬅️ ปิดไว้ รอทำระบบไอเทมดรอป
 
     this.time.delayedCall(1200, () => {
       showEndScreen(this, 'HUNT COMPLETE', '#ffd54a', 'กด R เพื่อล่าอีกครั้ง');
