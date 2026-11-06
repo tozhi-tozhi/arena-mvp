@@ -70,6 +70,45 @@ export function spawnSlash(scene: Phaser.Scene, x: number, y: number, facingLeft
   });
 }
 
+
+// เส้นแทงพุ่งตรงสำหรับอาวุธประเภทหอก
+export function spawnThrust(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  facingLeft: boolean,
+  length: number
+) {
+  const direction = facingLeft ? -1 : 1;
+  const g = scene.add.graphics();
+  g.setPosition(x, y);
+  g.setDepth(DEPTH.SLASH);
+
+  // ก้านหอก/เส้นแรงปะทะ
+  g.lineStyle(5, 0xf4f8ff, 0.95);
+  g.beginPath();
+  g.moveTo(direction * 8, 0);
+  g.lineTo(direction * length, 0);
+  g.strokePath();
+
+  // ปลายแหลม
+  g.fillStyle(0x9de7ff, 1);
+  g.beginPath();
+  g.moveTo(direction * length, 0);
+  g.lineTo(direction * (length - 14), -7);
+  g.lineTo(direction * (length - 14), 7);
+  g.closePath();
+  g.fillPath();
+
+  scene.tweens.add({
+    targets: g,
+    alpha: 0,
+    x: x + direction * 8,
+    duration: 140,
+    onComplete: () => g.destroy()
+  });
+}
+
 // ภาพซ้อนสีฟ้าตามหลังตอน dash
 export function spawnAfterimage(scene: Phaser.Scene, sprite: any) {
   const ghost = scene.add.image(sprite.x, sprite.y, 'hero');

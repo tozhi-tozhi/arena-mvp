@@ -1,14 +1,16 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, WALL_THICKNESS, SPRITE_SCALE, DEPTH, PLAYER_ATTACK_DAMAGE } from '../config';
-import { showDamage, burst, spawnSlash, spawnAfterimage, makeVignette } from '../systems/effects';
+import { showDamage, burst, spawnThrust, spawnAfterimage, makeVignette } from '../systems/effects';
 import { PlayerHUD } from '../ui/PlayerHUD';
 import { BossHUD } from '../ui/BossHUD';
 import { showEndScreen } from '../ui/GameOverScreen';
 import { Monster } from '../entities/Monster';
 import { MONSTERS, pickRandomMonsterId } from '../data/monsters';
+import { EquipmentSystem } from '../systems/EquipmentSystem';
 
 export class GameScene extends Phaser.Scene {
   private player: any;
+  private equipment!: EquipmentSystem;
 
   // ปุ่มควบคุม
   private keyW: any;
@@ -54,6 +56,7 @@ export class GameScene extends Phaser.Scene {
   create() {
     // รีเซ็ตสถานะทุกครั้งที่เริ่มใหม่ (จำเป็นตอนกด R เล่นใหม่)
     this.playerHP = this.maxPlayerHP;
+    this.equipment = new EquipmentSystem();
     this.isAttacking = false;
     this.hitThisSwing = false;
     this.isDashing = false;
@@ -201,10 +204,24 @@ export class GameScene extends Phaser.Scene {
   private performAttack() {
     this.isAttacking = true;
     this.hitThisSwing = false;
-    const offset = this.player.flipX ? -36 : 36;
-    this.attackHitbox.setPosition(this.player.x + offset, this.player.y);
 
-    spawnSlash(this, this.player.x, this.player.y, this.player.flipX);
+    // Weapon level controls spear reach. The hitbox starts at the player
+    // and extends forward, instead of using the old short sword hitbox.
+    const weaponRange = this.equipment.getEffectValue('weapon');
+    const hitboxHeight = 26;
+    const direction = this.player.flipX ? -1 : 1;
+    const centerOffset = weaponRange / 2;
+
+    this.attackHitbox.setSize(weaponRange, hitboxHeight);
+    if (this.attackHitbox.body) {
+      this.attackHitbox.body.setSize(weaponRange, hitboxHeight);
+    }
+    this.attackHitbox.setPosition(
+      this.player.x + direction * centerOffset,
+      this.player.y
+    );
+
+    spawnThrust(this, this.player.x, this.player.y, this.player.flipX, weaponRange);
     this.cameras.main.shake(100, 0.003);
 
     this.time.delayedCall(200, () => {
