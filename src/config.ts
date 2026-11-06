@@ -12,7 +12,7 @@ export const PLAYER_ATTACK_DAMAGE = 1;
 export const DEPTH = {
   FLOOR: 0,
   WALL: 1,
-  TELEGRAPH: 2, // เครื่องหมายเตือนบนพื้น (วงแดง/แถบแดง)
+  TELEGRAPH: 2,
   ENEMY_SHADOW: 3,
   PLAYER_SHADOW: 4,
   ENEMY: 5,

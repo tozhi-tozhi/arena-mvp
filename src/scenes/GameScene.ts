@@ -7,12 +7,12 @@ import { showEndScreen } from '../ui/GameOverScreen';
 import { Monster } from '../entities/Monster';
 import { MONSTERS, pickRandomMonsterId } from '../data/monsters';
 import { EquipmentSystem } from '../systems/EquipmentSystem';
+import { LootBox } from '../entities/LootBox';
 
 export class GameScene extends Phaser.Scene {
   private player: any;
   private equipment!: EquipmentSystem;
 
-  // ปุ่มควบคุม
   private keyW: any;
   private keyA: any;
   private keyS: any;
@@ -20,13 +20,13 @@ export class GameScene extends Phaser.Scene {
   private keyDash: any;
   private keyAttack: any;
   private keyRestart: any;
+  private keyInteract: any;
 
   private attackHitbox: any;
   private isAttacking: boolean = false;
   private hitThisSwing: boolean = false;
   private isDashing: boolean = false;
 
-  // สถานะผู้เล่น
   private playerHP: number = 5;
   private maxPlayerHP: number = 5;
   private isInvincible: boolean = false;
@@ -36,11 +36,12 @@ export class GameScene extends Phaser.Scene {
   private hud!: PlayerHUD;
   private playerShadow: any;
 
-  // มอนสเตอร์ (บอส)
   private monster!: Monster;
   private bossHud!: BossHUD;
   private hitCollider: any;
   private bossCollider: any;
+  
+  private lootBox: LootBox | null = null;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -54,7 +55,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
-    // รีเซ็ตสถานะทุกครั้งที่เริ่มใหม่ (จำเป็นตอนกด R เล่นใหม่)
+    // รีเซ็ตสถานะทุกครั้งที่เริ่มใหม่
     this.playerHP = this.maxPlayerHP;
     this.equipment = new EquipmentSystem();
     this.isAttacking = false;
@@ -64,8 +65,8 @@ export class GameScene extends Phaser.Scene {
     this.isStunned = false;
     this.isDead = false;
     this.isVictory = false;
+    this.lootBox = null; // สำคัญ! รีเซ็ตกล่องไอเทมตอนเริ่มใหม่
 
-    // 1. พื้นและกำแพง
     const W = GAME_WIDTH;
     const H = GAME_HEIGHT;
     const t = WALL_THICKNESS;
@@ -77,19 +78,18 @@ export class GameScene extends Phaser.Scene {
 
     this.physics.world.setBounds(t, t, W - t * 2, H - t * 2);
 
-    // เงามืดขอบจอ
     makeVignette(this);
 
-    // เงาใต้ผู้เล่น
-    this.playerShadow = this.add.ellipse(400, 314, 26, 10, 0x000000, 0.35).setDepth(DEPTH.PLAYER_SHADOW);
-
-    // 2. สร้างผู้เล่น
+    // 2. สร้างผู้เล่น (กลับมาที่ 400, 300)
     this.player = this.physics.add.sprite(400, 300, 'hero') as any;
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(DEPTH.PLAYER);
     this.player.setScale(SPRITE_SCALE);
 
-    // 3. ตั้งค่า Input
+    // เงาใต้ผู้เล่น
+    this.playerShadow = this.add.ellipse(400, 314, 26, 10, 0x000000, 0.35).setDepth(DEPTH.PLAYER_SHADOW);
+
+    // 3. Input
     const keyboard = this.input.keyboard as any;
     this.keyW = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
     this.keyA = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
@@ -98,34 +98,34 @@ export class GameScene extends Phaser.Scene {
     this.keyDash = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     this.keyAttack = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.keyRestart = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+    this.keyInteract = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
 
-    // 4. สุ่มมอนที่จะเจอ (ผู้เล่นไม่รู้ล่วงหน้า) แล้วสร้างบอส
+    // 4. สร้างบอส (กลับมาที่ 600, 300)
     const def = MONSTERS[pickRandomMonsterId()];
     this.monster = new Monster(this, def, 600, 300, {
       getTargets: () => (this.isDead ? [] : [this.player]),
       onHitTarget: (target, damage, fromX, fromY) => this.damagePlayer(target, damage, fromX, fromY),
-      onDeath: () => this.onMonsterDeath(),
-      // onPhaseChange: () => this.awardLoot('combat') // ⬅️ ปิดไว้ รอทำระบบไอเทมดรอป
+      onDeath: () => this.onMonsterDeath()
     });
     this.bossHud = new BossHUD(this, def.name, def.hp);
 
-    // 5. Attack Hitbox (มองไม่เห็น ใช้แค่ตรวจการชน)
+    // 5. Hitbox
     this.attackHitbox = this.add.rectangle(0, 0, 40, 40, 0x00ff00, 0.5);
     this.physics.add.existing(this.attackHitbox, false);
     this.attackHitbox.setVisible(false);
 
-    // 6. ตั้งค่าการชน: ฟันโดนบอส + ผู้เล่นเดินทะลุบอสไม่ได้
+    // 6. Collider
     this.hitCollider = this.physics.add.overlap(this.attackHitbox, this.monster.sprite, this.handleHit, undefined, this);
     this.bossCollider = this.physics.add.collider(this.player, this.monster.sprite);
 
-    // 7. UI เลือดผู้เล่น
+    // 7. UI
     this.hud = new PlayerHUD(this, this.maxPlayerHP);
 
-    // 8. กล้อง
+    // 8. กล้อง (ไม่มีซูม)
     this.cameras.main.setBounds(0, 0, W, H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
-    // 9. บังคับ Focus ที่ Canvas เมื่อคลิก
+    // 9. Focus
     this.sys.game.canvas.addEventListener('click', () => {
       this.sys.game.canvas.focus();
     });
@@ -134,8 +134,13 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     if (!this.player) return;
 
-    // จบการล่าแล้ว (แพ้หรือชนะ): รอกด R เพื่อเริ่มใหม่
-    if (this.isDead || this.isVictory) {
+    if (this.isDead) {
+      if (this.keyRestart && Phaser.Input.Keyboard.JustDown(this.keyRestart)) {
+        this.scene.restart();
+      }
+      return;
+    }
+    if (this.isVictory) {
       if (this.keyRestart && Phaser.Input.Keyboard.JustDown(this.keyRestart)) {
         this.scene.restart();
       }
@@ -144,7 +149,6 @@ export class GameScene extends Phaser.Scene {
 
     const speed = 160;
 
-    // ระหว่าง dash หรือถูกกระเด็น ไม่รีเซ็ตความเร็ว
     if (!this.isDashing && !this.isStunned) {
       this.player.setVelocity(0);
 
@@ -163,20 +167,38 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Dash (Shift) — ระหว่างพุ่งเป็นอมตะ (i-frames)
     if (this.keyDash && Phaser.Input.Keyboard.JustDown(this.keyDash) && !this.isDashing && !this.isStunned) {
       this.performDash();
     }
 
-    // Attack (Space)
     if (this.keyAttack && Phaser.Input.Keyboard.JustDown(this.keyAttack) && !this.isAttacking && !this.isStunned) {
       this.performAttack();
     }
 
-    // บอสทำงานตามสถานะของมัน
     this.monster.update(delta);
 
-    // เงาตามผู้เล่น
+    // อัปเดตกล่องไอเทม
+    if (this.lootBox) {
+      this.lootBox.checkPlayerDistance(this.player.x, this.player.y);
+      
+      if (Phaser.Input.Keyboard.JustDown(this.keyInteract) && !this.lootBox.isOpened) {
+        const dist = Phaser.Math.Distance.Between(this.lootBox.sprite.x, this.lootBox.sprite.y, this.player.x, this.player.y);
+        if (dist <= 60) {
+          this.lootBox.open(() => {
+            this.awardLoot('victory');
+            
+            this.isVictory = true;
+            this.player.setVelocity(0);
+            this.player.setAlpha(1);
+            
+            this.time.delayedCall(600, () => {
+              showEndScreen(this, 'HUNT COMPLETE', '#ffd54a', 'กด R เพื่อล่าอีกครั้ง');
+            });
+          });
+        }
+      }
+    }
+
     this.playerShadow.setPosition(this.player.x, this.player.y + 14);
   }
 
@@ -206,8 +228,6 @@ export class GameScene extends Phaser.Scene {
     this.isAttacking = true;
     this.hitThisSwing = false;
 
-    // Weapon level controls spear reach. The hitbox starts at the player
-    // and extends forward, instead of using the old short sword hitbox.
     const weaponRange = this.equipment.getEffectValue('weapon');
     const hitboxHeight = 26;
     const direction = this.player.flipX ? -1 : 1;
@@ -230,7 +250,6 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ผู้เล่นฟันโดนบอส (เอฟเฟกต์โดนตีของบอสอยู่ใน Monster.takeDamage)
   private handleHit(_hitbox: any, _target: any) {
     if (!this.isAttacking || this.hitThisSwing) return;
     if (this.isDead || this.isVictory || !this.monster.isAlive) return;
@@ -241,14 +260,12 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.shake(150, 0.01);
   }
 
-  // ผู้เล่นโดนท่าของบอส (บอสเรียกมาผ่าน hooks.onHitTarget)
   private damagePlayer(player: any, amount: number, fromX: number, fromY: number) {
     if (this.isDead || this.isVictory || this.isInvincible || this.isDashing) return;
 
     this.playerHP = Math.max(0, this.playerHP - amount);
     this.hud.update(this.playerHP);
 
-    // กระเด็นออกจากจุดที่โดน
     const dx = player.x - fromX;
     const dy = player.y - fromY;
     const len = Math.max(1, Math.sqrt(dx * dx + dy * dy));
@@ -259,14 +276,14 @@ export class GameScene extends Phaser.Scene {
       if (!this.isDead) player.setVelocity(0);
     });
 
-    // เอฟเฟกต์โดนตี
     player.setTintFill(0xff3333);
     this.time.delayedCall(100, () => player.clearTint());
     this.cameras.main.shake(200, 0.015);
     this.cameras.main.flash(120, 255, 0, 0);
     showDamage(this, player.x, player.y, '-' + amount, '#ff5555');
     burst(this, player.x, player.y, 0xff3333, 8, 36, 5);
-    // --- Thorn Armor: สะท้อนดาเมจกลับไปยังมอนสเตอร์ ---
+
+    // Thorn Armor
     if (this.monster.isAlive) {
       const reflect = this.equipment.getEffectValue('armor');
       if (reflect > 0) {
@@ -280,7 +297,6 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // อมตะ 1 วินาที พร้อมกะพริบ
     this.isInvincible = true;
     this.tweens.add({
       targets: player,
@@ -319,18 +335,16 @@ export class GameScene extends Phaser.Scene {
       this.player.y - 60,
       `${label} ${slotLabel} Lv.${result.newLevel}`,
       '#ffd54a',
-      2500 // ⬅️ ค้างบนจอ 2.5 วินาที อ่านทันแน่นอน
+      2500
     );
     burst(this, this.player.x, this.player.y, 0xffd54a, 12, 60, 5);
   }
 
-  // บอสตาย = ล่าสำเร็จ
   private onMonsterDeath() {
-    this.isVictory = true;
-    this.player.setVelocity(0);
     this.player.setAlpha(1);
     this.bossHud.update(0);
-  // --- Hunter Helmet: ฟื้น HP เมื่อกำจัดมอนสเตอร์ ---
+
+    // Hunter Helmet
     const heal = this.equipment.getEffectValue('helmet');
     if (heal > 0 && this.playerHP < this.maxPlayerHP) {
       const before = this.playerHP;
@@ -342,11 +356,10 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // --- Loot: ได้รับการอัปเกรดหลังชนะ ---
-    // this.awardLoot('victory'); // ⬅️ ปิดไว้ รอทำระบบไอเทมดรอป
+    // Item Drop
+    this.lootBox = new LootBox(this, this.monster.sprite.x, this.monster.sprite.y);
 
-    this.time.delayedCall(1200, () => {
-      showEndScreen(this, 'HUNT COMPLETE', '#ffd54a', 'กด R เพื่อล่าอีกครั้ง');
-    });
+    if (this.hitCollider) this.hitCollider.destroy();
+    if (this.bossCollider) this.bossCollider.destroy();
   }
 }

@@ -1,5 +1,3 @@
-// หน้าจอจบเกม (ค่อย ๆ ปรากฏ) — ใช้ได้ทั้งแพ้และชนะ
-// การกด R เพื่อเริ่มใหม่ จัดการอยู่ใน GameScene
 import Phaser from 'phaser';
 import { DEPTH, GAME_WIDTH, GAME_HEIGHT } from '../config';
 
