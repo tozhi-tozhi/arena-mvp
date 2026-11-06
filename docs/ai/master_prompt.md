@@ -120,10 +120,20 @@ The basic combat prototype is playable. The current work is to complete the item
 - [x] **3.4 Helmet passive:** Hunter Helmet heals player on monster kill.
 - [x] **3.5 Item Drop & Loot:** Monster drops a `LootBox`. Player must walk near and press **E** to open it. Opening triggers the upgrade and displays a 2.5s feedback popup.
 
-**Round 4 — Complete the Hunt flow** (IN PROGRESS)
+**Round 4 — Complete the Hunt flow** (COMPLETE)
 - [x] Monster death -> drop loot -> player opens loot -> win screen ("HUNT COMPLETE").
-- [ ] Create a dedicated **Hunt Summary Screen** (show time taken, item gained, equipment levels).
-- [ ] Expand the arena (currently 800x600; expansion failed earlier due to camera zoom issues, needs careful re-approach).
+- [x] Create a dedicated **Hunt Summary Screen** (show time taken, item gained, equipment levels).
+- [x] Add real Assets for LootBox (`loot_box_closed.png`, `loot_box_open.png`) and floating items (`green_potion.png`).
+- [x] **เปลี่ยนคอนเซปต์เป็น "ระบบกระเป๋า":** ไม่มีการอัปเกรดระหว่างล่าอีกต่อไป
+  - เปิดกล่อง → ไอเทมตกพื้น (DroppedItem) → กด E เก็บเข้ากระเป๋า → ประตูทางออก (ExitPortal) ปรากฏ → กด E กลับฐาน → Loot Report
+  - กระเป๋าจำข้ามรอบการล่า (HuntSession singleton)
+  - EquipmentSystem ยังใช้สู้ได้ที่ Lv.1 แต่การอัปเกรดจะเกิดขึ้น "นอกการล่า" (Base Screen)
+
+**Round 5 — Base Screen & Progression Loop** (NEXT)
+- [ ] สร้างหน้า Base (จอนอกการล่า): แสดงกระเป๋า + อุปกรณ์ 3 ช่อง + ปุ่มอัปเกรด + ปุ่มเริ่มล่า
+- [ ] เชื่อมต่อ HuntSession (กระเป๋า) กับ EquipmentSystem (ใช้อุปกรณ์สะสมเป็นวัตถุดิบอัปเกรด)
+- [ ] ทำให้ลูปสมบูรณ์: ล่า → เก็บของ → กลับฐาน → อัปเกรด → ล่าต่อ
+- [ ] (Future) ขยาย Arena ใหม่โดยไม่พัง UI (camera bounds + scrollFactor)
 
 ### Current code structure
 
@@ -133,15 +143,20 @@ src/
   config.ts                  # Shared game constants and draw-depth values
   scenes/GameScene.ts        # Player input/combat and encounter orchestration
   entities/Monster.ts        # Monster runtime behavior and state machine
-  entities/LootBox.ts        # Item drop box (spawns on death, press E to open)
+  entities/LootBox.ts        # Item drop box (spawns on death, press E to open → spawns DroppedItem)
+  entities/DroppedItem.ts    # ไอเทมบนพื้น กด E เก็บเข้ากระเป๋า
+  entities/ExitPortal.ts     # ประตูทางออก กด E เพื่อกลับฐาน (จบการล่า)
   data/monsters.ts           # Monster stats, attack pools, and phases
   data/monsterAttacks.ts     # Attack behavior/timing definitions
   data/equipment.ts          # Equipment stats (weapon, armor, helmet)
+  data/loot.ts               # ตารางของล่า (Loot Table) + weighted random
   systems/effects.ts         # Reusable combat and visual effects
   systems/EquipmentSystem.ts # Manages equipment levels and upgrades
+  systems/HuntSession.ts     # กระเป๋าเก็บของ (session-persistent singleton)
   ui/PlayerHUD.ts            # Player HP display
   ui/BossHUD.ts              # Monster/Boss HP display
   ui/GameOverScreen.ts       # Win/lose overlay
+  ui/HuntSummaryScreen.ts    # Loot Report (แสดงของที่เก็บได้ + เวลา + กระเป๋า)
 ```
 
 ---
@@ -183,6 +198,9 @@ src/
 | 2026-11-06 | **Loot uses Interact Key (E)** | Prevent Loot Stealing, ready for future Multiplayer | Added `E` key in Input, created `LootBox` class |
 | 2026-11-06 | **Do Item Drop before UI screens** | Make the Gameplay Loop (Fight -> Loot) complete first | Equipment does not auto-upgrade; dropped as a box player must collect |
 | 2026-11-06 | **Abort arena expansion + camera zoom (temporary)** | Camera zoom caused UI, Hitbox, and visual distortion (Over-engineered) | Reverted to 800x600 arena, normal camera. Revisit expansion later. |
+| 2026-11-06 | สร้าง Hunt Summary Screen แยกเฉพาะ | เพื่อให้ผู้เล่นเห็น Progress (เวลา/เลเวลอุปกรณ์) ชัดเจนตอนชนะ | Hunt Loop สมบูรณ์ในเชิงระบบ UI |
+| 2026-11-06 | ใส่ Asset จริงให้ LootBox + ไอเทม | สี่เหลี่ยมสีน้ำตาลดูไม่เป็นเกม ใช้รูปหีบปิด/เปิด + ขวดยาเขียว | เกมดูดีขึ้นทันที รองรับ graceful degradation |
+| 2026-11-06 | เปลี่ยนคอนเซปต์จาก "อัปเกรดใน Arena" เป็น "ระบบกระเป๋า" | การล่า = ออกไปหาของและนำกลับมา อัปเกรดต้องอยู่นอกการล่า | รื้อ awardLoot() ทิ้ง, เพิ่ม DroppedItem + ExitPortal + HuntSession, Loot Report แทน End Screen |
 
 ---
 
@@ -204,7 +222,10 @@ src/
 - **Characters:** `hero.png` (Player)
 - **Enemies:** `slime.png` (Basic Enemy)
 - **Backgrounds:** `floor.png`, `wall.png`
-- **UI/Loot:** Using `add.rectangle` (need actual box/item assets)
+- **UI/Loot:**
+  - `loot_box_closed.png` (กล่องสมบัติปิด)
+  - `loot_box_open.png` (กล่องสมบัติเปิด)
+  - `green_potion.png` (ไอเทมทั่วไป — ใช้กับสมุนไพร/ธาตุสกัด/ชิ้นส่วนโบราณ ชั่วคราว)
 - **Audio (SFX and music):** [not decided] (Will use Kenney SFX later)
 
 ---
@@ -212,28 +233,25 @@ src/
 ## 11. Session Context
 
 ```text
-Current state:     Single-player Hunt MVP (Round 3 & 4 combined)
-Done and working:  
+Current state:      Single-player Hunt MVP (Round 4 COMPLETE → Round 5 NEXT)
+Done and working:   
 - Basic systems: Movement (WASD), Dash (Shift + i-frames), Attack (Space).
 - Monster system: Random spawn, phases, attacks (Slam, Charge, Shockwave).
-- Equipment: 
-  * Weapon: Spear range scales with level.
-  * Armor: Thorn Armor reflects damage.
-  * Helmet: Hunter Helmet heals on monster death.
-- Item Drop Loop: Monster dies -> drops LootBox -> player walks near -> presses E -> box opens -> upgrade popup shows -> HUNT COMPLETE screen appears.
-In progress:       
-- Deciding whether to do Hunt Summary Screen or inject real Assets (box, items) first.
-Blockers:          
-- Arena expansion + camera zoom failed because it broke UI and hitbox scaling. Rolled back to 800x600.
-Next planned work: 
-- Add real Assets for LootBox (closed/opened) and floating items.
-- Create Hunt Summary Screen (show time, items gained, equipment levels).
-- (Future) Re-approach arena expansion without breaking UI.
-Recent decisions:  
-- Chose Item Drop & Loot (E key) before UI screens.
-- Temporarily aborted camera zoom; reverted to default arena size.
-Goal of next chat: 
-- Start by adding Asset images for LootBox/Items OR create Hunt Summary Screen.
+- Equipment: Weapon range, Thorn Armor reflect, Hunter Helmet heal (Lv.1 ระหว่างล่า).
+- Hunt Loop (กระเป๋า): มอนตาย → กล่องตก → [E] เปิด → ไอเทมตกพื้น → [E] เก็บ → ประตูฟ้า → [E] กลับฐาน → Loot Report.
+- กระเป๋าจำข้ามรอบ (HuntSession singleton), ของไม่หายเมื่อกด R.
+- Asset จริง: หีบปิด/เปิด + ขวดยาเขียว (graceful degradation ถ้ารูปหาย).
+In progress:        ไม่มี (Round 4 เสร็จสมบูรณ์)
+Blockers:           ไม่มี
+Next planned work:  
+- สร้างหน้า Base (จอจัดการกระเป๋า + อัปเกรดอุปกรณ์ + เริ่มล่า) ← งานหลัก Round 5
+- เชื่อม HuntSession ↔ EquipmentSystem (ใช้ของสะสมอัปเกรด)
+- (Future) ขยาย Arena ใหม่โดยไม่พัง UI
+Recent decisions:   
+- เปลี่ยนคอนเซปต์เป็น "ระบบกระเป๋า" (ไม่อัปเกรดระหว่างล่า)
+- ใส่ Asset จริงให้ LootBox + ไอเทม
+- สร้าง Hunt Summary Screen (Loot Report)
+Goal of next chat:  สร้างหน้า Base Screen ให้ลูป "ล่า → เก็บ → กลับฐาน → อัปเกรด → ล่าต่อ" สมบูรณ์
 ```
 
 ---
@@ -262,5 +280,5 @@ Goal of next chat:
 
 ---
 
-**Version:** 3.4 (Item Drop & Loot complete, arena reverted, 2026-11-06)
+**Version:** 4.0 (Hunt Loop with Bag System complete, Round 4 done, 2026-11-06)
 ```

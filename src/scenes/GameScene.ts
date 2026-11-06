@@ -8,6 +8,11 @@ import { Monster } from '../entities/Monster';
 import { MONSTERS, pickRandomMonsterId } from '../data/monsters';
 import { EquipmentSystem } from '../systems/EquipmentSystem';
 import { LootBox } from '../entities/LootBox';
+import { showHuntSummary } from '../ui/HuntSummaryScreen';
+import { DroppedItem } from '../entities/DroppedItem';
+import { ExitPortal } from '../entities/ExitPortal';
+import { rollLoot, type LootDef } from '../data/loot';
+import { huntSession } from '../systems/HuntSession';
 
 export class GameScene extends Phaser.Scene {
   private player: any;
@@ -40,8 +45,13 @@ export class GameScene extends Phaser.Scene {
   private bossHud!: BossHUD;
   private hitCollider: any;
   private bossCollider: any;
-  
+
+  // ---------- ระบบเก็บของ (กระเป๋า) ----------
   private lootBox: LootBox | null = null;
+  private droppedItem: DroppedItem | null = null;
+  private exitPortal: ExitPortal | null = null;
+  private huntLoot: LootDef[] = [];   // ของที่เก็บได้ในรอบนี้
+  private huntStartTime: number = 0;  // เวลาเริ่มล่า
 
   constructor() {
     super({ key: 'GameScene' });
@@ -52,6 +62,10 @@ export class GameScene extends Phaser.Scene {
     this.load.image('wall', 'assets/wall.png');
     this.load.image('hero', 'assets/hero.png');
     this.load.image('slime', 'assets/slime.png');
+    // Asset กล่องไอเทม + ไอเทม (ถ้าไฟล์หาย เกมไม่พัง — จะใช้สี่เหลี่ยมแทน)
+    this.load.image('loot_box_closed', 'assets/loot_box_closed.png');
+    this.load.image('loot_box_open', 'assets/loot_box_open.png');
+    this.load.image('green_potion', 'assets/green_potion.png');
   }
 
   create() {
@@ -65,7 +79,13 @@ export class GameScene extends Phaser.Scene {
     this.isStunned = false;
     this.isDead = false;
     this.isVictory = false;
-    this.lootBox = null; // สำคัญ! รีเซ็ตกล่องไอเทมตอนเริ่มใหม่
+
+    // รีเซ็ตระบบเก็บของ
+    this.lootBox = null;
+    this.droppedItem = null;
+    this.exitPortal = null;
+    this.huntLoot = [];
+    this.huntStartTime = this.time.now; // เริ่มนับเวลาการล่า
 
     const W = GAME_WIDTH;
     const H = GAME_HEIGHT;
@@ -80,7 +100,7 @@ export class GameScene extends Phaser.Scene {
 
     makeVignette(this);
 
-    // 2. สร้างผู้เล่น (กลับมาที่ 400, 300)
+    // สร้างผู้เล่น
     this.player = this.physics.add.sprite(400, 300, 'hero') as any;
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(DEPTH.PLAYER);
@@ -89,7 +109,7 @@ export class GameScene extends Phaser.Scene {
     // เงาใต้ผู้เล่น
     this.playerShadow = this.add.ellipse(400, 314, 26, 10, 0x000000, 0.35).setDepth(DEPTH.PLAYER_SHADOW);
 
-    // 3. Input
+    // Input
     const keyboard = this.input.keyboard as any;
     this.keyW = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
     this.keyA = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
@@ -100,7 +120,7 @@ export class GameScene extends Phaser.Scene {
     this.keyRestart = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     this.keyInteract = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
 
-    // 4. สร้างบอส (กลับมาที่ 600, 300)
+    // สร้างบอส
     const def = MONSTERS[pickRandomMonsterId()];
     this.monster = new Monster(this, def, 600, 300, {
       getTargets: () => (this.isDead ? [] : [this.player]),
@@ -109,23 +129,23 @@ export class GameScene extends Phaser.Scene {
     });
     this.bossHud = new BossHUD(this, def.name, def.hp);
 
-    // 5. Hitbox
+    // Hitbox
     this.attackHitbox = this.add.rectangle(0, 0, 40, 40, 0x00ff00, 0.5);
     this.physics.add.existing(this.attackHitbox, false);
     this.attackHitbox.setVisible(false);
 
-    // 6. Collider
+    // Collider
     this.hitCollider = this.physics.add.overlap(this.attackHitbox, this.monster.sprite, this.handleHit, undefined, this);
     this.bossCollider = this.physics.add.collider(this.player, this.monster.sprite);
 
-    // 7. UI
+    // UI
     this.hud = new PlayerHUD(this, this.maxPlayerHP);
 
-    // 8. กล้อง (ไม่มีซูม)
+    // กล้อง
     this.cameras.main.setBounds(0, 0, W, H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
-    // 9. Focus
+    // Focus
     this.sys.game.canvas.addEventListener('click', () => {
       this.sys.game.canvas.focus();
     });
@@ -177,22 +197,77 @@ export class GameScene extends Phaser.Scene {
 
     this.monster.update(delta);
 
-    // อัปเดตกล่องไอเทม
+    // ---------- ระบบเก็บของ (3 ขั้นตอน: กล่อง -> ไอเทม -> ประตู) ----------
+    const justPressedE = Phaser.Input.Keyboard.JustDown(this.keyInteract);
+
+    // ขั้นที่ 1: กล่องไอเทม — กด E เพื่อเปิด แล้วคายไอเทม
     if (this.lootBox) {
       this.lootBox.checkPlayerDistance(this.player.x, this.player.y);
-      
-      if (Phaser.Input.Keyboard.JustDown(this.keyInteract) && !this.lootBox.isOpened) {
-        const dist = Phaser.Math.Distance.Between(this.lootBox.sprite.x, this.lootBox.sprite.y, this.player.x, this.player.y);
+      if (justPressedE && !this.lootBox.isOpened) {
+        const dist = Phaser.Math.Distance.Between(
+          this.lootBox.sprite.x,
+          this.lootBox.sprite.y,
+          this.player.x,
+          this.player.y
+        );
         if (dist <= 60) {
           this.lootBox.open(() => {
-            this.awardLoot('victory');
-            
+            const boxX = this.lootBox!.sprite.x;
+            const boxY = this.lootBox!.sprite.y;
+            const rolledLoot = rollLoot(); // สุ่มของตามความหายาก
+            this.droppedItem = new DroppedItem(this, boxX, boxY, rolledLoot);
+            this.lootBox = null; // กล่องเปิดเสร็จแล้ว
+          });
+        }
+      }
+    }
+
+    // ขั้นที่ 2: ไอเทมบนพื้น — กด E เพื่อเก็บเข้ากระเป๋า
+    if (this.droppedItem) {
+      this.droppedItem.checkPlayerDistance(this.player.x, this.player.y);
+      if (justPressedE && !this.droppedItem.isCollected) {
+        const dist = Phaser.Math.Distance.Between(
+          this.droppedItem.sprite.x,
+          this.droppedItem.sprite.y,
+          this.player.x,
+          this.player.y
+        );
+        if (dist <= 50) {
+          const loot = this.droppedItem.loot;
+          this.droppedItem.collect(() => {
+            huntSession.addItem(loot);        // เข้ากระเป๋า (จำข้ามรอบ)
+            this.huntLoot.push(loot);         // บันทึกของรอบนี้
+            this.droppedItem = null;
+            showDamage(this, this.player.x, this.player.y - 40, `+ ${loot.name}`, loot.color, 1500);
+            // เก็บครบแล้ว -> เปิดประตูทางออกกลางจอ
+            this.exitPortal = new ExitPortal(this, GAME_WIDTH / 2, GAME_HEIGHT / 2);
+          });
+        }
+      }
+    }
+
+    // ขั้นที่ 3: ประตูทางออก — กด E เพื่อกลับฐาน (สรุปผล)
+    if (this.exitPortal) {
+      this.exitPortal.checkPlayerDistance(this.player.x, this.player.y);
+      if (justPressedE) {
+        const dist = Phaser.Math.Distance.Between(
+          this.exitPortal.sprite.x,
+          this.exitPortal.sprite.y,
+          this.player.x,
+          this.player.y
+        );
+        if (dist <= 55) {
+          this.exitPortal.enter(() => {
+            this.exitPortal = null;
             this.isVictory = true;
             this.player.setVelocity(0);
             this.player.setAlpha(1);
-            
-            this.time.delayedCall(600, () => {
-              showEndScreen(this, 'HUNT COMPLETE', '#ffd54a', 'กด R เพื่อล่าอีกครั้ง');
+            this.time.delayedCall(400, () => {
+              showHuntSummary(this, {
+                timeTakenMs: this.time.now - this.huntStartTime,
+                huntLoot: this.huntLoot,
+                bag: huntSession.getBag()
+              });
             });
           });
         }
@@ -318,26 +393,6 @@ export class GameScene extends Phaser.Scene {
     this.player.setAlpha(1);
     burst(this, this.player.x, this.player.y, 0xff3333, 16, 70, 7);
     showEndScreen(this, 'GAME OVER', '#ff4444', 'กด R เพื่อเล่นใหม่');
-  }
-
-  private awardLoot(source: 'combat' | 'victory') {
-    const result = this.equipment.upgradeRandomSlot();
-    if (!result) {
-      showDamage(this, this.player.x, this.player.y - 50, 'MAX GEAR', '#ffd54a');
-      return;
-    }
-
-    const label = source === 'victory' ? 'VICTORY LOOT' : 'UPGRADE!';
-    const slotLabel = result.slot.toUpperCase();
-    showDamage(
-      this,
-      this.player.x,
-      this.player.y - 60,
-      `${label} ${slotLabel} Lv.${result.newLevel}`,
-      '#ffd54a',
-      2500
-    );
-    burst(this, this.player.x, this.player.y, 0xffd54a, 12, 60, 5);
   }
 
   private onMonsterDeath() {
