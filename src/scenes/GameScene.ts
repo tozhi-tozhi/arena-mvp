@@ -1,3 +1,4 @@
+// src/scenes/GameScene.ts — ฉบับ Phaser 4 safe mode
 import Phaser from 'phaser';
 import {
   GAME_WIDTH,
@@ -10,7 +11,7 @@ import {
   AIM_ASSIST_RANGE,
   AIM_ASSIST_ANGLE
 } from '../config';
-import { showDamage, burst, spawnThrustDir, spawnAfterimage, makeVignette, ringEffect } from '../systems/effects';
+import { showDamage, burst, spawnThrustDir, makeVignette, ringEffect } from '../systems/effects';
 import { sfx } from '../systems/sfx';
 import { PlayerHUD } from '../ui/PlayerHUD';
 import { BossHUD } from '../ui/BossHUD';
@@ -25,6 +26,11 @@ import { DroppedItem } from '../entities/DroppedItem';
 import { ExitPortal } from '../entities/ExitPortal';
 import { rollLoot, type LootDef } from '../data/loot';
 import { huntSession } from '../systems/HuntSession';
+
+// ค่าปรับแต่งขนาด Clay — แก้ตรงนี้ที่เดียว
+const CLAY_SCALE = 0.8;
+// ความเร็วสลับเฟรมเดิน (ms) — ยิ่งเลขน้อยยิ่งสลับเร็ว
+const WALK_FRAME_MS = 150;
 
 export class GameScene extends Phaser.Scene {
   private player: any;
@@ -44,12 +50,13 @@ export class GameScene extends Phaser.Scene {
   private hitThisSwing: boolean = false;
   private isDashing: boolean = false;
 
-  // ---------- ทิศทาง / การแทง / hit-stop ----------
-  private facing = new Phaser.Math.Vector2(1, 0);   // ทิศที่ตัวละครหันอยู่
-  private swingOrigin = new Phaser.Math.Vector2();  // จุดที่เริ่มแทงครั้งล่าสุด
-  private swingDir = new Phaser.Math.Vector2(1, 0); // ทิศที่แทงครั้งล่าสุด
+  private facing = new Phaser.Math.Vector2(1, 0);
+  private swingOrigin = new Phaser.Math.Vector2();
+  private swingDir = new Phaser.Math.Vector2(1, 0);
   private swingRange: number = 0;
   private lastDashAt: number = -9999;
+  
+  // ⬅️ แก้บั๊กค้าง: ใช้ flag แทน physics.world.pause()
   private hitStopUntil: number = 0;
 
   private playerHP: number = 5;
@@ -60,37 +67,54 @@ export class GameScene extends Phaser.Scene {
   private isVictory: boolean = false;
   private hud!: PlayerHUD;
   private playerShadow: any;
+  private useClay: boolean = false;
+
+  // ⬅️ สำหรับสลับเฟรมเดินแบบ manual
+  private walkFrameTimer: number = 0;
+  private walkFrameIndex: number = 0; // 0 = walk1, 1 = walk2
+  private currentTexture: string = 'hero';
 
   private monster!: Monster;
   private bossHud!: BossHUD;
   private bossCollider: any;
 
-  // ---------- ระบบเก็บของ (กระเป๋า) ----------
   private lootBox: LootBox | null = null;
   private droppedItem: DroppedItem | null = null;
   private exitPortal: ExitPortal | null = null;
-  private huntLoot: LootDef[] = [];   // ของที่เก็บได้ในรอบนี้
-  private huntStartTime: number = 0;  // เวลาเริ่มล่า
+  private huntLoot: LootDef[] = [];
+  private huntStartTime: number = 0;
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
   preload() {
+    // โหลดรูป Clay 4 ไฟล์แยก (ถ้าไฟล์ไม่มี จะ fallback ไปใช้ hero.png อัตโนมัติ)
+    this.load.image('hero_clay_idle', 'assets/hero_clay_idle.png');
+    this.load.image('hero_clay_walk1', 'assets/hero_clay_walk1.png');
+    this.load.image('hero_clay_walk2', 'assets/hero_clay_walk2.png');
+    this.load.image('hero_clay_attack', 'assets/hero_clay_attack.png');
+    
     this.load.image('floor', 'assets/floor.png');
     this.load.image('wall', 'assets/wall.png');
     this.load.image('hero', 'assets/hero.png');
     this.load.image('slime', 'assets/slime.png');
-    // Asset กล่องไอเทม + ไอเทม (ถ้าไฟล์หาย เกมไม่พัง — จะใช้สี่เหลี่ยมแทน)
     this.load.image('loot_box_closed', 'assets/loot_box_closed.png');
     this.load.image('loot_box_open', 'assets/loot_box_open.png');
     this.load.image('green_potion', 'assets/green_potion.png');
   }
 
   create() {
-    // รีเซ็ตสถานะทุกครั้งที่เริ่มใหม่
+    // เช็คว่ามีรูป Clay ครบ 4 ไฟล์ไหม
+    this.useClay = 
+      this.textures.exists('hero_clay_idle') &&
+      this.textures.exists('hero_clay_walk1') &&
+      this.textures.exists('hero_clay_walk2') &&
+      this.textures.exists('hero_clay_attack');
+
+    // รีเซ็ตสถานะ
     this.playerHP = this.maxPlayerHP;
-    this.equipment = playerEquipment; // ตัวเดียวกับที่อัปเกรดไว้ที่ฐาน
+    this.equipment = playerEquipment;
     this.isAttacking = false;
     this.hitThisSwing = false;
     this.isDashing = false;
@@ -101,13 +125,14 @@ export class GameScene extends Phaser.Scene {
     this.facing.set(1, 0);
     this.lastDashAt = -9999;
     this.hitStopUntil = 0;
+    this.walkFrameTimer = 0;
+    this.walkFrameIndex = 0;
 
-    // รีเซ็ตระบบเก็บของ
     this.lootBox = null;
     this.droppedItem = null;
     this.exitPortal = null;
     this.huntLoot = [];
-    this.huntStartTime = this.time.now; // เริ่มนับเวลาการล่า
+    this.huntStartTime = this.time.now;
 
     const W = GAME_WIDTH;
     const H = GAME_HEIGHT;
@@ -119,17 +144,21 @@ export class GameScene extends Phaser.Scene {
     this.add.tileSprite(W - t, 0, t, H, 'wall').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.WALL);
 
     this.physics.world.setBounds(t, t, W - t * 2, H - t * 2);
-
     makeVignette(this);
 
     // สร้างผู้เล่น
-    this.player = this.physics.add.sprite(400, 300, 'hero') as any;
+    const startTexture = this.useClay ? 'hero_clay_idle' : 'hero';
+    this.player = this.physics.add.sprite(400, 300, startTexture) as any;
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(DEPTH.PLAYER);
-    this.player.setScale(SPRITE_SCALE);
+    this.player.setScale(this.useClay ? CLAY_SCALE : SPRITE_SCALE);
+    this.currentTexture = startTexture;
 
     // เงาใต้ผู้เล่น
-    this.playerShadow = this.add.ellipse(400, 314, 26, 10, 0x000000, 0.35).setDepth(DEPTH.PLAYER_SHADOW);
+    const shadowOffset = this.useClay ? this.player.displayHeight / 2 - 6 : 14;
+    this.playerShadow = this.add
+      .ellipse(400, 300 + shadowOffset, 26, 10, 0x000000, 0.35)
+      .setDepth(DEPTH.PLAYER_SHADOW);
 
     // Input
     const keyboard = this.input.keyboard as any;
@@ -151,21 +180,14 @@ export class GameScene extends Phaser.Scene {
       onDeath: () => this.onMonsterDeath()
     });
     this.bossHud = new BossHUD(this, def.name, def.hp);
-
-    // Collider (ตัวผู้เล่นชนตัวบอส) — การตีใช้การคำนวณเส้นหอกแทน ไม่ใช้ hitbox แล้ว
     this.bossCollider = this.physics.add.collider(this.player, this.monster.sprite);
 
-    // UI
     this.hud = new PlayerHUD(this, this.maxPlayerHP);
-
-    // แจ้งระดับอุปกรณ์ตอนเริ่มล่า — ให้เห็นทันทีว่าอัปเกรดมาจากฐาน
     this.showGearNotice();
 
-    // กล้อง
     this.cameras.main.setBounds(0, 0, W, H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
-    // Focus
     this.sys.game.canvas.addEventListener('click', () => {
       this.sys.game.canvas.focus();
     });
@@ -174,7 +196,6 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     if (!this.player) return;
 
-    // กด M สลับเปิด/ปิดเสียง
     if (Phaser.Input.Keyboard.JustDown(this.keyMute)) {
       const nowMuted = sfx.toggleMute();
       showDamage(this, this.player.x, this.player.y - 40, nowMuted ? 'ปิดเสียง' : 'เปิดเสียง', '#ffffff', 900);
@@ -193,28 +214,48 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // hit-stop: ช่วงภาพหยุดแวบหนึ่ง (เกมหยุดนิ่ง แต่เอฟเฟกต์ยังเล่นต่อ)
-    if (this.time.now < this.hitStopUntil) return;
-    if (this.physics.world.isPaused) this.physics.world.resume();
+    // ⬅️ hit-stop แบบ soft (ไม่ pause physics world — บอสยังเดินได้)
+    const isHitStopped = this.time.now < this.hitStopUntil;
 
     const speed = 160;
+    let vx = 0;
+    let vy = 0;
 
-    if (!this.isDashing && !this.isStunned) {
-      let vx = 0;
-      let vy = 0;
+    if (!isHitStopped && !this.isDashing && !this.isStunned) {
       if (this.keyA.isDown) vx -= 1;
       if (this.keyD.isDown) vx += 1;
       if (this.keyW.isDown) vy -= 1;
       if (this.keyS.isDown) vy += 1;
 
       if (vx !== 0 || vy !== 0) {
-        const len = Math.hypot(vx, vy); // ทำให้เดินทแยงไม่เร็วกว่าเดินตรง
+        const len = Math.hypot(vx, vy);
         vx /= len;
         vy /= len;
         this.facing.set(vx, vy);
         if (vx !== 0) this.player.setFlipX(vx < 0);
       }
       this.player.setVelocity(vx * speed, vy * speed);
+    } else if (isHitStopped) {
+      // ตอน hit-stop ให้หยุดแค่ player (velocity = 0) แต่ไม่ pause physics
+      this.player.setVelocity(0);
+    }
+
+    // ---------- สลับ texture ผู้เล่น (เดิน / ยืน / โจมตี) ----------
+    if (!this.isAttacking) {
+      if (vx !== 0 || vy !== 0 || this.isDashing) {
+        // เดิน: สลับ walk1 <-> walk2 ทุกๆ WALK_FRAME_MS
+        this.walkFrameTimer += delta;
+        if (this.walkFrameTimer >= WALK_FRAME_MS) {
+          this.walkFrameTimer = 0;
+          this.walkFrameIndex = 1 - this.walkFrameIndex;
+          const walkTex = this.walkFrameIndex === 0 ? 'hero_clay_walk1' : 'hero_clay_walk2';
+          this.setPlayerTexture(walkTex);
+        }
+      } else {
+        // ยืนนิ่ง
+        this.walkFrameTimer = 0;
+        this.setPlayerTexture('hero_clay_idle');
+      }
     }
 
     if (
@@ -231,17 +272,16 @@ export class GameScene extends Phaser.Scene {
       this.performAttack();
     }
 
+    // บอสอัปเดตเสมอ (แม้ตอน hit-stop ก็ยังเดินได้ เพราะเราไม่ pause physics)
     this.monster.update(delta);
 
-    // ตรวจว่าหอกแทงโดนบอสไหม (ตลอด 200ms ที่กำลังแทง)
     if (this.isAttacking && !this.hitThisSwing && this.monster.isAlive && this.swingHitsMonster()) {
       this.applyPlayerHit();
     }
 
-    // ---------- ระบบเก็บของ (3 ขั้นตอน: กล่อง -> ไอเทม -> ประตู) ----------
+    // ---------- ระบบเก็บของ ----------
     const justPressedE = Phaser.Input.Keyboard.JustDown(this.keyInteract);
 
-    // ขั้นที่ 1: กล่องไอเทม — กด E เพื่อเปิด แล้วคายไอเทม
     if (this.lootBox) {
       this.lootBox.checkPlayerDistance(this.player.x, this.player.y);
       if (justPressedE && !this.lootBox.isOpened) {
@@ -256,15 +296,14 @@ export class GameScene extends Phaser.Scene {
           this.lootBox.open(() => {
             const boxX = this.lootBox!.sprite.x;
             const boxY = this.lootBox!.sprite.y;
-            const rolledLoot = rollLoot(); // สุ่มของตามความหายาก
+            const rolledLoot = rollLoot();
             this.droppedItem = new DroppedItem(this, boxX, boxY, rolledLoot);
-            this.lootBox = null; // กล่องเปิดเสร็จแล้ว
+            this.lootBox = null;
           });
         }
       }
     }
 
-    // ขั้นที่ 2: ไอเทมบนพื้น — กด E เพื่อเก็บเข้ากระเป๋า
     if (this.droppedItem) {
       this.droppedItem.checkPlayerDistance(this.player.x, this.player.y);
       if (justPressedE && !this.droppedItem.isCollected) {
@@ -278,19 +317,17 @@ export class GameScene extends Phaser.Scene {
           const loot = this.droppedItem.loot;
           this.droppedItem.collect(() => {
             sfx.pickup();
-            huntSession.addItem(loot);        // เข้ากระเป๋า (จำข้ามรอบ)
+            huntSession.addItem(loot);
             saveGame();
-            this.huntLoot.push(loot);         // บันทึกของรอบนี้
+            this.huntLoot.push(loot);
             this.droppedItem = null;
             showDamage(this, this.player.x, this.player.y - 40, `+ ${loot.name}`, loot.color, 1500);
-            // เก็บครบแล้ว -> เปิดประตูทางออกกลางจอ
             this.exitPortal = new ExitPortal(this, GAME_WIDTH / 2, GAME_HEIGHT / 2);
           });
         }
       }
     }
 
-    // ขั้นที่ 3: ประตูทางออก — กด E เพื่อกลับฐาน (สรุปผล)
     if (this.exitPortal) {
       this.exitPortal.checkPlayerDistance(this.player.x, this.player.y);
       if (justPressedE) {
@@ -319,7 +356,20 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    this.playerShadow.setPosition(this.player.x, this.player.y + 14);
+    const shadowOffset = this.useClay ? this.player.displayHeight / 2 - 6 : 14;
+    this.playerShadow.setPosition(this.player.x, this.player.y + shadowOffset);
+  }
+
+  // ---------- ตัวช่วยสลับ texture (ไม่เรียกซ้ำถ้าเป็น texture เดิม) ----------
+  private setPlayerTexture(key: string) {
+    if (!this.useClay) return; // ใช้ hero.png ตัวเดิม ไม่สลับ
+    if (this.currentTexture === key) return; // อยู่ texture เดิมแล้ว ข้าม
+    if (!this.textures.exists(key)) return; // ไม่มีไฟล์นี้ (กัน crash)
+    
+    this.player.setTexture(key);
+    this.currentTexture = key;
+    // รักษาสเกลและ flip หลังสลับ texture
+    this.player.setScale(CLAY_SCALE);
   }
 
   private performDash() {
@@ -328,7 +378,6 @@ export class GameScene extends Phaser.Scene {
     sfx.dash();
 
     const dashSpeed = 400;
-    // dash ไปทางที่กำลังกดเดิน ถ้าไม่ได้กดอะไรให้ไปทางที่หันอยู่
     let dx = (this.keyD.isDown ? 1 : 0) - (this.keyA.isDown ? 1 : 0);
     let dy = (this.keyS.isDown ? 1 : 0) - (this.keyW.isDown ? 1 : 0);
     if (dx === 0 && dy === 0) {
@@ -342,7 +391,7 @@ export class GameScene extends Phaser.Scene {
     this.time.addEvent({
       delay: 30,
       repeat: 5,
-      callback: () => spawnAfterimage(this, this.player)
+      callback: () => this.spawnClayAfterimage()
     });
 
     this.time.delayedCall(200, () => {
@@ -354,7 +403,6 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ทิศที่จะแทง: ปกติคือทิศที่หันอยู่ แต่ถ้าบอสอยู่ในกรวยหน้าตัวจะล็อกเข้าหาบอส (aim assist)
   private getAttackDir(): Phaser.Math.Vector2 {
     const dir = this.facing.clone();
     if (!this.monster.isAlive) return dir;
@@ -379,26 +427,28 @@ export class GameScene extends Phaser.Scene {
     const weaponRange = this.equipment.getEffectValue('weapon');
     const dir = this.getAttackDir();
 
-    // จำจุดและทิศที่แทง ไว้ให้ swingHitsMonster() ใช้ตรวจ
     this.swingOrigin.set(this.player.x, this.player.y);
     this.swingDir.copy(dir);
     this.swingRange = weaponRange;
     if (Math.abs(dir.x) > 0.3) this.player.setFlipX(dir.x < 0);
 
-    // ส่งเลเวลอาวุธเข้าไปด้วย — หอกจะหนา/สีเปลี่ยนตามเลเวล
+    // ⬅️ เปลี่ยนเป็น texture โจมตี
+    this.setPlayerTexture('hero_clay_attack');
+
     const wLv = this.equipment.getLevel('weapon');
     spawnThrustDir(this, this.player.x, this.player.y, dir.x, dir.y, weaponRange, wLv);
     this.cameras.main.shake(100, 0.003);
 
     this.time.delayedCall(200, () => {
       this.isAttacking = false;
+      // กลับไปท่ายืนหลังโจมตีเสร็จ
+      this.setPlayerTexture('hero_clay_idle');
     });
   }
 
-  // เช็คว่าเส้นหอก (จากจุดแทง ยาวตามระยะอาวุธ) แตะตัวบอสไหม — ใช้ได้ทุกมุม
   private swingHitsMonster(): boolean {
     const m = this.monster.sprite;
-    const reach = m.displayWidth * 0.4 + 14; // รัศมีตัวบอส + ความหนาหอก (ปรับเลข 14 ให้ตีง่าย/ยากขึ้น)
+    const reach = m.displayWidth * 0.4 + 14;
     let t =
       (m.x - this.swingOrigin.x) * this.swingDir.x +
       (m.y - this.swingOrigin.y) * this.swingDir.y;
@@ -417,25 +467,22 @@ export class GameScene extends Phaser.Scene {
     const wLv = this.equipment.getLevel('weapon');
     const m = this.monster.sprite;
 
-    // Lv.2+: ประกายฟ้าเพิ่มเติม (อัปเกรดแล้วรู้สึกได้)
     if (wLv >= 2) {
       burst(this, m.x, m.y, 0x9de7ff, 8, 70, 5);
     }
-    // Lv.3: วงแหวนทอง + ประกายทอง = "อาจารย์หอก"
     if (wLv >= 3) {
       ringEffect(this, m.x, m.y, 60, 0xffd54a, 280);
       burst(this, m.x, m.y, 0xffd54a, 10, 90, 6);
     }
 
-    // สั่นแรงขึ้น + hit-stop นานขึ้นตามเลเวล
     this.cameras.main.shake(150, 0.01 + (wLv - 1) * 0.005);
     this.hitStop(55 + (wLv - 1) * 15);
   }
 
-  // หยุดเกมชั่วคราว (ms) — เอาค่าที่นานกว่าเสมอ
+  // ⬅️ hit-stop แบบ soft: ใช้แค่ flag ไม่ pause physics world
   private hitStop(ms: number) {
     this.hitStopUntil = Math.max(this.hitStopUntil, this.time.now + ms);
-    this.physics.world.pause();
+    // ไม่เรียก this.physics.world.pause() อีกต่อไป
   }
 
   private damagePlayer(player: any, amount: number, fromX: number, fromY: number) {
@@ -463,7 +510,6 @@ export class GameScene extends Phaser.Scene {
     showDamage(this, player.x, player.y, '-' + amount, '#ff5555');
     burst(this, player.x, player.y, 0xff3333, 8, 36, 5);
 
-    // Thorn Armor
     if (this.monster.isAlive) {
       const reflect = this.equipment.getEffectValue('armor');
       if (reflect > 0) {
@@ -493,7 +539,6 @@ export class GameScene extends Phaser.Scene {
 
   private gameOver() {
     this.isDead = true;
-    this.physics.pause();
     this.player.setTint(0x555555);
     this.player.setAlpha(1);
     burst(this, this.player.x, this.player.y, 0xff3333, 16, 70, 7);
@@ -507,7 +552,6 @@ export class GameScene extends Phaser.Scene {
     this.hitStop(180);
     this.cameras.main.shake(300, 0.02);
 
-    // Hunter Helmet
     const heal = this.equipment.getEffectValue('helmet');
     if (heal > 0 && this.playerHP < this.maxPlayerHP) {
       const before = this.playerHP;
@@ -519,13 +563,27 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Item Drop
     this.lootBox = new LootBox(this, this.monster.sprite.x, this.monster.sprite.y);
-
     if (this.bossCollider) this.bossCollider.destroy();
   }
 
-  // แจ้งระดับอุปกรณ์ตอนเริ่มล่า แล้วจางหายไปใน 2.2 วินาที
+  private spawnClayAfterimage() {
+    // ใช้ texture เดียวกับที่กำลังแสดงอยู่
+    const tex = this.useClay ? this.currentTexture : 'hero';
+    const ghost = this.add.sprite(this.player.x, this.player.y, tex);
+    ghost.setScale(this.player.scaleX, this.player.scaleY);
+    ghost.setFlipX(this.player.flipX);
+    ghost.setTint(0x66ccff);
+    ghost.setAlpha(0.5);
+    ghost.setDepth(DEPTH.AFTERIMAGE);
+    this.tweens.add({
+      targets: ghost,
+      alpha: 0,
+      duration: 250,
+      onComplete: () => ghost.destroy()
+    });
+  }
+
   private showGearNotice() {
     const wLv = this.equipment.getLevel('weapon');
     const aLv = this.equipment.getLevel('armor');
@@ -547,7 +605,6 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setAlpha(0);
 
-    // เฟดเข้า → ค้าง → เฟดออก → ทำลาย
     this.tweens.add({ targets: notice, alpha: 1, duration: 250 });
     this.tweens.add({
       targets: notice,
