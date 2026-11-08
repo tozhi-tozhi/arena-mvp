@@ -1,14 +1,14 @@
-// เซฟ/โหลดความคืบหน้า (กระเป๋า + เลเวลอุปกรณ์) ลง localStorage
+// เซฟ/โหลดความคืบหน้า (กระเป๋า + ชุดที่เลือก) ลง localStorage
 import { huntSession } from './HuntSession';
-import { playerEquipment } from './EquipmentSystem';
+import { loadout } from './Loadout';
 
-const SAVE_KEY = 'arena_save_v1';
+const SAVE_KEY = 'arena_save_v2';
 
 export function saveGame() {
   try {
     const data = {
       bag: huntSession.exportBag(),
-      levels: playerEquipment.exportLevels()
+      loadout: loadout.export()
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   } catch (e) {}
@@ -20,13 +20,13 @@ export function loadGame() {
     if (!raw) return;
     const data = JSON.parse(raw);
     huntSession.importBag(data.bag || []);
-    playerEquipment.importLevels(data.levels || {});
+    loadout.import(data.loadout || {});
   } catch (e) {}
 }
 
 export function resetSave() {
   huntSession.clear();
-  playerEquipment.reset();
+  loadout.reset();
   try {
     localStorage.removeItem(SAVE_KEY);
   } catch (e) {}

@@ -28,3 +28,4 @@ const config = {
 };
 
 new Phaser.Game(config);
+document.addEventListener('contextmenu', (e) => e.preventDefault());
