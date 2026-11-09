@@ -18,6 +18,7 @@ import { PlayerShot } from '../entities/PlayerShot';
 import { MONSTERS, pickRandomMonsterId } from '../data/monsters';
 import { CHARACTERS, AKKHANI, LUMA, type CharacterDef } from '../data/characters';
 import { loadout } from '../systems/Loadout';
+import { Perks } from '../systems/Perks';
 import { saveGame } from '../systems/SaveGame';
 import { LootBox } from '../entities/LootBox';
 import { showHuntSummary } from '../ui/HuntSummaryScreen';
@@ -106,6 +107,8 @@ export class GameScene extends Phaser.Scene {
   private shieldRing: any;
   private skillText: any;
   private passiveText: any;
+  private charmText: any;
+  private perks!: Perks;
 
   private walkFrameTimer: number = 0;
   private walkFrameIndex: number = 0;
@@ -273,6 +276,22 @@ export class GameScene extends Phaser.Scene {
     };
     this.skillText = this.add.text(44, 42, '', textStyle).setDepth(DEPTH.HUD).setScrollFactor(0);
     this.passiveText = this.add.text(44, 62, '', textStyle).setDepth(DEPTH.HUD).setScrollFactor(0);
+        this.charmText = this.add.text(44, 82, '', textStyle).setDepth(DEPTH.HUD).setScrollFactor(0);
+
+    this.perks = new Perks({
+      scene: this,
+      getPlayer: () => this.player,
+      getBoss: () => {
+        if (!this.monster || !this.monster.isAlive) return null;
+        const m = this.monster.sprite;
+        return { x: m.x, y: m.y, r: this.bossRadius() };
+      },
+      getHP: () => this.playerHP,
+      getMaxHP: () => this.maxPlayerHP,
+      heal: (n) => this.healPlayer(n),
+      damageBoss: (damage, actionId) => this.hitBoss(damage, actionId),
+      spawnAfterimage: (color) => this.spawnAfterimage(color)
+    });
 
     this.showControlsNotice();
 
@@ -311,7 +330,7 @@ export class GameScene extends Phaser.Scene {
     const isHitStopped = now < this.hitStopUntil;
 
     // ---------- เดิน ----------
-    const speed = this.character.speed * (this.isCharging ? 0.5 : 1);
+    const speed = this.character.speed * (this.isCharging ? 0.5 : 1) * this.perks.speedMultiplier(now);
     const canMove =
       !isHitStopped && !this.isDashing && !this.isLunging && !this.isStunned && !this.isActionLocked;
     let vx = 0;
@@ -409,6 +428,7 @@ export class GameScene extends Phaser.Scene {
 
     // ---------- บอส + การตรวจโดน ----------
     this.monster.update(delta);
+    this.perks.update(now, delta);
     this.updateSweep(now);
     this.updateThrust(now);
 
@@ -601,6 +621,8 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.passiveText.setText(`นับโจมตี ${this.hitCounter}/${LUMA.passive.hitsNeeded}`).setColor('#ffc8f5');
     }
+    const ch = this.perks.charmHud();
+     this.charmText.setText(ch ? ch.text : '').setColor(ch ? ch.color : '#bbbbbb');
   }
 
   // =====================================================
@@ -651,15 +673,16 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ทุกการสร้างดาเมจให้บอสผ่านที่นี่ที่เดียว
+   // ทุกการสร้างดาเมจให้บอสผ่านที่นี่ที่เดียว (actionId -1 = ดาเมจจากสัตว์เลี้ยง)
   private hitBoss(damage: number, actionId: number) {
     if (!this.monster.isAlive) return;
+    damage = this.perks.onPlayerHit(damage, actionId);
     sfx.hit();
     this.monster.takeDamage(damage);
     this.bossHud.update(this.monster.hp);
     this.cameras.main.shake(120, 0.006 + damage * 0.002);
     this.hitStop(40 + damage * 12);
-    this.countAttackHit(actionId);
+    if (actionId >= 0) this.countAttackHit(actionId);
   }
 
   private hitStop(ms: number) {
@@ -1018,6 +1041,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    this.perks.onPlayerHurt();
     this.interruptActions();
 
     this.playerHP = Math.max(0, this.playerHP - amount);
