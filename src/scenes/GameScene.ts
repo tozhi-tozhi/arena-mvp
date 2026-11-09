@@ -13,9 +13,7 @@ import { sfx } from '../systems/sfx';
 import { PlayerHUD } from '../ui/PlayerHUD';
 import { BossHUD } from '../ui/BossHUD';
 import { showEndScreen } from '../ui/GameOverScreen';
-import { Monster } from '../entities/Monster';
 import { PlayerShot } from '../entities/PlayerShot';
-import { MONSTERS, pickRandomMonsterId } from '../data/monsters';
 import { CHARACTERS, AKKHANI, LUMA, type CharacterDef } from '../data/characters';
 import { loadout } from '../systems/Loadout';
 import { Perks } from '../systems/Perks';
@@ -26,6 +24,9 @@ import { DroppedItem } from '../entities/DroppedItem';
 import { ExitPortal } from '../entities/ExitPortal';
 import { rollLoot, type LootDef } from '../data/loot';
 import { huntSession } from '../systems/HuntSession';
+import { createBoss, type Boss } from '../entities/createBoss';
+import { pickRandomBossId, BURN } from '../data/bosses';
+import { ensureBossTextures } from '../systems/bossTextures';
 
 const CLAY_SCALE = 0.8;
 const WALK_FRAME_MS = 150;
@@ -79,6 +80,7 @@ export class GameScene extends Phaser.Scene {
   private skillInvincible: boolean = false;
   private actionToken: number = 0; // เพิ่มค่าเมื่อท่าถูกขัดจังหวะ — callback เก่าจะไม่ทำงาน
   private actionSeq: number = 0;   // เลขประจำ "การโจมตี 1 ครั้ง" (ใช้นับพาสซีฟ)
+  private actionStartedAt: number = 0;
   private sweep: Sweep | null = null;
   private thrust: Thrust | null = null;
   private skillReadyAt: number = 0;
@@ -109,12 +111,21 @@ export class GameScene extends Phaser.Scene {
   private passiveText: any;
   private charmText: any;
   private perks!: Perks;
+    // ไฟไหม้ (จากภัสมะ)
+  private burnLevel: number = 0;
+  private burnExposure: number = 0;
+  private burnTick: number = 0;
+  private burnDecay: number = 0;
+  private burnLastInFire: number = 0;
+  private burnImmuneUntil: number = 0;
+  private burnFxAt: number = 0;
+  private burnText: any;
 
   private walkFrameTimer: number = 0;
   private walkFrameIndex: number = 0;
   private currentTexture: string = 'hero';
 
-  private monster!: Monster;
+  private monster!: Boss;
   private bossHud!: BossHUD;
   private bossCollider: any;
 
@@ -141,6 +152,9 @@ export class GameScene extends Phaser.Scene {
     this.load.image('loot_box_closed', 'assets/loot_box_closed.png');
     this.load.image('loot_box_open', 'assets/loot_box_open.png');
     this.load.image('green_potion', 'assets/green_potion.png');
+    this.load.image('boss_phasama', 'assets/boss_phasama.png');
+    this.load.image('boss_phasama_ball', 'assets/boss_phasama_ball.png');
+    this.load.image('boss_maya', 'assets/boss_maya.png');
   }
 
   create() {
@@ -254,14 +268,23 @@ export class GameScene extends Phaser.Scene {
     this.keyInteract = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.keyMute = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
 
-    // สร้างบอส (เฟส 1: ยังใช้บอสเดิมไปก่อน)
-    const def = MONSTERS[pickRandomMonsterId()];
-    this.monster = new Monster(this, def, 600, 300, {
+    // สร้างบอส
+    ensureBossTextures(this);
+    const bossId = loadout.bossChoice === 'random' ? pickRandomBossId() : loadout.bossChoice;
+    this.burnLevel = 0;
+    this.burnExposure = 0;
+    this.burnTick = 0;
+    this.burnDecay = 0;
+    this.burnLastInFire = 0;
+    this.burnImmuneUntil = 0;
+    this.burnFxAt = 0;
+    this.monster = createBoss(this, bossId, 600, 300, {
       getTargets: () => (this.isDead ? [] : [this.player]),
       onHitTarget: (target, damage, fromX, fromY) => this.damagePlayer(target, damage, fromX, fromY),
+      onBurn: (_target, delta) => this.applyBurn(delta),
       onDeath: () => this.onMonsterDeath()
     });
-    this.bossHud = new BossHUD(this, def.name, def.hp);
+    this.bossHud = new BossHUD(this, this.monster.def.name, this.monster.def.hp);
     this.bossCollider = this.physics.add.collider(this.player, this.monster.sprite);
 
     this.hud = new PlayerHUD(this, this.maxPlayerHP);
@@ -276,13 +299,14 @@ export class GameScene extends Phaser.Scene {
     };
     this.skillText = this.add.text(44, 42, '', textStyle).setDepth(DEPTH.HUD).setScrollFactor(0);
     this.passiveText = this.add.text(44, 62, '', textStyle).setDepth(DEPTH.HUD).setScrollFactor(0);
-        this.charmText = this.add.text(44, 82, '', textStyle).setDepth(DEPTH.HUD).setScrollFactor(0);
+    this.charmText = this.add.text(44, 82, '', textStyle).setDepth(DEPTH.HUD).setScrollFactor(0);
+    this.burnText = this.add.text(44, 102, '', textStyle).setDepth(DEPTH.HUD).setScrollFactor(0);
 
     this.perks = new Perks({
       scene: this,
       getPlayer: () => this.player,
       getBoss: () => {
-        if (!this.monster || !this.monster.isAlive) return null;
+        if (!this.monster || !this.monster.isAlive || !this.monster.isTargetable) return null;
         const m = this.monster.sprite;
         return { x: m.x, y: m.y, r: this.bossRadius() };
       },
@@ -429,6 +453,7 @@ export class GameScene extends Phaser.Scene {
     // ---------- บอส + การตรวจโดน ----------
     this.monster.update(delta);
     this.perks.update(now, delta);
+    this.updateBurn(delta, now);
     this.updateSweep(now);
     this.updateThrust(now);
 
@@ -588,6 +613,17 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // เริ่มท่าใหม่: ล้างสถานะค้างจากท่าก่อนหน้า (กัน callback เก่าถูกยกเลิกแล้วสถานะไม่ถูกปลด)
+  private beginAction(): number {
+    this.actionToken++;
+    this.actionStartedAt = this.time.now;
+    this.isAttacking = false;
+    this.isLunging = false;
+    this.isActionLocked = false;
+    this.sweep = null;
+    this.thrust = null;
+    return this.actionToken;
+  }
   // ขัดจังหวะทุกท่า (ตอนโดนตี)
   private interruptActions() {
     this.actionToken++;
@@ -623,6 +659,9 @@ export class GameScene extends Phaser.Scene {
     }
     const ch = this.perks.charmHud();
      this.charmText.setText(ch ? ch.text : '').setColor(ch ? ch.color : '#bbbbbb');
+      this.burnText
+      .setText(this.burnLevel > 0 ? `ไหม้ Lv ${this.burnLevel}/${BURN.maxLevel}` : '')
+      .setColor('#ff9a3a');
   }
 
   // =====================================================
@@ -673,9 +712,9 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-   // ทุกการสร้างดาเมจให้บอสผ่านที่นี่ที่เดียว (actionId -1 = ดาเมจจากสัตว์เลี้ยง)
+  // ทุกการสร้างดาเมจให้บอสผ่านที่นี่ที่เดียว (actionId -1 = ดาเมจจากสัตว์เลี้ยง)
   private hitBoss(damage: number, actionId: number) {
-    if (!this.monster.isAlive) return;
+    if (!this.monster.isAlive || !this.monster.isTargetable) return;
     damage = this.perks.onPlayerHit(damage, actionId);
     sfx.hit();
     this.monster.takeDamage(damage);
@@ -729,7 +768,7 @@ export class GameScene extends Phaser.Scene {
   // ---------- อัคนี: ตีเบา = ฟันกวาด ----------
   private akkhaniLight() {
     const A = AKKHANI.light;
-    const token = ++this.actionToken;
+    const token = this.beginAction();
     const now = this.time.now;
     const dir = this.getAttackDir(A.assistRange, A.assistAngle);
     if (Math.abs(dir.x) > 0.3) this.player.setFlipX(dir.x < 0);
@@ -768,7 +807,7 @@ export class GameScene extends Phaser.Scene {
   // ---------- อัคนี: ตีค้าง = ฟันกวาด แล้วพุ่งดาบ ----------
   private akkhaniCharged() {
     const C = AKKHANI.charged;
-    const token = ++this.actionToken;
+    const token = this.beginAction();
     const now = this.time.now;
     const dir = this.getAttackDir(C.assistRange, C.assistAngle);
     if (Math.abs(dir.x) > 0.3) this.player.setFlipX(dir.x < 0);
@@ -823,7 +862,7 @@ export class GameScene extends Phaser.Scene {
   // ---------- อัคนี: สกิล = อมตะ แล้วฟันกวาดใหญ่ ----------
   private akkhaniSkill() {
     const S = AKKHANI.skill;
-    const token = ++this.actionToken;
+    const token = this.beginAction();
     this.skillReadyAt = this.time.now + this.character.skillCooldownMs;
 
     this.isAttacking = true;
@@ -878,7 +917,7 @@ export class GameScene extends Phaser.Scene {
   // ---------- ลูมิ: ตีเบา = ยิงกระสุน ระเบิดปลายทาง ----------
   private lumaLight() {
     const L = LUMA.light;
-    const token = ++this.actionToken;
+    const token = this.beginAction();
     const dir = this.getAttackDir(L.assistRange, L.assistAngle);
     if (Math.abs(dir.x) > 0.3) this.player.setFlipX(dir.x < 0);
     this.facing.copy(dir);
@@ -899,7 +938,7 @@ export class GameScene extends Phaser.Scene {
   // ---------- ลูมิ: ตีชาร์จ = ยิงกระสุนพัด ----------
   private lumaCharged() {
     const C = LUMA.charged;
-    const token = ++this.actionToken;
+    const token = this.beginAction();
     const dir = this.getAttackDir(C.assistRange, C.assistAngle);
     if (Math.abs(dir.x) > 0.3) this.player.setFlipX(dir.x < 0);
     this.facing.copy(dir);
@@ -938,7 +977,7 @@ export class GameScene extends Phaser.Scene {
       dir.y,
       { speed: cfg.speed, range: cfg.range, radius: cfg.radius, color: cfg.color },
       () => {
-        if (!this.monster.isAlive) return null;
+        if (!this.monster.isAlive || !this.monster.isTargetable) return null;
         const m = this.monster.sprite;
         return { x: m.x, y: m.y, r: this.bossRadius() };
       },
@@ -978,7 +1017,7 @@ export class GameScene extends Phaser.Scene {
   // ---------- ลูมิ: สกิล = แดช (ไม่อมตะ) ----------
   private lumaDash() {
     const D = LUMA.dash;
-    const token = ++this.actionToken;
+    const token = this.beginAction();
     this.skillReadyAt = this.time.now + this.character.skillCooldownMs;
     this.isDashing = true;
     sfx.dash();
@@ -1092,6 +1131,94 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+    // =====================================================
+  // ไฟไหม้ (ภัสมะเรียกทุกเฟรมที่ผู้เล่นอยู่ในไฟ)
+  // =====================================================
+  private applyBurn(delta: number) {
+    if (this.isDead || this.isVictory || this.skillInvincible) return;
+    const now = this.time.now;
+    if (now < this.burnImmuneUntil) return;
+    this.burnLastInFire = now;
+
+    if (this.burnLevel === 0) {
+      // เริ่มติดไฟ — โล่กันได้ 1 ครั้ง
+      if (this.shield) {
+        this.shield = false;
+        this.burnImmuneUntil = now + BURN.shieldImmuneMs;
+        sfx.hit();
+        ringEffect(this, this.player.x, this.player.y, 44, 0x66e0ff, 300);
+        showDamage(this, this.player.x, this.player.y, 'BLOCK', '#66e0ff');
+        return;
+      }
+      this.burnLevel = 1;
+      this.burnExposure = 0;
+      this.burnTick = 0;
+      this.burnDecay = 0;
+      return;
+    }
+
+    this.burnExposure += delta;
+    if (this.burnExposure >= BURN.exposureMsPerLevel && this.burnLevel < BURN.maxLevel) {
+      this.burnLevel++;
+      this.burnExposure = 0;
+      ringEffect(this, this.player.x, this.player.y, 30, 0xff8a3a, 250);
+    }
+  }
+
+  private updateBurn(delta: number, now: number) {
+    if (this.burnLevel <= 0 || this.isDead || this.isVictory) return;
+
+    // ออกจากไฟนานพอ → ค่อยๆ ลดระดับ
+    if (now - this.burnLastInFire > BURN.graceMs) {
+      this.burnDecay += delta;
+      if (this.burnDecay >= BURN.decayMsPerLevel) {
+        this.burnDecay = 0;
+        this.burnLevel--;
+        this.burnTick = 0;
+      }
+    } else {
+      this.burnDecay = 0;
+    }
+    if (this.burnLevel <= 0) return;
+
+    // ติ๊กดาเมจ (ถี่ขึ้นตามระดับ)
+    this.burnTick += delta;
+    if (this.burnTick >= BURN.tickIntervals[this.burnLevel]) {
+      this.burnTick = 0;
+      this.burnDamage(BURN.tickDamage);
+    }
+
+    if (now - this.burnFxAt > 250) {
+      this.burnFxAt = now;
+      burst(this, this.player.x, this.player.y - 6, 0xff8a3a, 2, 18, 3);
+    }
+  }
+
+  // ดาเมจจากไฟ: ไม่ขัดจังหวะท่า ไม่สะบัด ไม่ติดช่วงอมตะ (ไม่สนช่วง i-frame หลังโดนตี)
+  private burnDamage(n: number) {
+    if (this.isDead || this.isVictory || this.skillInvincible) return;
+    this.perks.onPlayerHurt();
+    this.playerHP = Math.max(0, this.playerHP - n);
+    this.hud.update(this.playerHP);
+    sfx.hurt();
+    showDamage(this, this.player.x, this.player.y, '-' + n, '#ff9a3a');
+    burst(this, this.player.x, this.player.y, 0xff8a3a, 6, 30, 4);
+    this.player.setTintFill(0xff8a3a);
+    this.time.delayedCall(80, () => this.applyBaseTint());
+    this.cameras.main.shake(80, 0.004);
+
+    if (this.playerHP <= 0) {
+      this.gameOver();
+      return;
+    }
+
+    // พาสซีฟอัคนี: เลือดลดแล้วได้โล่
+    if (this.character.id === 'akkhani' && !this.shield && this.time.now >= this.passiveReadyAt) {
+      this.shield = true;
+      this.passiveReadyAt = this.time.now + AKKHANI.passive.shieldCooldownMs;
+      ringEffect(this, this.player.x, this.player.y, 40, 0x66e0ff, 400);
+    }
+  }
   private gameOver() {
     this.isDead = true;
     this.player.setTint(0x555555);
@@ -1103,6 +1230,7 @@ export class GameScene extends Phaser.Scene {
 
   private onMonsterDeath() {
     this.player.setAlpha(1);
+    this.burnLevel = 0;
     this.bossHud.update(0);
     sfx.bossDie();
     this.hitStop(180);

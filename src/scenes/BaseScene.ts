@@ -8,6 +8,7 @@ import { LOOT_TABLE } from '../data/loot';
 import { huntSession } from '../systems/HuntSession';
 import { loadout } from '../systems/Loadout';
 import { loadGame, saveGame, resetSave } from '../systems/SaveGame';
+import { BOSSES, BOSS_IDS, type BossId, type BossChoice } from '../data/bosses';
 
 let saveLoaded = false; // โหลดเซฟแค่ครั้งแรกที่เปิดเกม
 
@@ -37,6 +38,7 @@ export class BaseScene extends Phaser.Scene {
     kb.on('keydown-TWO', () => this.chooseCharacter(CHARACTER_IDS[1]));
     kb.on('keydown-C', () => this.cycleCharm());
     kb.on('keydown-P', () => this.cyclePet());
+    kb.on('keydown-B', () => this.cycleBoss());
     kb.on('keydown-ENTER', () => this.startHunt());
 
     if (DEV_TOOLS) {
@@ -115,6 +117,19 @@ export class BaseScene extends Phaser.Scene {
     this.setPet(list[next]);
   }
 
+    private setBoss(id: BossId | null) {
+    loadout.bossChoice = id ?? 'random';
+    saveGame();
+    this.render();
+  }
+
+  private cycleBoss() {
+    const list: BossChoice[] = ['random', ...BOSS_IDS];
+    const next = (list.indexOf(loadout.bossChoice) + 1) % list.length;
+    loadout.bossChoice = list[next];
+    saveGame();
+    this.render();
+  }
   private startHunt() {
     if (this.starting) return;
     this.starting = true;
@@ -155,7 +170,7 @@ export class BaseScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
 
     this.text(cx, 36, 'ฐานนักล่า', 30, '#ffd54a', 0.5, true);
-    this.text(cx, 64, 'เลือกชุด แล้วกด ENTER  ·  1/2 = ตัวละคร  ·  C = เครื่องราง  ·  P = สัตว์เลี้ยง', 12, '#c9c9c9');
+    this.text(cx, 64, 'ENTER = ออกล่า  ·  1/2 ตัวละคร  ·  C เครื่องราง  ·  P สัตว์เลี้ยง  ·  B บอส', 12, '#c9c9c9');
 
     // การ์ดตัวละคร
     CHARACTER_IDS.forEach((id, i) => {
@@ -187,7 +202,7 @@ export class BaseScene extends Phaser.Scene {
 
     // แถวเครื่องราง
     this.optionRow<CharmId>(
-      372,
+      352,
       'เครื่องราง',
       [null, ...CHARM_IDS],
       loadout.charmId,
@@ -198,7 +213,7 @@ export class BaseScene extends Phaser.Scene {
 
     // แถวสัตว์เลี้ยง
     this.optionRow<PetId>(
-      432,
+      410,
       'สัตว์เลี้ยง',
       [null, ...PET_IDS],
       loadout.petId,
@@ -207,13 +222,24 @@ export class BaseScene extends Phaser.Scene {
       (id) => this.setPet(id)
     );
 
+    // แถวบอส (null = สุ่ม)
+    this.optionRow<BossId>(
+      468,
+      'บอส',
+      [null, ...BOSS_IDS],
+      loadout.bossChoice === 'random' ? null : loadout.bossChoice,
+      (id) => (id ? BOSSES[id].name : 'สุ่ม'),
+      (id) => (id ? BOSSES[id].desc : 'สุ่มบอสหนึ่งในสองตัว'),
+      (id) => this.setBoss(id)
+    );
+
     const bag = huntSession.getBag();
     const bagText = bag.length > 0 ? bag.map((it) => `${it.name} x${it.count}`).join('  ·  ') : 'ว่างเปล่า';
-    this.text(cx, 488, `กระเป๋า: ${bagText}`, 12, '#a8e6a3');
+    this.text(cx, 520, `กระเป๋า: ${bagText}`, 12, '#a8e6a3');
 
-    const btn = this.rect(cx, 538, 280, 40, 0x3a2a08, 1, 0xffd54a);
+    const btn = this.rect(cx, 560, 280, 40, 0x3a2a08, 1, 0xffd54a);
     btn.setInteractive({ useHandCursor: true });
     btn.on('pointerdown', () => this.startHunt());
-    this.text(cx, 538, 'กด ENTER เพื่อออกล่า', 18, '#ffd54a', 0.5, true);
+    this.text(cx, 560, 'กด ENTER เพื่อออกล่า', 18, '#ffd54a', 0.5, true);
   }
 }
