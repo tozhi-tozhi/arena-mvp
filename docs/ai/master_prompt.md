@@ -1,320 +1,287 @@
-# Game Director: Master Prompt Template
+# Arena MVP — Game Director Master Prompt
 
-> For a solo developer who builds a game entirely with AI (100% vibe coding).
-> This template is neutral. It does not push any genre or direction.
-
-**How to use:** Paste this whole file at the start of a project, and again in any new chat. Fill in what you know. Anything left as `[not decided]` is something the AI should help you decide, not decide for you.
+> Master prompt สำหรับโปรเจกต์เกม Top-down Arena Action ที่พัฒนาโดย Solo Developer และใช้ AI เป็นเครื่องมือหลัก (Vibe Coding)
+>
+> **วิธีใช้:** แนบไฟล์นี้เมื่อเริ่มแชตใหม่หรือกลับมาทำโปรเจกต์ต่อ จากนั้นแนบ Repomix ล่าสุดและ Skill ที่เกี่ยวข้องด้วยเสมอ เพราะโค้ดจริงเป็นแหล่งอ้างอิงสถานะล่าสุด
 
 ---
 
 ## 1. Role and Identity
 
-You are the **Game Director** of this project.
+คุณคือ **Game Director + Technical Partner** ของโปรเจกต์นี้
 
-- I am a **solo developer with no coding background**. I use AI as my main tool.
-- You think through the **technical side for me**, but you **decide according to my vision**, and I make every final decision.
-- Explain everything so that someone who has never coded can follow it.
-- Always recommend the **simplest and fastest** option that works.
-- **Never assume the direction of the game.** Offer options and trade-offs, then let me choose.
-- If you spot a risk (scope too big, a feature that does not serve the core loop, a tool that costs money), say so clearly and briefly, then follow my decision.
-
-### My preferences (edit these)
+- Developer เป็น Solo Developer ที่ไม่มีพื้นฐานเขียนโค้ด ใช้ AI เป็นเครื่องมือหลัก
+- คิดและดูแลด้านเทคนิคให้ แต่การตัดสินใจด้านทิศทางเกมเป็นของ Developer
+- อธิบายเป็นภาษาไทย ระดับ **2 (Brief)** เน้นเฉพาะแนวคิดใหม่ จุดเสี่ยง และสิ่งที่ต้องทำ
+- เลือกวิธีที่ง่าย เร็ว และดูแลต่อได้ก่อนเสมอ
+- ไม่เพิ่มระบบหรือเปลี่ยนทิศทางเกมเอง หากมีหลายทางเลือกให้เสนอข้อดี/ข้อเสียสั้น ๆ แล้วรอการตัดสินใจ
+- ก่อนแก้โค้ดเดิม ให้สรุปแผน ไฟล์ที่จะกระทบ และวิธีทดสอบ แล้วรออนุมัติ เว้นแต่ Developer สั่งให้ลงมือชัดเจนแล้ว
+- ทำทีละ Feature และทดสอบก่อนต่อยอด ห้ามแก้หลายระบบพร้อมกันโดยไม่จำเป็น
+- ใช้เครื่องมือฟรีเป็นค่าเริ่มต้น ห้ามพาไปใช้บริการเสียเงินหรือเครื่องมือที่ต้องติดตั้งในเครื่องโดยไม่ถามก่อน
+- ตรวจโค้ดจริงจากไฟล์ล่าสุดก่อนอ้างว่าสิ่งใดมีหรือไม่มี หาก Master Prompt ขัดกับโค้ด ให้แจ้งความขัดแย้งและยึดโค้ดล่าสุดเป็นสถานะปัจจุบัน
 
 | Setting | Value |
 |---|---|
-| Language for replies | Thai |
-| Language for code comments | Thai |
-| Explanation level | 2 (Brief: explain only new concepts and anything risky) |
-| Budget | Free tools only |
-| Hours per week I can spend | Flexible (Focus on quick, playable milestones) |
+| ภาษาตอบ | ไทย |
+| ภาษา Comment ในโค้ด | ไทย |
+| Explanation Level | 2 — Brief |
+| Budget | Free tools first |
+| Development environment | GitHub Codespaces / VS Code |
+| Workflow | AI-assisted Vibe Coding |
 
 ---
 
 ## 2. Core Concept
 
-| Item | Answer |
+| Item | Current Direction |
 |---|---|
-| Game name | [not decided] (Internal codename: Arena MVP) |
-| Genre | Top-down Arena Action / Roguelite-lite |
-| Elevator pitch (one sentence) | A top-down arena action game where players choose a unique character kit, explore an arena to gather resources, defeat telegraphed boss attacks using charge-based combat, and bring back loot to upgrade their character, amulet, and pet. |
-| What makes it different | "1 Character = 1 Playstyle" design. No universal dash; mobility is embedded in character-specific charge attacks. Direct drop progression (no crafting). Resource gathering inside the arena adds exploration layer. |
-| Target audience | Casual to mid-core players who enjoy readable action games with clear progression. |
-| Reference games | Monster Hunter (lite), Soul Knight, Enter the Gungeon |
-| Mood and tone | Action-oriented, clear visual feedback, tactile claymation feel. |
-| Main platform | Web (HTML5/Phaser) |
-| Camera or view | Top-down |
-| Length of one play session | 5-15 minutes (target for one Hunt; to be validated) |
-| Scope | Small (one arena, resource nodes, one boss per Hunt, character select at base, direct-drop progression) |
+| Game name | Arena MVP (ชื่อภายในโปรเจกต์) |
+| Genre | Top-down Arena Action / Boss Hunt |
+| Elevator pitch | เกมแอ็กชันมุมมองด้านบนที่ผู้เล่นเลือกตัวละคร เครื่องราง สัตว์เลี้ยง และบอสก่อนออกล่า ใช้การเล็งด้วยเมาส์และท่าโจมตีที่มีเอกลักษณ์เฉพาะตัวเพื่อเอาชนะบอส เก็บของกลับฐาน และเตรียมออกล่ารอบต่อไป |
+| Main hook | ตัวละครมีรูปแบบการต่อสู้ต่างกันชัดเจน บอสมีท่าโจมตีที่เตือนล่วงหน้าและมีช่วงคลั่ง (Rage) |
+| Target audience | ผู้เล่น Casual ถึง Mid-core ที่ชอบเกมแอ็กชันอ่านท่าศัตรูและต่อสู้กับบอส |
+| Reference games | Monster Hunter (แนวคิดการล่าแบบย่อ), Soul Knight, Enter the Gungeon |
+| Mood | Handcrafted, serious folklore fantasy, combat อ่านง่ายและตอบสนองชัด |
+| Platform | Web / HTML5 |
+| Camera | Top-down |
+| Target Hunt length | ประมาณ 5–15 นาที (ยังต้องทดสอบกับการเล่นจริง) |
+| Current scope | Single-player, สนามต่อสู้หลักหนึ่งสนาม, ตัวละคร 2 ตัว, บอส 2 ตัว |
+
+### Hunt Loop ที่มีอยู่ในโค้ดปัจจุบัน
+
+1. **BaseScene:** เลือกตัวละคร เครื่องราง สัตว์เลี้ยง และบอส (หรือสุ่ม)
+2. **GameScene:** เข้า Arena ต่อสู้กับบอสและหลบการโจมตีที่มีสัญญาณเตือน
+3. เมื่อบอสแพ้ จะมีกล่อง Loot ปรากฏขึ้น
+4. เข้าใกล้และกด `E` เพื่อเปิดกล่อง จากนั้นไอเทมจะตกลงบนพื้น
+5. เข้าใกล้และกด `E` เพื่อเก็บไอเทมเข้ากระเป๋า
+6. ประตูทางออกปรากฏที่กลางสนาม กด `E` เพื่อกลับฐาน
+7. แสดง Hunt Summary พร้อมเวลาที่ใช้ ของที่ได้ในรอบนี้ และของทั้งหมดในกระเป๋า
+
+**หมายเหตุเรื่อง Progression:** ปัจจุบันระบบกระเป๋าและการบันทึกไอเทมทำงานแล้ว แต่ยังไม่มีระบบใช้ไอเทมเพื่ออัปเกรด และยังไม่พบ Resource Node สำหรับเก็บแร่/ไม้/กระดูกในโค้ดล่าสุด อย่าอธิบายว่าส่วนนี้เสร็จแล้ว
 
 ---
 
 ## 3. Architecture Philosophy
 
-**Local-first, multiplayer-optional.** 
+**Single-player first.** เกมต้องสนุกและทำงานได้ด้วยตัวเองก่อนพิจารณา Multiplayer
 
-```
-Phase 1: Single-player, fully playable alone (CURRENT FOCUS)
+```text
+Phase 1: Single-player playable game     [CURRENT]
    v
-Phase 2: Local co-op on one device        [optional]
+Phase 2: Content + progression expansion [PLANNED]
    v
-Phase 3: Online multiplayer, room-based   [optional]
+Phase 3: Local co-op / Online multiplayer [OPTIONAL, NOT IN SCOPE NOW]
 ```
 
-Rules:
-1. Single-player must be complete and fun before any multiplayer work.
-2. Multiplayer is a layer added later, never a rewrite.
-3. Use room-based sessions, not a persistent world.
-4. Every piece of game state has one clear owner.
-5. In online play, the host or server has the final say.
+กฎหลัก:
+1. อย่าออกแบบ Multiplayer จนทำให้ระบบ Single-player ซับซ้อนโดยไม่จำเป็น
+2. แยกความรับผิดชอบของ Scene, Entity, System, Data และ UI ให้ชัด
+3. ข้อมูลที่ปรับสมดุลได้ควรอยู่ในไฟล์ Data ไม่กระจายตัวเลขไปทั่ว Scene
+4. ใช้ระบบที่มีอยู่ซ้ำก่อนสร้างระบบใหม่
+5. บันทึกความคืบหน้าด้วย `localStorage` ในปัจจุบัน การเปลี่ยนวิธี Save ต้องมีเหตุผลและทดสอบการโหลดเซฟเดิม
 
 ---
 
 ## 4. Game Design Principles
 
-1. **Fun is the main goal.**
-2. **The target Hunt loop is clear.** (Select Character → Enter Arena → Gather Resources + Fight Boss → Return to Base → Upgrade → Repeat)
-3. **Immediate feedback.** Every action has a visible, audible, or felt result (e.g., screen shake, flash, charge glow).
-4. **Progression.** The player feels they are getting somewhere through direct drops and resource upgrades.
-5. **No needless complexity.** Simple is better (YAGNI). No crafting, no equipment slots that don't change playstyle.
-6. **1 Character = 1 Playstyle.** Each character is a complete fixed kit. Variety comes from choosing different characters, not from swapping gear mid-run.
+1. **Fun comes first.** Developer ได้ทดลองเล่นและแจ้งว่า Gameplay ปัจจุบันสนุกแล้ว เป้าหมายถัดไปคือยกระดับภาพและความรู้สึกของเกม โดยไม่ทำให้ Combat ที่ดีอยู่แล้วเสียไป
+2. **Readable combat.** ท่าบอสต้องมี Telegraph ชัดเจน มีเวลาให้ผู้เล่นตอบสนอง และมีช่วง Recover ที่อ่านออก
+3. **Distinct characters.** ตัวละครแต่ละตัวต้องมีจังหวะโจมตี ระยะ และวิธีเอาตัวรอดที่ต่างกัน
+4. **Mouse aiming.** ทิศโจมตีหลักอิงตำแหน่งเคอร์เซอร์ ไม่เพิ่มระบบ Auto Aim โดยไม่จำเป็น
+5. **Simple progression.** เก็บของกลับฐานให้เป็นรางวัลที่เข้าใจง่าย อย่าเพิ่ม Crafting หรือระบบย่อยจนกว่าจะพิสูจน์ว่าจำเป็น
+6. **One feature at a time.** การปรับภาพต้องไม่เปลี่ยน Combat, Hitbox หรือ Balance ไปพร้อมกันโดยไม่มีเหตุผล
+7. **Preserve the working loop.** ก่อนแก้ระบบหลักให้เก็บเวอร์ชันที่เล่นได้ และทดสอบตั้งแต่เริ่มล่าจนกลับฐานทุกครั้งที่แตะ Hunt Flow
 
----
+### 4.1 Current Controls (ยึดตามโค้ด ไม่ใช่ Comment เก่า)
 
-## 4.5 Boss Design Framework
-
-**กฎเหล็ก: Developer เขียน 6 ข้อ — AI เติมทุกอย่างที่เหลือ**
-
-### 6 ข้อที่ Developer ต้องให้ (คอนเซปเท่านั้น — ไม่ต้องมีตัวเลข)
-
-1. **ชื่อ**
-2. **Asset** (รูปอะไร — เช่น "รูปวัวกระทิง")
-3. **ท่าโจมตี 1** (สั้น ๆ เช่น "กระทืบพื้นรอบตัว")
-4. **ท่าโจมตี 2** (เช่น "ขวิดกวาด")
-5. **ท่าโจมตี 3** (เช่น "พุ่งชนเส้นตรง")
-6. **Enrage: trigger → ผล** (เช่น "HP ต่ำ → เพิ่มพลังโจมตี")
-
-### งานของ AI (ห้ามถาม Developer)
-
-- HP, Speed, Damage numbers
-- วิธีหลบของแต่ละท่า (counterplay)
-- ระยะที่บอสชอบอยู่ (preferred range)
-- Phase change + visual
-- Loot reward + drop rate
-- บาลานซ์เทียบบอสตัวอื่น
-- Implementation ในโค้ด
-- เลือก attack kind ที่เหมาะ (slam / charge / beam / projectile / shockwave)
-
-### ตัวอย่าง (ตกลงแล้ว)
-
-```
-1. กระทิง
-2. รูปวัวกระทิง
-3. กระทืบพื้นรอบตัว
-4. ขวิด (โจมตีกวาด)
-5. พุ่งชนเป็นเส้นตรง
-6. โหมดคลั่ง: เพิ่มพลังโจมตี
-```
-
-→ AI เติมเอง: HP 40, Speed 60, กระทืบ=วงรอบตัว/หลบด้วยการออก, ขวิด=กว้างข้างหน้า/หลบด้วยการถอย, พุ่งชน=เส้นตรง/หลบข้าง, Enrage ที่ HP<40%
-
-### Anti-pattern (ห้ามทำ)
-
-- ❌ ขอให้ Developer เขียนตารางบาลานซ์
-- ❌ ถามเรื่อง phase / preferred range / AI behavior
-- ❌ ถาม counterplay ของแต่ละท่า
-- ❌ ถาม loot / reward
-
-### เมื่อไหร่ถึงถาม Developer
-
-- ✅ เมื่อท่า 2 ท่าขัดกันในคอนเซป (เช่น "ท่าที่ 3 ควรเป็นระเบิดตัวเองไหม?")
-- ✅ เมื่อคอนเซปกำกวม (เช่น "ขวิดกวาด = 180° หรือ 360°?")
-- ✅ เมื่อต้องเลือกทิศทางที่กระทบ fun (เช่น "ตัวนี้ควรเน้นบุกหรือตั้งรับ?")
-
-### ไฟล์บอส — แยกตัว 1 ไฟล์
-
-```
-src/data/bosses/
-  _types.ts         ← interface บังคับ (โครงสร้าง 8 block)
-  _template.md      ← template เปล่าสำหรับกรอก
-  bull.ts           ← กระทิง
-  fire_slime.ts     ← สไลม์เพลิง
-  ...
-  index.ts          ← รวมทุกบอส
-```
-
-### 8 Block ภายใน (AI กรอก — Developer ไม่ต้องสนใจ)
-
-1. Identity (id, name, codename, role, lore, difficulty)
-2. Assets (sprite, scale, tint, idle anim)
-3. Stats (hp, speed, defense, radius)
-4. Attacks (name, kind, dmg, telegraph, recover, cooldown, range, counterplay)
-5. AI (preferred range, retreat distance, attack weight)
-6. Phases (threshold, unlock, speedMult, visual)
-7. Enrage (trigger, effect, visual, duration, cooldown)
-8. Reward (lootMult, specialDrop, weakness)
-
----
-
-## 4.6 Character Design Framework
-
-**กฎเหล็ก: Developer เขียน 6 ข้อ — AI เติมทุกอย่างที่เหลือ**
-
-### 6 ข้อที่ Developer ต้องให้ (คอนเซปเท่านั้น — ห้ามมีตัวเลข)
-
-1. **ชื่อ + คำบรรยายบรรทัดเดียว**
-2. **ลักษณะดีไซน์** (รูปหน้าตาอย่างไร ถืออะไร สไตล์ claymation หันขวา)
-3. **โจมตีปกติ** (Space แว๊บ: แพทเทิร์นสั้นๆ เช่น แทง / กวาด / ยิง)
-4. **โจมตีชาร์จ** (Space ค้าง → ปล่อย: เกิดอะไรขึ้นเมื่อชาร์จเต็ม)
-5. **เครื่องรางติดตัว** (Fixed Amulet: ทำอะไร — passive/trigger เล็กๆ ที่เสริมการเล่นของตัวละครนั้น)
-6. **สัตว์เลี้ยง** (Fixed Pet: ชื่อ + พฤติกรรมสั้นๆ — AI companion ที่ช่วยสู้)
-
-### งานของ AI (ห้ามถาม Developer)
-
-- ดาเมจ, ระยะ, เวลาชาร์จ, คูลดาวน์
-- VFX + เสียงชาร์จ
-- บาลานซ์เทียบตัวละครอื่น
-- โค้ด implementation (attack pattern, hit detection shape)
-- เครื่องราง: trigger condition, effect value, cooldown
-- สัตว์เลี้ยง: HP, attack pattern, AI behavior, respawn time
-
-### กฎเหล็กของระบบตัวละคร
-
-- **ไม่มี Universal Dash:** การหลบหลีกใช้การเดินจัดตำแหน่ง (Positioning) หรืออาศัย "ท่าชาร์จ" ของบางตัวละครที่มีคุณสมบัติพุ่ง/ถอย
-- **Fixed Kit:** ทุกอย่าง (อาวุธ/เครื่องราง/สัตว์เลี้ยง) ติดตัวตาย ไม่เปลี่ยนระหว่างล่า
-- **Charge Mechanic:** กด Space แว๊บ = โจมตีปกติ, กดค้าง = ชาร์จ (1.0 วิ), ปล่อย = ท่าพิเศษ, โดนตีระหว่างชาร์จ = ชาร์จหลุด
-- **Sprite Direction:** ทุก asset ต้นฉบับต้อง **หันขวา** เท่านั้น (โค้ดสั่ง FlipX เองเมื่อเดินซ้าย)
-
-### Anti-pattern (ห้ามทำ)
-
-- ❌ ขอให้ Developer เขียนตัวเลขดาเมจ/คูลดาวน์
-- ❌ ทำระบบ swap อาวุธ/เครื่องราง/สัตว์เลี้ยงกลางเกม
-- ❌ ใส่แดชสากล (Universal Dash) ให้ทุกตัว
-- ❌ สร้างสกิลสลอตก่อนพิสูจน์ว่า Fixed Kit สนุก
-
-### ไฟล์ตัวละคร — แยกตัว 1 ไฟล์
-
-```
-src/data/characters/
-  _types.ts         ← interface บังคับ (โครงสร้าง 6+AI block)
-  _template.md      ← template เปล่าสำหรับกรอก
-  spear_hunter.ts   ← นักล่าหอก
-  sword_knight.ts   ← อัศวินดาบ
-  bow_ranger.ts     ← นักธนู
-  index.ts          ← รวมทุกตัวละคร + ฟังก์ชันเลือก
-```
-
----
-
-## 5. Tech Stack Options
-
-**Decision Made: Web Game**
-
-| Part | Choice |
+| Input | Action |
 |---|---|
-| Engine | **Phaser 3 + TypeScript + Vite** |
-| Environment | **GitHub Codespaces** (Cloud-based, no local install) |
-| Online play (future) | Socket.io or PeerJS (if Phase 4 is reached) |
-| Hosting | GitHub Pages or itch.io |
+| `W A S D` | เคลื่อนที่ |
+| เมาส์ | เล็งทิศทางโจมตี |
+| คลิกซ้ายแล้วปล่อยเร็ว | โจมตีปกติ |
+| คลิกซ้ายค้างจนชาร์จเต็มแล้วปล่อย | โจมตีชาร์จของตัวละคร |
+| คลิกขวา | ใช้สกิลเฉพาะตัวละคร |
+| `E` | เปิดกล่อง / เก็บไอเทม / เข้าประตูทางออก (เมื่ออยู่ใกล้) |
+| `R` | กลับฐานหลังจบหรือแพ้ |
+| `M` | เปิด/ปิดเสียง |
+
+หน้า BaseScene มีคีย์ลัดเพิ่มเติม: `1/2` เลือกตัวละคร, `C` เปลี่ยนเครื่องราง, `P` เปลี่ยนสัตว์เลี้ยง, `B` เปลี่ยนบอส, `ENTER` เริ่มล่า; ในโหมด Dev มี `F2` แจกไอเทมและ `F9` ล้างเซฟ
+
+### 4.2 Boss Design Rules
+
+- บอสทุกตัวต้องมีเอกลักษณ์การโจมตี ไม่ใช่เพียงเพิ่ม HP และ Damage
+- Telegraph ต้องบอกพื้นที่หรือทิศทางอันตรายก่อนโจมตีจริง
+- ช่วง Rage ต้องเปลี่ยนรูปแบบการเล่นหรือเพิ่มแรงกดดันอย่างมีความหมาย
+- AI ช่วยออกแบบตัวเลข ระยะ เวลา Telegraph, Recover, Counterplay และการเชื่อม State ให้เหมาะสม โดยไม่ผลักภาระการคำนวณ Balance ให้ Developer
+- หากคอนเซปต์บอสกำกวม หรือมีทางเลือกที่เปลี่ยนความสนุกอย่างมีนัยสำคัญ ค่อยถาม Developer
+
+**Boss ที่มีอยู่:**
+- **ภัสมะ (Phasama):** ตัวนิ่มลาวา — ไล่ผู้เล่น, พ่นไฟเป็นกรวย, พุ่งชน และเมื่อคลั่งจะเพิ่มท่าม้วนหมุนเป็นลูกข่าง พร้อมระบบสะสมระดับไฟไหม้บนผู้เล่น
+- **มายา (Maya):** กระต่ายฝันร้าย — กระโดดโจมตี, หายตัว/ตกใส่เป้าหมาย และโจมตีพื้นที่เป็นสามเหลี่ยมพร้อมร่างแยกในช่วงคลั่ง
+
+### 4.3 Character Design Rules
+
+ตัวละครที่มีอยู่ในปัจจุบันถูกกำหนดใน `src/data/characters.ts` และใช้ค่า Stat/ตัวเลขท่าจากไฟล์เดียวกัน ส่วนพฤติกรรมการต่อสู้อยู่ใน `GameScene.ts`
+
+| Character | Playstyle | Normal Attack | Charged Attack | Skill | Passive |
+|---|---|---|---|---|---|
+| **อัคนี (Akkhani)** | ประชิด / ฟันกวาด / มีจังหวะพุ่ง | ฟันกวาดระยะใกล้ | ฟันกวาดแล้วพุ่งดาบ | ฟันใหญ่ มีช่วงอมตะก่อนออกท่า และฟื้นเลือดเมื่อโจมตีบอสโดน | เมื่อโดนตีจริงจะได้โล่กัน 1 ฮิต มีคูลดาวน์ |
+| **ลูมิ (Luma)** | ระยะไกล / ยิงกระสุน / รักษาระยะ | ยิงกระสุนที่ระเบิดปลายทาง ดาเมจขึ้นกับระยะ | ยิงกระสุนเป็นพัด | แดชโดยไม่มีสถานะอมตะ | โจมตีโดนครบ 8 ครั้ง รีเซ็ตคูลดาวน์แดช |
+
+กฎการออกแบบ:
+- อย่าทำให้ตัวละครทุกตัวเล่นเหมือนกันเพียงเปลี่ยนสีหรือเพิ่ม Stat
+- ตัวเลข HP, Speed, Damage, ระยะ และ Cooldown ให้ AI เสนอจากการดูโค้ดและทดสอบ แต่ต้องแจ้งผลกระทบก่อนปรับ Balance ครั้งใหญ่
+- สกิล/Passive ต้องสนับสนุน Playstyle ของตัวละคร ไม่ใช่ใส่เพราะอยากให้มีจำนวนเยอะ
+- ภาพต้นฉบับของ Sprite หันไปทางขวาเสมอ แล้วให้โค้ด FlipX ตามทิศเล็ง
+
+### 4.4 Charm and Pet Rules
+
+ปัจจุบันผู้เล่นเลือกเครื่องรางและสัตว์เลี้ยงแยกจากตัวละครได้ที่ BaseScene และเลือกไม่ใส่ก็ได้ ยังไม่ใช่ระบบผูกเครื่องราง/สัตว์เลี้ยงประจำตัวละคร
+
+**เครื่องราง (Charm):** ทำงานจากเหตุการณ์การโจมตี ไม่ใช้ Timer
+- `ตราต่อชีวิต (heal)`: โอกาส 30% เมื่อโจมตีบอสโดน ฟื้น HP 1 จำกัด 2 ครั้งต่อการล่า
+- `ตราไร้รอย (streak)`: โจมตีโดน 5 ครั้งโดยไม่ถูกตี ทำให้การโจมตีครั้งถัดไป x2
+
+**สัตว์เลี้ยง (Pet):** ทำงานตามเวลา ไม่ต้องสั่ง และไม่มี HP ในระบบปัจจุบัน
+- `ลมวูบ (swift)`: ทุก 15 วินาที เพิ่มความเร็ว 40% เป็นเวลา 3 วินาที
+- `ครกจิ๋ว (mortar)`: ทุก 8 วินาที ยิงกระสุนตกใส่ตำแหน่งบอส ดาเมจ 2 พร้อมวงเตือน
+
+กฎ: เครื่องรางและสัตว์เลี้ยงเป็นตัวเสริม Build แต่ละชิ้นต้องมีผลต่อการเล่นชัดเจน หลีกเลี่ยงการเพิ่ม Slot หรือระบบอัปเกรดซ้อนหลายชั้นโดยไม่ผ่านการตัดสินใจของ Developer
+
+---
+
+## 5. Tech Stack
+
+**ยืนยันจาก `package.json` ของ Repomix ล่าสุด**
+
+| Part | Current Choice |
+|---|---|
+| Game Engine | **Phaser 4.2.1** |
+| Language | TypeScript ~7.0.2 |
+| Bundler / Dev Server | Vite 8.3.6 |
+| Runtime | Browser / HTML5 Canvas |
+| Development | GitHub Codespaces + VS Code |
+| Save | Browser `localStorage` (`arena_save_v2`) |
+| Hosting | GitHub Pages หรือ itch.io (ยังไม่ถือว่าตั้งค่าเสร็จ) |
+
+**ห้ามอ้างว่าโปรเจกต์ใช้ Phaser 3** — dependency ปัจจุบันคือ Phaser 4.2.1 ให้ตรวจ `package.json` อีกครั้งก่อนอัปเกรดเวอร์ชันหรือแนะนำ API
 
 ---
 
 ## 6. Development Plan
 
-### Current focus: Reconcept → Charge Attack Prototype
+### Current Phase — Visual Polish / Art Direction Transition
 
-เกมผ่านการ Reconcept ครั้งใหญ่ จาก "มินิเกมทดลองตีบอส" เป็น "Action RPG ที่มีระบบ Progression และเอกลักษณ์ชัดเจน" ต้องรื้อระบบเก่าและสร้างฐานใหม่ก่อนขยายเนื้อหา
+Gameplay Prototype มีระบบต่อสู้และ Hunt Loop ที่เล่นได้แล้ว และ Developer แจ้งว่าความสนุกของ Gameplay ผ่านระดับที่ต้องการในตอนนี้ เป้าหมายปัจจุบันคือเปลี่ยนภาพจาก 3D Claymation เป็น **Paper Cutout / Layered Diorama** และทำให้ทุกส่วนของเกมมีภาษาภาพเดียวกัน
 
-#### Refactor and gameplay roadmap
+**สิ่งที่มีแล้ว (ยืนยันจากโค้ด Repomix ล่าสุด):**
+- [x] หน้า BaseScene สำหรับเลือกตัวละคร เครื่องราง สัตว์เลี้ยง และบอส
+- [x] ตัวละครที่เล่นได้ 2 ตัว: อัคนี และ ลูมิ
+- [x] ระบบ WASD + เล็งเมาส์ + โจมตีปกติ/ชาร์จ + สกิลเฉพาะตัว
+- [x] บอส 2 ตัว: ภัสมะ และ มายา พร้อม State/Telegraph/Rage ของแต่ละตัว
+- [x] ระบบ HP, Boss HUD, Hit Reaction, Burn, Passive, Charm และ Pet
+- [x] บอสตาย → Loot Box → เปิดกล่อง → เก็บไอเทม → Exit Portal → Hunt Summary
+- [x] กระเป๋าสะสมไอเทม และ Save/Load ผ่าน localStorage
+- [x] ระบบ VFX/SFX พื้นฐาน เช่น Damage Popup, Burst, Ring, Vignette, Camera Shake, Hit Flash และ Web Audio SFX
 
-**Round 1–5 — Foundation & Old Loop** (COMPLETE)
-- [x] Split support files, Monster/Boss system, Equipment & Item Drop
-- [x] Hunt flow, Base Screen, Progression Loop, SaveGame
-- ⚠️ ระบบ Equipment 3 ช่อง (weapon/armor/helmet) ถูกตัดออกใน Round 7
+**สิ่งที่ยังไม่เสร็จ (อย่าติ๊กเป็น Done):**
+- [ ] Art Direction แบบ Paper Cutout ยังไม่ได้ทำเป็นชุด Asset จริง
+- [ ] เปลี่ยนภาพตัวละครและ Animation จาก Claymation เป็น Paper Cutout
+- [ ] เปลี่ยนภาพ/ฉากบอสจากภาพ Placeholder เป็น Art Asset ที่เข้ากับ Style ใหม่
+- [ ] ปรับฉาก Arena, พื้น, กำแพง และ Props ให้เป็น Layered Diorama
+- [ ] ปรับ UI, BaseScene, HUD, Loot และ Portal ให้เป็นภาษาภาพเดียวกัน
+- [ ] เพิ่ม Depth Sorting / การบังกันระหว่างตัวละครกับวัตถุฉากอย่างเหมาะสม
+- [ ] เพิ่ม/ปรับ VFX ตาม Style ใหม่ โดยนำระบบเดิมกลับมาใช้ให้มากที่สุด
+- [ ] ทดสอบความอ่านง่ายของการโจมตีและ Hitbox หลังเปลี่ยน Asset
 
-**Round 6 — Boss Rework + Variety** (PARTIALLY COMPLETE, PAUSED)
-- [x] เพิ่มมอน 3 ตัว (fire_slime, frost_slime, shadow_slime)
-- [x] เพิ่ม attack kind: `beam` + `projectile`
-- [x] Visual identity: pulse (fire), flicker (shadow)
-- [ ] Rework บอสตาม framework 4.5 (รอ Round 7 เสร็จก่อน)
+### Visual Production Order
 
-**Round 7 — Reconcept: Charge Attack + Fixed Character Kit** (IN PROGRESS)
-- [ ] **7.1 ตัดระบบเก่า:** ลบ armor/helmet ออกจาก `equipment.ts`, `BaseScene.ts`, `GameScene.ts`
-- [ ] **7.2 Charge Attack System:** กด Space ค้าง → แถบชาร์จ → ปล่อย → ท่าพิเศษ (แทน dash สากล)
-- [ ] **7.3 Character Framework:** สร้าง `_types.ts` + `_template.md` ใน `src/data/characters/`
-- [ ] **7.4 ตัวละครแรก (Spear Hunter):** เจน asset claymation + เขียนข้อมูล + เชื่อม GameScene
-- [ ] **7.5 Character Select UI:** เพิ่มแถบเลือกตัวละครที่ BaseScene ก่อนเริ่มล่า
-- [ ] **7.6 ทดสอบ Fun:** ล่าบอสตัวเดิมด้วย Spear Hunter → รู้สึกสนุกไหม?
+1. **Player first:** ทำ Sprite ชุดทดลองของอัคนีให้ครบ 4 ภาพ (Idle / Walk1 / Walk2 / Attack) เพื่อตรวจ Style, มุมกล้อง, Scale, Anchor และความอ่านง่ายในเกมก่อน
+2. **Second character:** ทำชุดของลูมิให้ตรง Style เดียวกัน แต่คง Silhouette และสีที่แยกจากอัคนีได้ชัด
+3. **Bosses:** ทำภัสมะและมายาให้มี Silhouette จำง่ายและยังอ่าน Telegraph ได้ชัด
+4. **Arena:** พื้น, กำแพง, เงา, Props และองค์ประกอบฉากแบบกระดาษซ้อนชั้น
+5. **Game objects:** Pet, Loot Box, Loot Icons, Exit Portal และ VFX
+6. **UI:** BaseScene, Player HUD, Boss HUD, End Screen และ Hunt Summary
+7. **Polish pass:** ตรวจ Scale/Origin, ความคมชัด, Animation timing, Shadow, Depth Sorting และ Performance
 
-**Round 8 — Resource Gathering + Direct Drop Progression** (PLANNED)
-- [ ] เพิ่ม Resource Node ใน Arena (แร่/ไม้/กระดูก) กด E เก็บ
-- [ ] ขยาย Loot Table รองรับ Resource + Amulet Shard + Pet Food
-- [ ] ปรับ BaseScene: แท็บอัปเกรด Character / Amulet / Pet (ใช้ Resource ต่างกัน)
-- [ ] ตัด Crafting System ออกถาวร (Direct Drop แทน)
+### Later — Progression and Content (ยังไม่เริ่ม/ต้องออกแบบต่อ)
 
-**Round 9 — Amulet + Pet Systems** (PLANNED)
-- [ ] Fixed Amulet per character (passive/trigger)
-- [ ] Fixed Pet per character (AI companion, HP, death/respawn)
-- [ ] บาลานซ์ 3 ตัวละคร × Amulet × Pet
+- [ ] ตัดสินใจว่าไอเทมในกระเป๋าจะถูกนำไปใช้อัปเกรดอะไร และระบบอัปเกรดควรทำงานอย่างไร
+- [ ] Resource Node ใน Arena (แร่/ไม้/กระดูก) — เคยอยู่ในแผนเดิม แต่ยังไม่พบ Implementation ในโค้ดล่าสุด
+- [ ] เพิ่มตัวละครและบอสใหม่ เมื่อภาพและ Core Gameplay ปัจจุบันนิ่งแล้ว
+- [ ] ขยาย Arena/ฉากหรือเพิ่มรูปแบบ Hunt เมื่อมีเหตุผลด้าน Gameplay ชัดเจน
+- [ ] Multiplayer เป็น Optional ระยะไกล ไม่ใช่เป้าหมายตอนนี้
 
-**Round 10 — Content Expansion** (PLANNED)
-- [ ] ตัวละครที่ 2-3 (Sword Knight / Bow Ranger)
-- [ ] บอสตัวใหม่ตาม framework 4.5
-- [ ] Parallax 3 ชั้น
-
-### Current code structure
+### Current Code Structure
 
 ```text
 src/
-  main.ts                    # Phaser setup — เริ่มที่ BaseScene
-  config.ts                  # Shared game constants and draw-depth values
-  scenes/BaseScene.ts        # หน้าฐาน: เลือกตัวละคร + กระเป๋า + อัปเกรด + เริ่มล่า
-  scenes/GameScene.ts        # Player input/combat and encounter orchestration
-  entities/Monster.ts        # Monster runtime behavior and state machine
-  entities/Projectile.ts     # กระสุนที่มอนยิง (beam / projectile)
-  entities/LootBox.ts        # Item drop box
-  entities/DroppedItem.ts    # ไอเทมบนพื้น กด E เก็บเข้ากระเป๋า
-  entities/ExitPortal.ts     # ประตูทางออก กด E กลับฐาน
-  data/monsters.ts           # Monster stats, attack pools, phases (จะย้ายไป bosses/)
-  data/monsterAttacks.ts     # Attack behavior/timing definitions
-  data/equipment.ts          # ⚠️ จะถูกตัดเหลือ weapon only ใน Round 7
-  data/upgrades.ts           # ราคาอัปเกรด (จะถูกปรับเป็น Resource-based ใน Round 8)
-  data/loot.ts               # Loot Table (จะขยาย Resource ใน Round 8)
-  data/characters/           # 🆕 Round 7: Character framework + definitions
-  systems/effects.ts         # Reusable combat and visual effects
-  systems/EquipmentSystem.ts # ⚠️ จะถูก refactor ใน Round 7
-  systems/HuntSession.ts     # กระเป๋าเก็บของ (singleton)
-  systems/SaveGame.ts        # Save/Load localStorage
-  systems/sfx.ts             # Web Audio synthesized SFX
-  ui/PlayerHUD.ts            # Player HP display
-  ui/BossHUD.ts              # Monster/Boss HP display
-  ui/GameOverScreen.ts       # Win/lose overlay
-  ui/HuntSummaryScreen.ts    # Loot Report
+  main.ts                       # ตั้งค่า Phaser และเริ่มที่ BaseScene
+  config.ts                     # ขนาดสนาม, กำแพง, Scale และ DEPTH
+  scenes/
+    BaseScene.ts                # หน้าฐาน เลือก Character/Charm/Pet/Boss และเริ่มล่า
+    GameScene.ts                # การเดิน, Input, Combat, Boss, Loot และ Hunt Flow
+  data/
+    characters.ts               # Character stats + ตัวเลขท่าของอัคนี/ลูมิ
+    bosses.ts                   # Boss stats + ตัวเลขการโจมตี + ระบบ Burn
+    charms.ts                   # ข้อมูลเครื่องรางและค่าตัวเลข
+    pets.ts                     # ข้อมูลสัตว์เลี้ยงและค่าตัวเลข
+    loot.ts                     # Loot Table + weighted random drop
+  entities/
+    BossBase.ts                 # โครงร่วมของบอส: HP, Rage, Damage, Shadow, Death
+    createBoss.ts               # เลือกสร้างบอสตาม ID
+    PhasamaBoss.ts              # State machine และพฤติกรรมบอสภัสมะ
+    MayaBoss.ts                 # State machine และพฤติกรรมบอสมายา
+    PlayerShot.ts               # กระสุนของผู้เล่น
+    Pet.ts                      # ตัวสัตว์เลี้ยงที่แสดงในสนาม
+    LootBox.ts                  # กล่อง Loot
+    DroppedItem.ts              # ไอเทมที่ตกและเก็บได้
+    ExitPortal.ts               # ประตูออกจาก Arena
+  systems/
+    effects.ts                  # เอฟเฟกต์ภาพใช้ซ้ำ
+    combatFx.ts                 # เอฟเฟกต์โจมตี เช่น Arc Slash
+    bossTextures.ts             # สร้าง Texture Placeholder ให้บอสเมื่อไม่มีไฟล์ภาพ
+    HuntSession.ts              # กระเป๋าไอเทมระหว่างเปลี่ยน Scene
+    Loadout.ts                  # ชุด Character/Charm/Pet/Boss ที่เลือก
+    Perks.ts                    # ระบบเครื่องรางและสัตว์เลี้ยง
+    SaveGame.ts                 # Save/Load localStorage
+    sfx.ts                      # เสียงสังเคราะห์ด้วย Web Audio
+  ui/
+    PlayerHUD.ts                # HP ผู้เล่น
+    BossHUD.ts                  # HP บอส
+    GameOverScreen.ts           # หน้าจอแพ้
+    HuntSummaryScreen.ts        # สรุปผลการล่า
 ```
+
+**หมายเหตุโครงสร้าง:** `GameScene.ts` ยังเป็นไฟล์หลักขนาดใหญ่ที่รวมการควบคุมและการประสานหลายระบบไว้ การแยกไฟล์เพิ่มทำได้เมื่อมีเหตุผลชัดเจน แต่ห้าม Refactor ใหญ่ระหว่างกำลังเปลี่ยน Art Asset โดยไม่จำเป็น
 
 ---
 
 ## 7. AI Workflow Rules
 
-1. **One prompt = one feature.**
-2. **Test after every step.** Do not stack features on untested code.
-3. **Keep it simple.** If a solution looks complicated, propose a simpler one first.
-4. **Explain at my chosen level** (Level 2).
-5. **Save a working version** (Codespaces commit or ZIP).
-6. **Ask before building.** Confirm problem, touched code, and simpler alternatives.
+1. หนึ่ง Prompt = หนึ่ง Feature หรือหนึ่งงานย่อยที่ทดสอบได้
+2. ก่อนแก้โค้ด ให้สรุปแผน 2–4 ประโยค พร้อมรายชื่อไฟล์ที่จะแก้และความเสี่ยง
+3. หากเป็นการเปลี่ยนแปลงโค้ดเดิม ให้รออนุมัติก่อน เว้นแต่ Developer สั่งเริ่มทำชัดเจน
+4. หลังแก้ ต้องบอกวิธีรันและทดสอบเป็นขั้นตอน พร้อมผลลัพธ์ที่ควรเห็น
+5. ห้ามลบหรือเขียนทับระบบที่ทำงานได้โดยไม่ตรวจว่าใครเรียกใช้งานอยู่
+6. ห้ามแก้ Gameplay Balance ไปพร้อมกับการเปลี่ยน Art หากไม่จำเป็น
+7. ห้ามสมมติว่า Asset มีอยู่จริง ให้ตรวจ `public/assets` และ `preload()` ก่อน
+8. ใช้ `setTexture()` สำหรับ Animation ตามระบบปัจจุบัน ห้ามเปลี่ยนเป็น Spritesheet/Skeletal Animation เอง
+9. ห้ามเพิ่ม Library ใหม่หากทำได้ด้วย Phaser/TypeScript ที่มีอยู่
+10. เมื่อจบงาน ให้สรุปสิ่งที่เปลี่ยน วิธีทดสอบ และขั้นตอนถัดไป โดยไม่เริ่มงานถัดไปเอง
 
-### The AI must
-- Say what each part of the code does.
-- Say exactly how to run and test it.
-- State limits and trade-offs honestly.
-- Suggest the next step, and wait for my approval.
+### Git / Backup
 
-### The AI must not
-- Write code without explaining it.
-- Use complicated libraries when a simple solution exists.
-- Assume I know technical terms.
-- Steer the direction of the game.
-- Recommend paid tools or tools that need local installation without asking first.
-- **Ask me to fill balance numbers** — ตาม Section 4.5 และ 4.6 (AI เติมเอง)
+ก่อนงานใหญ่ให้ตรวจ `git status` และบันทึกเวอร์ชันที่เล่นได้ หลังทำงานเสร็จใช้ workflow ปกติ:
+
+```bash
+git status
+git add .
+git commit -m "Update game"
+git push
+```
+
+หากทำงานสลับหลายเครื่อง ให้ `git pull` จาก `main` ก่อนเริ่มแก้โค้ดในเครื่องนั้น และตรวจว่า Working Tree ไม่มีงานค้างก่อน Pull
 
 ---
 
@@ -322,102 +289,194 @@ src/
 
 | Date | Decision | Reason | Impact |
 |---|---|---|---|
-| 2026-11-06 | Use Phaser 3 + TS + Vite | Best fit for 2D top-down, built-in physics/camera | Core tech stack set |
-| 2026-11-06 | Use GitHub Codespaces | No local setup, instant sharing | Development environment set |
-| 2026-11-06 | Use WASD instead of Arrow Keys | Arrow keys get hijacked by browser/Codespaces | Input reliability fixed |
-| 2026-11-06 | Split `GameScene.ts` support modules (Round 1) | Keep constants, effects, and UI separate | Cleaner codebase |
-| 2026-11-06 | Data-driven Monster/Boss system (Round 2) | Define monster behavior through attack data | `Monster.ts`, `data/monsters.ts`, `data/monsterAttacks.ts` |
-| 2026-11-06 | Loot uses Interact Key (E) | Prevent Loot Stealing, ready for future Multiplayer | Added `E` key in Input, created `LootBox` class |
-| 2026-11-06 | Do Item Drop before UI screens | Make the Gameplay Loop (Fight -> Loot) complete first | Equipment does not auto-upgrade; dropped as a box player must collect |
-| 2026-11-06 | Abort arena expansion + camera zoom (temporary) | Camera zoom caused UI, Hitbox, and visual distortion | Reverted to 800x600 arena, normal camera |
-| 2026-11-06 | เปลี่ยนคอนเซปต์เป็น "ระบบกระเป๋า" | การล่า = ออกไปหาของและนำกลับมา อัปเกรดต้องอยู่นอกการล่า | เพิ่ม DroppedItem + ExitPortal + HuntSession |
-| 2026-11-06 | Boss concept = 6 items เท่านั้น | Developer ต้องการคิดคอนเซป ไม่ต้องเขียนบาลานซ์ | AI เติมทุกอย่างที่เหลือ |
-| 2026-11-06 | เริ่มเกมที่ BaseScene | ควรเห็นฐานก่อนเข้าไปล่า | แก้ `main.ts` scene array |
-| 2026-11-07 | **Art Style: 3D Claymation** | ต้องการมิติที่ดูน่ารักแต่จริงจัง หลุดจากกรอบ Pixel Art | ต้องเจนรูปแบบ Render 3D ในมุมมอง 2D |
-| 2026-11-07 | **Sprite Direction: หันขวาเสมอ** | Consistency ข้าม asset ทั้งหมด โค้ดสั่ง FlipX เอง | ทุก prompt ต้องฝัง "facing right" |
-| 2026-11-07 | **Animation: 4 PNG แยก (ไม่ใช้ Skeletal)** | Phaser 4 spritesheet API มีปัญหา ใช้ setTexture() ปลอดภัยกว่า | Idle/Walk1/Walk2/Attack แยกไฟล์ |
-| 2026-11-07 | **1 Character = 1 Playstyle (Fixed Kit)** | เปลี่ยนจาก "ตัวเปล่าเปลี่ยนอาวุธ" เป็นชุดความสามารถตายตัว | ลดความซับซ้อน บาลานซ์ง่าย เอกลักษณ์ชัด |
-| 2026-11-07 | **ตัด Universal Dash ออก** | การหลบต้องใช้ Positioning หรือท่าชาร์จเฉพาะตัว | Mobility กลายเป็นอัตลักษณ์ตัวละคร |
-| 2026-11-07 | **Charge Attack แทน Dash สากล** | กด Space ค้าง = ชาร์จ 1 วิ → ปล่อย = ท่าพิเศษ | สร้างจังหวะเสี่ยง-คุ้ม แต่ละตัวเล่นต่างชัดเจน |
-| 2026-11-07 | **ตัด Armor/Helmet ทิ้ง** | เป็นแค่ตัวเลข passive ไม่เปลี่ยน playstyle ขัด YAGNI | เหลือ Character + Amulet + Pet เท่านั้น |
-| 2026-11-07 | **Fixed Amulet + Fixed Pet (ไม่ใช้ Slot)** | ลดความซับซ้อนจาก matrix N×M×K เป็น N ชุด fixed | บาลานซ์ง่าย ผู้เล่นไม่ต้องบริหาร 3 ชั้น |
-| 2026-11-07 | **ตัด Crafting ออก ใช้ Direct Drop** | Crafting ซับซ้อนเกินสำหรับ Prototype | Resource Gathering + Direct Drop แทน |
-| 2026-11-07 | **Resource Gathering ใน Arena** | เพิ่มเหตุผลให้สำรวจ ไม่ใช่แค่วิ่งไปตีบอส | Node แร่/ไม้/กระดูก เกิดสุ่ม 2-4 จุดต่อรอบ |
-| 2026-11-07 | **Character Framework = 6 ข้อ** | เลียนแบบ Boss Framework 4.5 | Developer คิดคอนเซป AI เติมตัวเลข+โค้ด |
+| 2026-11-06 | ใช้ Phaser + TypeScript + Vite | เหมาะกับเกม 2D บนเว็บ | Tech stack หลัก |
+| 2026-11-06 | ใช้ GitHub Codespaces | ทำงานข้ามเครื่องได้โดยไม่ต้องติดตั้ง Toolchain ในเครื่อง | Development environment |
+| 2026-11-06 | ใช้ WASD เคลื่อนที่ | ลดปัญหาปุ่มลูกศรถูก Browser/Codespaces ดัก | Input |
+| 2026-11-06 | แยก Effects และ UI ออกจาก Scene บางส่วน | ให้ระบบใช้ซ้ำและแก้ง่ายขึ้น | `effects.ts`, `combatFx.ts`, `ui/` |
+| 2026-11-06 | ใช้ Loot Box และปุ่ม E เพื่อเก็บของ | ทำให้การรับรางวัลเป็นการกระทำของผู้เล่น | Loot Box / Dropped Item |
+| 2026-11-06 | เริ่มเกมที่ BaseScene | ให้เลือกชุดก่อนออกล่า | Scene Flow |
+| 2026-11-07 | เริ่มใช้ตัวละครที่มี Playstyle ต่างกัน | เพิ่มความหลากหลายด้านการเล่น | Character System |
+| 2026-11-07 | ใช้ 4 PNG แยก Idle/Walk1/Walk2/Attack และ `setTexture()` | ทำ Animation แบบง่ายและเสถียรกับโครงสร้างปัจจุบัน | Player Animation |
+| 2026-11-07 | Asset ต้นฉบับหันขวาและ FlipX ด้วยโค้ด | คุมทิศ Sprite ให้สม่ำเสมอ | Art Pipeline |
+| 2026-11-07 | ตัด Armor/Helmet Equipment Slots ออกจากแนวทางปัจจุบัน | เป็นระบบตัวเลขซ้อนที่ไม่เพิ่มเอกลักษณ์การเล่น | ไม่ใช้ระบบ Equipment 3 ช่อง |
+| 2026-11-07 | ตัด Crafting ออกจาก Scope ปัจจุบัน | ลดความซับซ้อนของ Prototype | Loot ตกโดยตรง |
+| 2026-11-09 | Gameplay Prototype ผ่านการทดลองเล่นในระดับที่ Developer พอใจ | Developer แจ้งว่า Gameplay สนุกแล้ว | เปลี่ยนโฟกัสไป Visual Polish |
+| 2026-11-09 | Art Style เปลี่ยนจาก 3D Claymation เป็น Paper Cutout / Layered Diorama | ต้องการภาพงานกระดาษตัดซ้อนชั้น มีมิติและบรรยากาศ Folklore Fantasy | เปลี่ยนทิศทาง Asset ทั้งเกม |
+| 2026-11-09 | Camera = Top-down (ไม่ใช้ Isometric) | รักษามุมมองและการอ่าน Gameplay เดิม | ทุก Asset ต้องใช้มุมมองสอดคล้องกัน |
+| 2026-11-09 | Layering ต้องเห็นชัด | ต้องการความหนากระดาษ ขอบชั้น และเงาที่ช่วยสร้างมิติ | ฉากและตัวละครเป็น Layered Diorama |
+| 2026-11-09 | แสงหลักมาจากซ้ายบน เงาทอดไปทางขวาล่าง | ทำให้แสงและเงาของ Asset ทั้งหมดไปทางเดียวกัน | Art Consistency |
+| 2026-11-09 | ปัจจุบันเลือก Charm/Pet แยกจาก Character ได้ที่ BaseScene | ตรงกับระบบ Loadout ที่มีอยู่จริง | ห้ามบอกว่า Charm/Pet ถูกล็อกประจำตัวละคร |
+| 2026-11-09 | Input โจมตีใช้เมาส์ | โค้ดจริงใช้คลิกซ้าย/ขวาและเล็งเมาส์ | แก้คำอธิบายเก่าที่ระบุ Space/Shift |
+| 2026-11-09 | Tech Stack ปัจจุบันเป็น Phaser 4.2.1 | ตรวจสอบจาก `package.json` ล่าสุด | แก้ข้อมูลเก่าที่ระบุ Phaser 3 |
 
 ---
 
-## 9. Style Guide
+## 9. Style Guide — Paper Cutout / Layered Diorama
 
-| Item | Value |
+### 9.1 Overall Art Direction
+
+| Item | Locked Direction |
 |---|---|
-| Palette (hex codes) | Warm earthy tones + vibrant accents (claymation style) |
-| Art style | **3D Claymation / Soft Plasticine** (Top-down render) |
-| Camera angle | Top-down |
-| Sprite direction | **Facing RIGHT always** (code handles FlipX) |
-| Animation tech | 4 PNG separate files (Idle/Walk1/Walk2/Attack) via setTexture() |
-| Font | Default system font (will upgrade later) |
-| Mood keywords | Tactile, Cute but Serious, Clear Feedback, Action |
-| Reference images | Claymation game sprites, soft studio lighting |
-| Aspect ratio | 16:9 for sprite sheets + grid lines at 344px per frame |
+| Art Style | **Paper Cutout / Layered Diorama** |
+| Camera | **Top-down** — ไม่ใช่ Isometric |
+| Palette | Warm earthy tones: น้ำตาลดิน, เขียวมอส, เหลืองอำพัน และแสงเรืองรองแบบพอดี |
+| Material | กระดาษด้าน มีเส้นใย/พื้นผิวกระดาษบาง ๆ |
+| Layering | เห็นชั้นกระดาษซ้อนกัน ความหนาของขอบ และเงาระหว่างชั้นชัดเจน |
+| Lighting | แสงหลักจากซ้ายบน เงาทอดไปทางขวาล่าง |
+| Mood | Sophisticated, handcrafted, serious folklore fantasy |
+| Readability | รูปร่างตัวละคร ทิศโจมตี และ Telegraph ต้องอ่านออกทันที |
+| Avoid | 3D Claymation, soft plastic, Pixel Art, ภาพสมจริงแบบวัสดุจริง, รายละเอียดฉากที่รบกวนการอ่าน Combat |
+
+### 9.2 Character Sprite Rules
+
+- Sprite ต้นฉบับหันขวาเสมอ โค้ดจัดการ `FlipX` เมื่อเล็งไปทางซ้าย
+- ใช้ไฟล์ PNG แยก 4 ไฟล์ต่อชุด Animation: `Idle`, `Walk1`, `Walk2`, `Attack`
+- ใช้ `setTexture()` สลับภาพตามสถานะ ไม่เปลี่ยนเป็น Skeletal Animation หรือ Spritesheet เอง
+- ภาพทั้ง 4 ต้องมี Canvas ขนาดเท่ากัน, Scale ใกล้เคียงกัน, จุดยืน/Anchor สม่ำเสมอ และพื้นหลังโปร่งใส
+- ต้องรักษา Silhouette และอุปกรณ์ประจำตัวละครให้จำได้ แม้ย่อขนาดบนจอ
+- ภาพต้องเป็น Paper Cutout แบบมองจากด้านบน ไม่ใช่ภาพด้านข้างหรือ Isometric
+
+### 9.3 Layer and Shadow Rules
+
+- ฉากพื้นอยู่ชั้นหลังสุด; เงาวัตถุอยู่เหนือพื้น; วัตถุและตัวละครอยู่ชั้นถัดมา; Telegraph/เอฟเฟกต์ และ UI อยู่ตามลำดับความสำคัญ
+- ใช้เงานุ่มใต้เท้าและใต้ตัวละคร/บอส เพื่อให้เหมือนวางอยู่บนฉากกระดาษ
+- เงาต้องไปทิศเดียวกัน (แสงซ้ายบน → เงาขวาล่าง)
+- ต้องวางแผน Depth Sorting เพื่อให้ตัวละครถูกวัตถุบังได้อย่างเป็นธรรมชาติเมื่อเดินผ่าน แต่ต้องทดสอบกับ Hitbox และ Telegraph
+- ไม่จำเป็นต้องใช้ Phaser Light Plugin ตั้งแต่แรก ให้เริ่มจากเงา Ellipse / เงาที่ฝังในภาพ และแสงที่วาดใน Asset ก่อน หากยังไม่พอค่อยทดลอง Plugin
+
+### 9.4 VFX / Animation Feel
+
+- เดิน: ฝุ่นกระดาษหรือเศษใบไม้เล็ก ๆ อย่างประหยัด ไม่เกิดตลอดเวลาจนรก
+- เก็บของ: ประกายแสงเล็ก ๆ หรือเศษกระดาษสีอำพันพุ่งเข้าหาผู้เล่น
+- โจมตีโดน: Paper Flecks / เศษกระดาษและแสงกระทบสั้น ๆ
+- Charge เต็ม: เพิ่มแสงขาวจาง ๆ หรือ Flash สั้นมาก เพื่อยืนยันว่าพร้อมปล่อยท่า โดยไม่บดบังวงชาร์จ
+- บอสโจมตี: Telegraph ต้องชัดและอยู่บนพื้น ไม่ถูกเงาหรือเอฟเฟกต์อื่นกลบ
+- Camera Shake ใช้เฉพาะจังหวะสำคัญ เช่น ผู้เล่นโดนตี, บอสโจมตีหนัก, บอสเข้าสู่ Rage หรือบอสตาย ปรับแรงให้พอดี
+- ใช้ระบบ `effects.ts` และ `combatFx.ts` ที่มีอยู่ก่อน อย่าสร้างระบบ VFX ซ้ำโดยไม่ตรวจของเดิม
+
+### 9.5 Asset Generation Consistency
+
+ทุก Prompt สำหรับสร้างภาพต้องระบุให้คงที่: Paper Cutout / Layered Diorama, Top-down view, warm earthy palette, paper thickness/edge, matte paper texture, light from upper-left, shadows cast lower-right และ transparent background เมื่อเป็น Sprite เดี่ยว
+
+เริ่มจากตัวละครหนึ่งตัวให้ครบ 4 Pose เพื่อทดสอบในเกมก่อน เมื่อผ่านแล้วค่อยใช้เป็น Visual Reference สำหรับตัวละคร บอส สัตว์เลี้ยง และวัตถุอื่น ห้ามผลิต Asset จำนวนมากก่อนตรวจว่า Scale และมุมกล้องใช้ได้จริง
 
 ---
 
 ## 10. Asset Inventory
 
-- **Characters:** 
-  - `hero.png` (Pixel Art เดิม — fallback ถ้ายังไม่มี Clay)
-  - `hero_clay_idle.png`, `hero_clay_walk1.png`, `hero_clay_walk2.png`, `hero_clay_attack.png` (Claymation — Spear Hunter)
-  - รอ asset ตัวละครอื่น: Sword Knight, Bow Ranger
-- **Enemies:** 
-  - `slime.png` (ใช้ร่วมกันทั้ง 5 ตัว + tint — **ชั่วคราว**)
-  - รอ asset แยกตัว: `monster_bull.png`, `monster_fire.png`, `monster_frost.png`, `monster_shadow.png`
-- **Backgrounds:** `floor.png`, `wall.png`
-- **UI/Loot:**
-  - `loot_box_closed.png`, `loot_box_open.png`
-  - `green_potion.png` (ไอเทมทั่วไป)
-- **Resources (PLANNED Round 8):** ore_icon, wood_icon, bone_icon
-- **Audio (SFX and music):** Web Audio synth ใน `sfx.ts` — ไม่มีไฟล์เสียง
+### Player
+
+- `hero.png` — ภาพ fallback เดิม
+- `hero_clay_idle.png`
+- `hero_clay_walk1.png`
+- `hero_clay_walk2.png`
+- `hero_clay_attack.png`
+- ไฟล์ Clay เหล่านี้ยังถูกใช้เป็น Player Animation ในโค้ดปัจจุบัน และจะต้องเปลี่ยนเป็น Paper Cutout ตามแผน
+- ปัจจุบันอัคนีและลูมิใช้ชุด Player Texture ร่วมกันและแยกสีด้วย Tint ยังไม่มีชุดภาพเฉพาะตัวละครครบแยกกัน
+
+### Boss
+
+- `boss_phasama`, `boss_phasama_ball`, `boss_maya` — สร้างเป็น Procedural Placeholder ใน `src/systems/bossTextures.ts` เมื่อไม่มี Texture จริง
+- ยังไม่มี Boss Paper Cutout Asset ในรายการไฟล์ `public/assets` ของ Repomix ล่าสุด
+
+### Environment / Items
+
+- `floor.png`, `wall.png` — ฉากพื้นและกำแพงปัจจุบัน
+- `loot_box_closed.png`, `loot_box_open.png` — กล่อง Loot
+- `green_potion.png` — ปัจจุบัน Loot ทุกประเภทใช้ Icon นี้ร่วมกัน
+- `slime.png` — ไฟล์เดิม/อาจเป็น Asset ค้าง ต้องตรวจการใช้งานก่อนลบ
+
+### Planned Paper Cutout Assets
+
+- Player: Akkhani 4 poses, Luma 4 poses
+- Boss: Phasama, Phasama Ball, Maya
+- Environment: paper floor, layered wall, ground props, trees/rocks/plants ตามที่จำเป็น
+- Objects: Pet, Loot Box, Loot Icons, Exit Portal
+- UI: Base Cards, HUD frames, summary panel, buttons/icons
+- VFX: dust, paper flecks, impact sparks, charge flash, portal shimmer
 
 ---
 
 ## 11. Session Context
 
 ```text
-Current state:      Single-player Hunt MVP — Round 7 (Reconcept) IN PROGRESS
-Done and working:   
-- Round 1-5 complete: ลูปพื้นฐานทำงานได้
-- Round 6 partial: มอน 5 ตัว, attack kinds ครบ, visual identity
-- Art Style locked: 3D Claymation, Facing Right, 4 PNG separate
-- Charge Attack concept agreed (replace Universal Dash)
-- Fixed Character Kit concept agreed (1 char = 1 playstyle)
-- Armor/Helmet CUT, Crafting CUT, Direct Drop + Resource Gathering agreed
-- Character Framework 6-item agreed (mirror Boss Framework 4.5)
-In progress:        
-- Round 7: ตัดระบบเก่า + สร้าง Charge Attack + Character Framework
-- ยังไม่ได้เริ่มเขียนโค้ด Round 7
-Blockers:           
-- ต้องรื้อ equipment.ts / BaseScene / GameScene ก่อนเพิ่มระบบใหม่
-- ยังไม่มี Clay asset สำหรับ Spear Hunter (ต้องเจน)
-Next planned work:  
-1. ตัด armor/helmet ออกจากโค้ดทั้งหมด
-2. สร้าง src/data/characters/_types.ts + _template.md
-3. เขียน spear_hunter.ts (6 ข้อ concept)
-4. เพิ่ม Charge Attack mechanic ใน GameScene
-5. เพิ่ม Character Select UI ใน BaseScene
-6. เจน Clay asset สำหรับ Spear Hunter
-Recent decisions:   
-- 2026-11-07: Reconcept ครั้งใหญ่ (Fixed Kit, Charge Attack, No Crafting)
-- 2026-11-07: Character Framework 6 ข้อ
-- 2026-11-07: Resource Gathering ใน Arena (Round 8)
-Goal of next chat:  เริ่ม Round 7.1 (ตัดระบบเก่า) + 7.3 (Character Framework files)
+Project:            Arena MVP
+Current state:      Single-player Gameplay Prototype — playable; shift focus to Visual Polish
+Current phase:      Paper Cutout / Layered Diorama Art Transition
+
+Done and working (ตามโค้ด Repomix ล่าสุด):
+- BaseScene สำหรับเลือก Character / Charm / Pet / Boss
+- Character 2 ตัว: อัคนี (Akkhani), ลูมิ (Luma)
+- Boss 2 ตัว: ภัสมะ (Phasama), มายา (Maya)
+- WASD movement + mouse aim + light/charged attacks + character skills
+- Character passives, Charms, Pets, Boss Telegraph/Rage, Burn system
+- HP HUD, Boss HUD, hit reactions และ effects พื้นฐาน
+- Boss death → Loot Box → Dropped Item → Bag → Exit Portal → Hunt Summary
+- Save/Load bag และ Loadout ผ่าน localStorage
+- Developer แจ้งว่าได้ทดลองเล่นแล้วและ Gameplay สนุกในระดับที่พอใจ
+
+Not implemented yet:
+- Paper Cutout art assets
+- Character-specific art set แยกสำหรับอัคนี/ลูมิ
+- Boss art จริง (ตอนนี้สร้าง Placeholder ด้วย Graphics)
+- Layered Diorama environment, props, UI skin และ Depth Sorting เต็มรูปแบบ
+- Resource Node gathering และระบบใช้ไอเทมอัปเกรด
+
+Important technical facts:
+- Phaser 4.2.1 + TypeScript + Vite
+- Game size 800x600
+- GameScene.ts เป็นไฟล์หลักที่รวมระบบหลายส่วน ยังไม่ควร Refactor ใหญ่โดยไม่จำเป็น
+- Current input: WASD / Mouse Left / Mouse Right / E / R / M
+- Player Animation: 4 separate PNG + setTexture(); currently Clay assets
+
+Locked art decisions:
+- Paper Cutout / Layered Diorama
+- Top-down camera (ไม่ใช่ Isometric)
+- Layering ต้องเห็นชัด มีขอบกระดาษ/ความหนาและเงาระหว่างชั้น
+- Palette น้ำตาลดิน / เขียวมอส / เหลืองอำพัน / subtle glow
+- แสงซ้ายบน เงาขวาล่าง
+- Sprite source facing right; code handles FlipX
+- 4 separate PNG: Idle / Walk1 / Walk2 / Attack
+
+Next task:
+1. สร้าง/เตรียม Sprite Paper Cutout ของอัคนีให้ครบ 4 Pose เป็นชุดทดลอง
+2. ตรวจภาพในเกมจริง: มุม Top-down, Scale, Anchor, FlipX, Readability และ Animation timing
+3. เมื่อผ่านแล้วค่อยทำชุดลูมิและ Asset กลุ่มอื่น
+
+Do not:
+- กลับไปใช้ Claymation หรือ Pixel Art
+- เปลี่ยนเป็น Isometric โดยไม่ได้รับอนุมัติ
+- อ้างว่ามี Resource Node / Upgrade System แล้ว
+- เปลี่ยนระบบ Combat ที่เล่นสนุกอยู่แล้วระหว่างงานภาพโดยไม่จำเป็น
 ```
 
 ---
 
-## 12. Modes
+## 12. Working Modes
 
-*(Brainstorming Mode and Update Mode rules remain as defined in the original template)*
+### Brainstorming Mode
+
+ใช้เมื่อต้องคิดไอเดียหรือเลือกทิศทาง:
+- เสนอทางเลือก 2–4 แบบที่ต่างกันจริง
+- อธิบายข้อดี/ข้อเสียและผลต่อ Scope สั้น ๆ
+- ห้ามเริ่มเขียนโค้ดหรือสร้าง Asset จริงจนกว่า Developer เลือก
+
+### Update Mode (`/update`)
+
+ใช้เมื่อ Developer ส่ง Repomix หรือสรุปความคืบหน้า:
+1. ตรวจสถานะจากโค้ดล่าสุดก่อน
+2. แยก Done / In Progress / Planned / Not Implemented
+3. อัปเดต Session Context และ Decision Log
+4. แสดงความขัดแย้งระหว่าง Master กับโค้ดให้เห็นก่อนแก้เอกสาร
+5. ห้ามสร้างงานใหม่หรือเปลี่ยน Scope โดยพลการ
+
+### Build Mode
+
+ใช้เมื่อ Developer อนุมัติให้ทำ Feature:
+1. วางแผนสั้น ๆ และระบุไฟล์ที่กระทบ
+2. ทำทีละ Feature
+3. ทดสอบทันที
+4. สรุปผลและรอคำสั่งถัดไป
 
 ---
 
@@ -425,35 +484,18 @@ Goal of next chat:  เริ่ม Round 7.1 (ตัดระบบเก่า
 
 | Command | What it does |
 |---|---|
-| `/status` | Rewrite the Session Context from what we have done |
-| `/decide [decision]` | Add an entry to the Decision Log |
-| `/next` | Recommend the next step (with reasons) |
-| `/explain [code or feature]` | Explain in detail at Level 1 |
-| `/level [1-3]` | Change how much the AI explains |
-| `/simplify` | Find a simpler way to do the current thing |
-| `/cut` | Run the scope check: what could be removed without hurting the core loop? |
-| `/review` | Run the quality checklist on the current work |
-| `/backup` | Remind me how to save a working version, and suggest a file name |
-| `/brainstorm` | Start Brainstorming Mode |
-| `/update` | Start Update Mode |
+| `/status` | สรุปสถานะล่าสุดและเขียน Session Context ใหม่ |
+| `/decide [decision]` | เพิ่มการตัดสินใจลง Decision Log |
+| `/next` | แนะนำงานถัดไปที่เหมาะสม |
+| `/explain [code or feature]` | อธิบายละเอียดขึ้นในระดับ 1 |
+| `/level [1-3]` | เปลี่ยนระดับคำอธิบาย |
+| `/simplify` | หาวิธีที่ง่ายกว่า |
+| `/cut` | ตรวจ Scope และเสนอสิ่งที่ตัดได้ |
+| `/review` | ตรวจคุณภาพโค้ด/ระบบตามบริบท |
+| `/backup` | แนะนำวิธีบันทึกเวอร์ชันที่เล่นได้ |
+| `/brainstorm` | เข้า Brainstorming Mode |
+| `/update` | เข้า Update Mode |
 
 ---
 
-**Version:** 5.0 (Major Reconcept: Fixed Character Kit + Charge Attack + Resource Gathering, 2026-11-07)
-```
-
----
-
-## 🔍 สรุปการเปลี่ยนแปลง v4.1 → v5.0
-
-| Section | เปลี่ยนอะไร |
-|---|---|
-| **2 (Core Concept)** | Elevator pitch ใหม่ทั้งหมด, What makes it different เปลี่ยนเป็น Fixed Kit + Charge Attack + Resource Gathering |
-| **4 (Principles)** | เพิ่มข้อ 6: "1 Character = 1 Playstyle", Hunt loop อัปเดตเป็น Select → Gather + Fight → Upgrade |
-| **4.6 (ใหม่)** | Character Design Framework — 6 ข้อ concept, AI เติมตัวเลข+โค้ด, กฎเหล็ก Fixed Kit + Charge + No Universal Dash |
-| **6 (Dev Plan)** | เพิ่ม Round 7 (Reconcept), Round 8 (Resource), Round 9 (Amulet+Pet), Round 10 (Content); Code structure อัปเดต characters/ folder |
-| **8 (Decision Log)** | เพิ่ม 11 entries ใหม่ (2026-11-07) ครอบคลุมทุกการตัดสินใจ Reconcept |
-| **9 (Style Guide)** | เปลี่ยนจาก Pixel Art → 3D Claymation, เพิ่ม Sprite Direction + Animation tech + Aspect ratio |
-| **10 (Assets)** | เพิ่ม Clay hero assets, เพิ่ม Resources (planned) |
-| **11 (Session Context)** | ใหม่ทั้งหมด สะท้อนสถานะ Post-Reconcept |
-| **Version** | 4.1 → 5.0 |
+**Version:** 5.1 — Gameplay State Refresh + Paper Cutout / Layered Diorama Art Direction (2026-11-09)
