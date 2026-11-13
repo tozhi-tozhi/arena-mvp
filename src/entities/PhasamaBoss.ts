@@ -1,12 +1,33 @@
-// บอส 1: ภัสมะ — พ่นไฟค้าง / แดช / (คลั่ง) ม้วนตัวเป็นลูกข่าง
+// บอส 1: ภัสมะ (แมกมัส) — พ่นไฟค้าง / แดช / (คลั่ง) ม้วนตัวเป็นลูกข่าง
 import Phaser from 'phaser';
 import { DEPTH } from '../config';
 import { BossBase, type BossHooks } from './BossBase';
 import { BOSS_DEFS, PHASAMA } from '../data/bosses';
 import { showDamage } from '../systems/effects';
+import { MAG_FRAMES, magKey, magmusReady, measureAlpha, type MagClip } from '../systems/magmusFrames';
 
 type State = 'chase' | 'telegraph' | 'flame' | 'dash' | 'spin' | 'dizzy' | 'recover';
 type AttackId = 'flame' | 'dash' | 'spin';
+type Then = 'hold' | 'loop' | 'ping' | 'idle';
+interface Step {
+  clip: MagClip;
+  from: number; // เฟรมเริ่ม (นับจาก 0)
+  to: number; // เฟรมจบ
+  ms: number; // มิลลิวินาทีต่อเฟรม
+  then: Then; // จบแล้วทำอะไร
+  lo?: number; // ช่วงวนไป-กลับ (ใช้กับ ping)
+  hi?: number;
+}
+
+// ---------- ค่าปรับอนิเมชัน ----------
+const WALK_MS = 110; // ms ต่อเฟรมท่าเดิน
+const FLAME_HOLD_MS = 130; // แกว่งสองเฟรมท้ายตอนพ่นไฟ
+const UNCURL_MS = 90; // ms ต่อเฟรมตอนคลายจากลูกกลมกลับเป็นยืน
+const DIZZY_IN_MS = 800; // เวลาเล่นท่ามึนจากยืนจนสุดท่า
+const DIZZY_LOOP_FROM = 3; // วนไป-กลับตั้งแต่เฟรมที่ 4 (นับจาก 0 = 3) ถึงเฟรมสุดท้าย
+const RETURN_MAX_MS = 700; // เวลาสูงสุดที่ใช้เล่นย้อนกลับเป็นยืน
+const KNOCK_FRAME_MS = 130; // ms ต่อเฟรมท่าล้ม
+const KNOCK_HOLD_MS = 700; // ค้างท่านอนก่อนระเบิด
 
 export class PhasamaBoss extends BossBase {
   private state: State = 'chase';
@@ -26,13 +47,46 @@ export class PhasamaBoss extends BossBase {
   private spinSubT: number = 0;
   private nextSpinDashAt: number = 0;
 
+  // ---------- ระบบเฟรม ----------
+  private useFrames: boolean = false;
+  private frameScale: number = 1.6; // วัดจากรูป idle ตอนสร้าง
+  private feetRatio: number = 0.94; // ตำแหน่งเท้าในรูป (0-1)
+  private ballCY: number = 0.5; // ตำแหน่งกลางลูกกลมในรูป (0-1)
+  private pivotOn: boolean = false;
+  private curKey: string = '';
+
+  private step: Step | null = null;
+  private queue: Step[] = [];
+  private aIdx: number = 0;
+  private aT: number = 0;
+  private aDir: number = 1;
+  private aMode: 'run' | 'hold' | 'loop' | 'ping' = 'hold';
+
+  private dying: boolean = false;
+  private dyingT: number = 0;
+
   constructor(scene: Phaser.Scene, x: number, y: number, hooks: BossHooks) {
-    super(scene, BOSS_DEFS.phasama, 'boss_phasama', x, y, hooks);
+    super(scene, BOSS_DEFS.phasama, magmusReady(scene) ? magKey('idle', 0) : 'boss_phasama', x, y, hooks);
+    this.useFrames = magmusReady(scene);
+    if (this.useFrames) this.setupFrames();
     this.enterChase();
+  }
+
+  // รัศมีอิงความกว้างที่กำหนด ไม่ใช่ขนาดผืนผ้าใบของรูป
+  protected get radius(): number {
+    return this.def.displayWidth * 0.4;
   }
 
   protected tick(delta: number) {
     this.elapsed += delta;
+
+    if (this.dying) {
+      this.stepAnim(delta);
+      this.dyingT += delta;
+      if (this.dyingT >= MAG_FRAMES.knock * KNOCK_FRAME_MS + KNOCK_HOLD_MS) super.die();
+      return;
+    }
+
     switch (this.state) {
       case 'chase': this.updateChase(delta); break;
       case 'telegraph': this.updateTelegraph(delta); break;
@@ -42,23 +96,176 @@ export class PhasamaBoss extends BossBase {
       case 'dizzy': this.updateDizzy(delta); break;
       case 'recover': this.updateRecover(delta); break;
     }
+    this.stepAnim(delta);
   }
 
   protected onRage() {
     if (!this.pool.includes('spin')) this.pool.push('spin');
     this.gfx.clear();
     this.sprite.setVelocity(0);
-    this.setBall(false);
+    this.setPivot(false);
+    this.sprite.setAngle(0);
+    if (!this.useFrames) this.setBall(false);
     this.damageMult = 1;
-    this.enterRecover(1200);
+    this.enterRecover(1200, true);
   }
 
-  // ---------- ตัวช่วย ----------
+  // ตาย: เล่นท่า knock ให้เห็นก่อน แล้วค่อยระเบิด
+  protected die() {
+    if (!this.useFrames) {
+      super.die();
+      return;
+    }
+    if (this.dying) return;
+    this.dying = true;
+    this.dyingT = 0;
+    this.targetable = false; // ตีไม่ได้แล้ว
+    this.gfx.clear();
+    this.sprite.setVelocity(0);
+    this.setPivot(false);
+    this.sprite.setAngle(0);
+    this.sprite.clearTint();
+    this.play({ clip: 'knock', from: 0, to: MAG_FRAMES.knock - 1, ms: KNOCK_FRAME_MS, then: 'hold' });
+  }
+
+  // ======================================================
+  //  ระบบอนิเมชันเฟรม
+  // ======================================================
+  private setupFrames() {
+    const idle = measureAlpha(this.scene, magKey('idle', 0));
+    const ball = measureAlpha(this.scene, magKey('curl', MAG_FRAMES.curl - 1));
+    if (idle) {
+      this.frameScale = 1 / Math.max(0.2, idle.x1 - idle.x0);
+      this.feetRatio = idle.y1;
+    }
+    if (ball) this.ballCY = (ball.y0 + ball.y1) / 2;
+    this.curKey = '';
+    this.showFrame(magKey('idle', 0));
+    this.play(this.idleStep());
+  }
+
+  private showFrame(key: string) {
+    if (this.curKey === key) return;
+    this.curKey = key;
+    this.sprite.setTexture(key);
+    this.sprite.setScale((this.def.displayWidth * this.frameScale) / this.sprite.width);
+    // กล่องชนขนาดเท่าตัวบอสจริง (ไม่รวมพื้นที่โปร่งใสรอบรูป)
+    this.sprite.body.setSize(this.sprite.width / this.frameScale, this.sprite.height / this.frameScale);
+    this.updateGround();
+  }
+
+  // วางเงาให้อยู่ที่เท้า
+  private updateGround() {
+    const dh = this.sprite.displayHeight;
+    this.groundOffsetY = (this.feetRatio - this.sprite.originY) * dh - dh / 2 + 4;
+  }
+
+  // ย้ายจุดหมุนไปกลางลูกกลม (ตอนหมุนลูกข่าง) โดยภาพไม่ขยับ
+  private setPivot(on: boolean) {
+    if (!this.useFrames || this.pivotOn === on) return;
+    this.pivotOn = on;
+    const oy = on ? this.ballCY : 0.5;
+    this.sprite.y += (oy - this.sprite.originY) * this.sprite.displayHeight;
+    this.sprite.setOrigin(0.5, oy);
+    this.updateGround();
+  }
+
+  private idleStep(): Step {
+    return { clip: 'idle', from: 0, to: 0, ms: 1000, then: 'hold' };
+  }
+
+  // เล่นไปข้างหน้าให้จบในเวลา totalMs
+  private fwd(clip: MagClip, totalMs: number, then: Then = 'hold', lo?: number, hi?: number): Step {
+    const last = MAG_FRAMES[clip] - 1;
+    return { clip, from: 0, to: last, ms: Math.max(30, totalMs / Math.max(1, last)), then, lo, hi };
+  }
+
+  // เล่นย้อนจากเฟรมปัจจุบันกลับไปเฟรมแรก แล้วเปลี่ยนเป็นท่ายืน
+  private rev(clip: MagClip, fromIdx: number, totalMs: number): Step {
+    return { clip, from: fromIdx, to: 0, ms: Math.max(30, totalMs / Math.max(1, fromIdx)), then: 'idle' };
+  }
+
+  private play(...steps: Step[]) {
+    if (!this.useFrames || !steps.length) return;
+    this.queue = steps.slice(1);
+    this.startStep(steps[0]);
+  }
+
+  private startStep(s: Step) {
+    this.step = s;
+    this.aIdx = s.from;
+    this.aT = 0;
+    this.aDir = s.to >= s.from ? 1 : -1;
+    this.aMode = 'run';
+    if (s.from === s.to) this.endRun();
+  }
+
+  private endRun() {
+    const s = this.step!;
+    if (this.queue.length) {
+      this.startStep(this.queue.shift()!);
+      return;
+    }
+    if (s.then === 'idle') {
+      this.startStep(this.idleStep());
+    } else if (s.then === 'loop') {
+      this.aMode = 'loop';
+    } else if (s.then === 'ping') {
+      this.aMode = 'ping';
+      const hi = s.hi ?? MAG_FRAMES[s.clip] - 1;
+      this.aDir = this.aIdx >= hi ? -1 : 1;
+    } else {
+      this.aMode = 'hold';
+    }
+  }
+
+  private advance() {
+    const s = this.step!;
+    const last = MAG_FRAMES[s.clip] - 1;
+    if (this.aMode === 'run') {
+      this.aIdx += this.aDir;
+      if (this.aIdx === s.to) this.endRun();
+    } else if (this.aMode === 'loop') {
+      this.aIdx = (this.aIdx + 1) % (last + 1);
+    } else if (this.aMode === 'ping') {
+      const lo = s.lo ?? 0;
+      const hi = s.hi ?? last;
+      if (hi <= lo) return;
+      if (this.aIdx + this.aDir > hi || this.aIdx + this.aDir < lo) this.aDir *= -1;
+      this.aIdx = Phaser.Math.Clamp(this.aIdx + this.aDir, lo, hi);
+    }
+  }
+
+  private stepAnim(delta: number) {
+    if (!this.useFrames || !this.step) return;
+    if (this.aMode === 'hold') this.aT = 0;
+    else this.aT += delta;
+    let guard = 0;
+    while (this.step && this.aMode !== 'hold' && this.aT >= this.step.ms && guard++ < 12) {
+      this.aT -= this.step.ms;
+      this.advance();
+    }
+    if (this.step) this.showFrame(magKey(this.step.clip, this.aIdx));
+  }
+
+  // สลับเดิน/ยืน (รอถ้ากำลังเล่นท่าย้อนกลับอยู่)
+  private locomote(moving: boolean) {
+    if (!this.useFrames) return;
+    if (this.aMode === 'run' || this.queue.length) return;
+    const want: MagClip = moving ? 'walk' : 'idle';
+    if (this.step && this.step.clip === want) return;
+    this.play(moving ? { clip: 'walk', from: 0, to: 0, ms: WALK_MS, then: 'loop' } : this.idleStep());
+  }
+
+  // ======================================================
+  //  ตัวช่วยเดิม
+  // ======================================================
   private mouth(angle: number) {
     const r = this.radius * 0.7;
     return { x: this.sprite.x + Math.cos(angle) * r, y: this.sprite.y + Math.sin(angle) * r };
   }
 
+  // ใช้เฉพาะตอนไม่มีรูปบอสใหม่ (ภาพเดิม)
   private setBall(on: boolean) {
     this.fitTexture(on ? 'boss_phasama_ball' : 'boss_phasama', on ? 0.85 : 1);
     if (!on) this.sprite.setAngle(0);
@@ -95,12 +302,15 @@ export class PhasamaBoss extends BossBase {
     const t = this.nearestTarget();
     if (!t) {
       this.sprite.setVelocity(0);
+      this.locomote(false);
       return;
     }
     const mult = this.rage ? PHASAMA.rageSpeedMult : 1;
     const d = Phaser.Math.Distance.Between(this.sprite.x, this.sprite.y, t.x, t.y);
-    if (d > this.radius + 24) this.scene.physics.moveToObject(this.sprite, t, PHASAMA.walkSpeed * mult);
+    const moving = d > this.radius + 24;
+    if (moving) this.scene.physics.moveToObject(this.sprite, t, PHASAMA.walkSpeed * mult);
     else this.sprite.setVelocity(0);
+    this.locomote(moving);
     this.sprite.setFlipX(this.sprite.x >= t.x);
 
     this.timer -= delta;
@@ -124,7 +334,12 @@ export class PhasamaBoss extends BossBase {
     this.sprite.setFlipX(dx < 0);
     this.timer = this.telegraphMs(id);
 
-    if (id === 'spin') this.setBall(true);
+    if (this.useFrames) {
+      const clip: MagClip = id === 'flame' ? 'flame' : id === 'dash' ? 'dash' : 'curl';
+      this.play(this.fwd(clip, this.timer)); // เล่นให้ถึงเฟรมสุดท้ายพอดีตอนเริ่มโจมตี
+    } else if (id === 'spin') {
+      this.setBall(true);
+    }
   }
 
   private updateTelegraph(delta: number) {
@@ -194,6 +409,9 @@ export class PhasamaBoss extends BossBase {
       this.timer = PHASAMA.flame.durationMs;
       this.particleTimer = 0;
       this.scene.cameras.main.shake(120, 0.004);
+      const last = MAG_FRAMES.flame - 1;
+      // ตอนพ่นไฟ แกว่งไป-กลับระหว่างสองเฟรมท้าย
+      this.play({ clip: 'flame', from: last, to: last, ms: FLAME_HOLD_MS, then: 'ping', lo: last - 1, hi: last });
     } else if (this.current === 'dash') {
       const D = PHASAMA.dash;
       this.state = 'dash';
@@ -208,6 +426,7 @@ export class PhasamaBoss extends BossBase {
       this.spinSubT = 0;
       this.nextSpinDashAt = PHASAMA.spin.dashEveryMs;
       this.sprite.setAngle(0);
+      this.setPivot(true); // หมุนรอบกลางลูกกลม
       this.scene.cameras.main.shake(150, 0.006);
     }
   }
@@ -237,7 +456,7 @@ export class PhasamaBoss extends BossBase {
     if (this.timer <= 0) {
       this.gfx.clear();
       this.sprite.setVelocity(0);
-      this.enterRecover(F.recoverMs);
+      this.enterRecover(F.recoverMs, true);
     }
   }
 
@@ -321,7 +540,7 @@ export class PhasamaBoss extends BossBase {
     if (this.timer <= 0) {
       this.gfx.clear();
       this.sprite.setVelocity(0);
-      this.enterRecover(D.recoverMs);
+      this.enterRecover(D.recoverMs, true);
     }
   }
 
@@ -422,7 +641,18 @@ export class PhasamaBoss extends BossBase {
   private endSpin() {
     this.gfx.clear();
     this.sprite.setVelocity(0);
-    this.setBall(false);
+    this.sprite.setAngle(0);
+    if (this.useFrames) {
+      this.setPivot(false);
+      const last = MAG_FRAMES.curl - 1;
+      // คลายจากลูกกลมกลับเป็นยืน แล้วเข้าท่ามึน (ไป-กลับท้ายท่า)
+      this.play(
+        { clip: 'curl', from: last, to: 0, ms: UNCURL_MS, then: 'hold' },
+        this.fwd('dizzy', DIZZY_IN_MS, 'ping', DIZZY_LOOP_FROM, MAG_FRAMES.dizzy - 1)
+      );
+    } else {
+      this.setBall(false);
+    }
     this.state = 'dizzy';
     this.elapsed = 0;
     this.timer = PHASAMA.spin.dizzyMs;
@@ -447,17 +677,23 @@ export class PhasamaBoss extends BossBase {
     if (this.timer <= 0) {
       this.damageMult = 1;
       this.gfx.clear();
-      this.enterChase();
+      this.enterRecover(600, true); // เล่นย้อนกลับเป็นยืนก่อนกลับไปเดิน
     }
   }
 
   // ---------- recover ----------
-  private enterRecover(ms: number) {
+  private enterRecover(ms: number, reverse: boolean = false) {
     this.state = 'recover';
     this.elapsed = 0;
     this.timer = ms;
     this.sprite.setVelocity(0);
     this.resetTint();
+    if (reverse && this.useFrames && this.step) {
+      const c = this.step.clip;
+      if (c !== 'idle' && c !== 'walk') {
+        this.play(this.rev(c, this.aIdx, Math.min(ms * 0.8, RETURN_MAX_MS)));
+      }
+    }
   }
 
   private updateRecover(delta: number) {

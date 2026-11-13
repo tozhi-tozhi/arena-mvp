@@ -27,9 +27,18 @@ import { huntSession } from '../systems/HuntSession';
 import { createBoss, type Boss } from '../entities/createBoss';
 import { pickRandomBossId, BURN } from '../data/bosses';
 import { ensureBossTextures } from '../systems/bossTextures';
+import { loadMagmusFrames } from '../systems/magmusFrames';
+import { loadPixelFx, spawnPixelFx } from '../systems/pixelFx';
 
 const CLAY_SCALE = 0.8;
 const WALK_FRAME_MS = 150;
+const AKK_SCALE = 0.5;
+const AKK_FRAMES = { idle: 1, walk: 4, attack: 5, charge: 7, thrust: 8, skill: 8, knock: 8 };
+type AkkClip = keyof typeof AKK_FRAMES;
+const akkKey = (clip: string, i: number) => `akk_${clip}_${String(i).padStart(2, '0')}`;
+const KNOCK_HOLD_MS = 1600; // ท่า knock เล่น ~1 วินาที + ค้างครึ่งวินาที ก่อนขึ้น Game Over
+const SKILL_SHIELD_FROM = 3; // เฟรมของสกิลที่เริ่มโชว์ออร่าอมตะ (นับจาก 1)
+const SKILL_SLASH_AT = 5; // เฟรมของสกิลที่เริ่มฟันใหญ่ (นับจาก 1)
 
 // พื้นที่ฟันที่กำลัง "ออกฤทธิ์" อยู่ (ตรวจชนบอสทุกเฟรมจนกว่าจะโดนหรือหมดเวลา)
 interface Sweep {
@@ -124,6 +133,11 @@ export class GameScene extends Phaser.Scene {
   private walkFrameTimer: number = 0;
   private walkFrameIndex: number = 0;
   private currentTexture: string = 'hero';
+  private useAkk: boolean = false;
+  private akkClip: string = '';
+  private akkClipStart: number = 0;
+  private akkDur: number[] = [];
+  private akkClipLoop: boolean = false;
 
   private monster!: Boss;
   private bossHud!: BossHUD;
@@ -144,6 +158,12 @@ export class GameScene extends Phaser.Scene {
     this.load.image('hero_clay_walk1', 'assets/hero_clay_walk1.png');
     this.load.image('hero_clay_walk2', 'assets/hero_clay_walk2.png');
     this.load.image('hero_clay_attack', 'assets/hero_clay_attack.png');
+        for (const [clip, n] of Object.entries(AKK_FRAMES)) {
+      for (let i = 1; i <= n; i++) {
+        const nn = String(i).padStart(2, '0');
+        this.load.image(akkKey(clip, i), `assets/characters/akkhani/char_akkhani_${clip}_${nn}.png`);
+      }
+    }
 
     this.load.image('floor', 'assets/floor.png');
     this.load.image('wall', 'assets/wall.png');
@@ -155,6 +175,8 @@ export class GameScene extends Phaser.Scene {
     this.load.image('boss_phasama', 'assets/boss_phasama.png');
     this.load.image('boss_phasama_ball', 'assets/boss_phasama_ball.png');
     this.load.image('boss_maya', 'assets/boss_maya.png');
+    loadMagmusFrames(this);
+    loadPixelFx(this);
   }
 
   create() {
@@ -165,7 +187,14 @@ export class GameScene extends Phaser.Scene {
       this.textures.exists('hero_clay_attack');
 
     this.character = CHARACTERS[loadout.characterId];
-    this.baseScale = this.useClay ? CLAY_SCALE : SPRITE_SCALE;
+    this.useAkk =
+      this.character.id === 'akkhani' &&
+      Object.entries(AKK_FRAMES).every(([clip, n]) =>
+        Array.from({ length: n }, (_, i) => this.textures.exists(akkKey(clip, i + 1))).every(Boolean)
+      );
+    if (this.useAkk) this.useClay = true;
+    this.baseScale = this.useAkk ? AKK_SCALE : this.useClay ? CLAY_SCALE : SPRITE_SCALE;
+    this.akkClip = '';
 
     // รีเซ็ตสถานะ
     this.maxPlayerHP = this.character.maxHP;
@@ -214,12 +243,13 @@ export class GameScene extends Phaser.Scene {
     makeVignette(this);
 
     // สร้างผู้เล่น
-    const startTexture = this.useClay ? 'hero_clay_idle' : 'hero';
+    const startTexture = this.useAkk ? akkKey('idle', 1) : this.useClay ? 'hero_clay_idle' : 'hero';
     this.player = this.physics.add.sprite(400, 300, startTexture) as any;
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(DEPTH.PLAYER);
     this.player.setScale(this.baseScale * this.character.scale);
     this.currentTexture = startTexture;
+    if (this.useAkk) this.player.body.setSize(90, 90); // กล่องชนให้เล็กกว่ารูป (รูปมีพื้นที่โปร่งใสรอบตัว)
     this.applyBaseTint();
 
     const shadowOffset = this.useClay ? this.player.displayHeight / 2 - 6 : 14;
@@ -343,6 +373,7 @@ export class GameScene extends Phaser.Scene {
       showDamage(this, this.player.x, this.player.y - 40, nowMuted ? 'ปิดเสียง' : 'เปิดเสียง', '#ffffff', 900);
     }
 
+    if (this.isDead && this.useAkk) this.updateClip(this.time.now);
     if (this.isDead || this.isVictory) {
       if (this.keyRestart && Phaser.Input.Keyboard.JustDown(this.keyRestart)) {
         this.scene.start('BaseScene');
@@ -386,7 +417,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ---------- สลับ texture ----------
-    if (!this.isAttacking) {
+    if (this.useAkk) {
+      this.updateAkkVisual(now, vx !== 0 || vy !== 0);
+    } else if (!this.isAttacking) {
       if (vx !== 0 || vy !== 0 || this.isDashing) {
         this.walkFrameTimer += delta;
         if (this.walkFrameTimer >= WALK_FRAME_MS) {
@@ -550,11 +583,12 @@ export class GameScene extends Phaser.Scene {
   // =====================================================
   private applyBaseTint() {
     this.player.clearTint();
-    this.player.setTint(this.character.tint);
+    if (!this.useAkk) this.player.setTint(this.character.tint);
   }
 
   private setPlayerTexture(key: string) {
     if (!this.useClay) return;
+    if (this.useAkk && key.startsWith('hero_clay')) return;
     if (this.currentTexture === key) return;
     if (!this.textures.exists(key)) return;
     this.player.setTexture(key);
@@ -562,8 +596,68 @@ export class GameScene extends Phaser.Scene {
     this.player.setScale(this.baseScale * this.character.scale);
   }
 
+  // frameMs: ตัวเลขเดียว (ทุกเฟรมเท่ากัน) หรืออาร์เรย์ (เวลาของแต่ละเฟรม)
+  private playClip(clip: AkkClip, frameMs: number | number[], loop: boolean) {
+    this.akkClip = clip;
+    this.akkClipStart = this.time.now;
+    this.akkClipLoop = loop;
+    this.akkDur = Array.isArray(frameMs) ? frameMs : Array(AKK_FRAMES[clip]).fill(frameMs);
+  }
+
+  private playAttackClip(frameMs: number) {
+    if (this.useAkk) this.playClip('attack', frameMs, false);
+    else this.setPlayerTexture('hero_clay_attack');
+  }
+
+  private updateClip(now: number) {
+    if (!this.useAkk || !this.akkClip) return;
+    const n = AKK_FRAMES[this.akkClip as AkkClip];
+    let t = now - this.akkClipStart;
+    if (this.akkClipLoop) {
+      const total = this.akkDur.reduce((a, b) => a + b, 0);
+      if (total > 0) t = t % total;
+    }
+    let i = 0;
+    while (i < n - 1 && t >= (this.akkDur[i] ?? 100)) {
+      t -= this.akkDur[i] ?? 100;
+      i++;
+    }
+    this.setPlayerTexture(akkKey(this.akkClip, i + 1));
+  }
+
+  private updateAkkVisual(now: number, moving: boolean) {
+    let want = '';
+    if (!this.isAttacking) {
+      if (this.isCharging && now - this.chargeStartAt >= 120) want = 'charge';
+      else want = moving ? 'walk' : 'idle';
+    }
+    if (want && want !== this.akkClip) {
+      if (want === 'walk') this.playClip('walk', 120, true);
+      else if (want === 'charge') {
+        // ให้ถึงเฟรมสุดท้ายพอดีตอนชาร์จเต็ม แล้วค้างไว้
+        const ms = Math.max(30, (this.chargeNeeded() - 120) / (AKK_FRAMES.charge - 1));
+        this.playClip('charge', ms, false);
+      } else this.playClip('idle', 1000, true);
+    }
+    this.updateClip(now);
+  }
+
+  private feetY(): number {
+    return this.useAkk ? this.player.y + this.player.displayHeight * 0.45 : this.player.y + this.player.displayHeight / 2;
+  }
+
+  // PixelFX: รอยฟัน หันซ้าย/ขวาตามทิศตัวละคร
+  private slashFx(scale: number) {
+    spawnPixelFx(this, 'sword-slash', {
+      x: this.player.x,
+      y: this.feetY(),
+      scale,
+      flipX: this.player.flipX,
+      depth: DEPTH.SLASH + 1
+    });
+  }
   private bossRadius(): number {
-    return this.monster.sprite.displayWidth * 0.4;
+    return this.monster.def.displayWidth * 0.4;
   }
 
     // ทิศจากตัวผู้เล่นไปยังเคอร์เซอร์เมาส์
@@ -775,9 +869,10 @@ export class GameScene extends Phaser.Scene {
     this.facing.copy(dir);
 
     this.isAttacking = true;
-    this.setPlayerTexture('hero_clay_attack');
+    this.playAttackClip(A.durationMs / AKK_FRAMES.attack);
     sfx.swing();
     spawnArcSlash(this, this.player.x, this.player.y, Math.atan2(dir.y, dir.x), A.range, A.halfAngle, 0xff6a5a, 6, 180);
+    this.slashFx(2);
     this.cameras.main.shake(80, 0.003);
 
     this.sweep = {
@@ -816,12 +911,13 @@ export class GameScene extends Phaser.Scene {
 
     this.isAttacking = true;
     this.isActionLocked = true;
-    this.setPlayerTexture('hero_clay_attack');
+    this.playAttackClip(C.thrustDelayMs / AKK_FRAMES.attack);
     this.player.setVelocity(0);
 
     // 1) ฟันกวาด
     sfx.swing();
     spawnArcSlash(this, this.player.x, this.player.y, Math.atan2(dir.y, dir.x), C.sweepRange, C.sweepHalfAngle, 0xffb15a, 7, 200);
+    this.slashFx(2);
     this.cameras.main.shake(100, 0.004);
     this.sweep = {
       dir,
@@ -836,6 +932,7 @@ export class GameScene extends Phaser.Scene {
     // 2) พุ่งดาบ
     this.time.delayedCall(C.thrustDelayMs, () => {
       if (token !== this.actionToken) return;
+      if (this.useAkk) this.playClip('thrust', C.thrustMs / AKK_FRAMES.thrust, false);
       this.isLunging = true;
       this.thrust = { until: this.time.now + C.thrustMs, damage: C.thrustDamage, hit: false, actionId };
       this.player.setVelocity(dir.x * C.thrustSpeed, dir.y * C.thrustSpeed);
@@ -869,7 +966,16 @@ export class GameScene extends Phaser.Scene {
     this.isActionLocked = true;
     this.skillInvincible = true;
     this.player.setVelocity(0);
-    this.setPlayerTexture('hero_clay_attack');
+
+    // เฟรมก่อนฟัน (ท่าเตรียม) แบ่งเวลา windupMs / เฟรมตั้งแต่ฟัน แบ่งเวลา activeMs
+    const nPre = SKILL_SLASH_AT - 1;
+    const nPost = AKK_FRAMES.skill - nPre;
+    if (this.useAkk) {
+      const dur = [...Array(nPre).fill(S.windupMs / nPre), ...Array(nPost).fill(S.activeMs / nPost)];
+      this.playClip('skill', dur, false);
+    } else {
+      this.setPlayerTexture('hero_clay_attack');
+    }
 
     ringEffect(this, this.player.x, this.player.y, 70, 0xffffff, S.windupMs);
     this.tweens.add({
@@ -878,6 +984,21 @@ export class GameScene extends Phaser.Scene {
       duration: 80,
       yoyo: true,
       repeat: Math.floor(S.windupMs / 160)
+    });
+
+    // PixelFX: ออร่าอมตะ ขึ้นตั้งแต่เฟรม SKILL_SHIELD_FROM จนจบช่วงเตรียม
+    const shieldAt = ((SKILL_SHIELD_FROM - 1) * S.windupMs) / nPre;
+    this.time.delayedCall(shieldAt, () => {
+      if (token !== this.actionToken) return;
+      spawnPixelFx(this, 'divine-shield', {
+        x: this.player.x,
+        y: this.feetY(),
+        scale: 2,
+        depth: DEPTH.SLASH + 1,
+        durationMs: S.windupMs - shieldAt,
+        fadeOutMs: 100,
+        follow: () => ({ x: this.player.x, y: this.feetY() })
+      });
     });
 
     this.time.delayedCall(S.windupMs, () => {
@@ -892,6 +1013,13 @@ export class GameScene extends Phaser.Scene {
       sfx.swing();
       spawnArcSlash(this, this.player.x, this.player.y, Math.atan2(dir.y, dir.x), S.range, S.halfAngle, 0xff3b2f, 10, 300);
       ringEffect(this, this.player.x, this.player.y, S.range * 0.7, 0xff8a5a, 300);
+      // PixelFX: วงฟันใหญ่
+      spawnPixelFx(this, 'spin-slash', {
+        x: this.player.x,
+        y: this.feetY(),
+        scale: 2,
+        depth: DEPTH.SLASH + 1
+      });
       this.cameras.main.shake(220, 0.012);
 
       this.sweep = {
@@ -1221,11 +1349,19 @@ export class GameScene extends Phaser.Scene {
   }
   private gameOver() {
     this.isDead = true;
-    this.player.setTint(0x555555);
+    this.cancelCharge();
     this.player.setAlpha(1);
     this.shieldRing.setVisible(false);
     burst(this, this.player.x, this.player.y, 0xff3333, 16, 70, 7);
-    showEndScreen(this, 'GAME OVER', '#ff4444', 'กด R เพื่อกลับฐาน');
+    const show = () => showEndScreen(this, 'GAME OVER', '#ff4444', 'กด R เพื่อกลับฐาน');
+    if (this.useAkk) {
+      this.player.setVelocity(0);
+      this.playClip('knock', 130, false);
+      this.time.delayedCall(KNOCK_HOLD_MS, show);
+    } else {
+      this.player.setTint(0x555555);
+      show();
+    }
   }
 
   private onMonsterDeath() {

@@ -1,0 +1,12 @@
+PixelFX assets used in Arena MVP
+Source: https://github.com/patch-gg/pixelfx   (MIT License, Copyright (c) 2026 Patch, Copyright (c) 2026 Hugo Duprez)
+Integration: Sprite Sheet (exported with: node tools/render.mjs <id> --no-actor --sheet), loaded as Phaser spritesheet
+
+1) holy/divine-shield   -> holy/divine-shield.png    (88x84, 72 frames, 30 fps, loop, pivot 44,68)
+2) melee/spin-slash     -> melee/spin-slash.png      (208x104, 25 frames, 30 fps, one-shot, pivot 104,84)
+   Adapted from Sprite Fusion open-source slash (https://www.spritefusion.com/pixel-art-vfx/slash), MIT, Copyright (c) 2026 Hugo Duprez
+3) melee/sword-slash    -> melee/sword-slash.png     (136x104, 24 frames, 30 fps, one-shot, pivot 44,92)
+   Adapted from Sprite Fusion open-source slash (https://www.spritefusion.com/pixel-art-vfx/slash), MIT, Copyright (c) 2026 Hugo Duprez
+
+Date added: 2026-11-13
+License: MIT (see LICENSE and NOTICE.md in the PixelFX repository). Re-check before commercial release.
