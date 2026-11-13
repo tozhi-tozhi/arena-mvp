@@ -32,9 +32,9 @@ import { ensureBossTextures } from '../systems/bossTextures';
 import { loadMagmusFrames } from '../systems/magmusFrames';
 import { loadPixelFx, spawnPixelFx } from '../systems/pixelFx';
 
-const CLAY_SCALE = 0.84;
+const CLAY_SCALE = 0.68;
 const WALK_FRAME_MS = 150;
-const AKK_SCALE = 0.54;
+const AKK_SCALE = 0.43;
 const AKK_FRAMES = { idle: 1, walk: 4, attack: 5, charge: 7, thrust: 8, skill: 8, knock: 8 };
 type AkkClip = keyof typeof AKK_FRAMES;
 const akkKey = (clip: string, i: number) => `akk_${clip}_${String(i).padStart(2, '0')}`;
@@ -238,6 +238,7 @@ export class GameScene extends Phaser.Scene {
     const H = WORLD_HEIGHT;
     const t = WALL_THICKNESS;
     this.add.tileSprite(0, 0, W, H, 'floor').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.FLOOR);
+    this.createFloorDetails();
     this.add.tileSprite(0, 0, W, t, 'wall').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.WALL);
     this.add.tileSprite(0, H - t, W, t, 'wall').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.WALL);
     this.add.tileSprite(0, 0, t, H, 'wall').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.WALL);
@@ -389,8 +390,13 @@ export class GameScene extends Phaser.Scene {
 
     this.showControlsNotice();
 
-    this.cameras.main.setBounds(0, 0, W, H);
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+const camera = this.cameras.main;
+
+camera.setBounds(0, 0, W, H);
+camera.startFollow(this.player, true, 0.08, 0.08);
+
+// ผู้เล่นเดินได้ในพื้นที่นี้ก่อน กล้องจึงเริ่มเคลื่อนตาม
+camera.setDeadzone(440, 340);
 
     this.sys.game.canvas.addEventListener('click', () => {
       this.sys.game.canvas.focus();
@@ -626,6 +632,68 @@ export class GameScene extends Phaser.Scene {
     this.player.clearTint();
     if (!this.useAkk) this.player.setTint(this.character.tint);
   }
+
+private createFloorDetails() {
+  const g = this.add.graphics();
+  g.setDepth(DEPTH.FLOOR + 0.5);
+
+  // Random แบบกำหนด Seed เพื่อให้ตำแหน่งรายละเอียดคงที่
+  let seed = 20261113;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+
+  const dirtColors = [
+    0x66543d,
+    0x85704d,
+    0x9b8158,
+    0x596044,
+    0x77705a
+  ];
+
+  // คราบดินและสีพื้นหลายเฉด
+  for (let i = 0; i < 650; i++) {
+    const x = rand() * WORLD_WIDTH;
+    const y = rand() * WORLD_HEIGHT;
+    const w = 12 + rand() * 45;
+    const h = 8 + rand() * 25;
+    const color = dirtColors[
+      Math.floor(rand() * dirtColors.length)
+    ];
+
+    g.fillStyle(color, 0.08 + rand() * 0.09);
+    g.fillEllipse(x, y, w, h);
+  }
+
+  // เศษหินเล็ก ๆ
+  for (let i = 0; i < 320; i++) {
+    const x = rand() * WORLD_WIDTH;
+    const y = rand() * WORLD_HEIGHT;
+    const r = 2 + rand() * 5;
+
+    g.fillStyle(
+      rand() > 0.5 ? 0xaaa18a : 0x403e38,
+      0.18 + rand() * 0.12
+    );
+    g.fillEllipse(x, y, r * 2, r);
+  }
+
+  // กอหญ้าเล็ก ๆ
+  for (let i = 0; i < 180; i++) {
+    const x = rand() * WORLD_WIDTH;
+    const y = rand() * WORLD_HEIGHT;
+
+    g.lineStyle(2, 0x596d3d, 0.25);
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x - 4 - rand() * 5, y - 5 - rand() * 7);
+    g.moveTo(x, y);
+    g.lineTo(x + 4 + rand() * 5, y - 4 - rand() * 6);
+    g.strokePath();
+  }
+}
+
 
   private setPlayerTexture(key: string) {
     if (!this.useClay) return;

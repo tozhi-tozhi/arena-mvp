@@ -26,8 +26,8 @@ export const BOSSES: Record<BossId, BossInfo> = {
 };
 
 export const BOSS_DEFS: Record<BossId, BossDef> = {
-  phasama: { id: 'phasama', name: 'ภัสมะ', hp: 80, color: 0xff6a2a, displayWidth: 144 },
-  maya: { id: 'maya', name: 'มายา', hp: 70, color: 0xb07aff, displayWidth: 112 }
+  phasama: { id: 'phasama', name: 'ภัสมะ', hp: 80, color: 0xff6a2a, displayWidth: 195 },
+  maya: { id: 'maya', name: 'มายา', hp: 70, color: 0xb07aff, displayWidth: 155 }
 };
 
 export function pickRandomBossId(): BossId {
