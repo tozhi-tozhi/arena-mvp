@@ -47,6 +47,7 @@ export abstract class BossBase {
     this.sprite.setDepth(DEPTH.ENEMY);
     this.sprite.setScale(def.displayWidth / this.sprite.width);
     this.sprite.body.setImmovable(true);
+    this.syncBodyShape();
 
     this.shadow = scene.add
       .ellipse(x, y, def.displayWidth * 0.85, def.displayWidth * 0.22, 0x000000, 0.35)
@@ -73,7 +74,18 @@ export abstract class BossBase {
   protected fitTexture(key: string, widthFactor: number = 1) {
     this.sprite.setTexture(key);
     this.sprite.setScale((this.def.displayWidth * widthFactor) / this.sprite.width);
-    this.sprite.body.setSize(this.sprite.width, this.sprite.height);
+    this.syncBodyShape();
+  }
+
+  // Hitbox วงกลมตามพื้นที่ตัวบอส ลดการเบียดติดมุมกับผู้เล่น
+  protected syncBodyShape() {
+    const diameter = Math.min(this.sprite.width, this.sprite.height) * 0.68;
+    const radius = diameter / 2;
+    this.sprite.body.setCircle(
+      radius,
+      (this.sprite.width - diameter) / 2,
+      (this.sprite.height - diameter) / 2
+    );
   }
 
   update(delta: number) {
