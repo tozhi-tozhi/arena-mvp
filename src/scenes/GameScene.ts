@@ -3,6 +3,8 @@ import Phaser from 'phaser';
 import {
   GAME_WIDTH,
   GAME_HEIGHT,
+  WORLD_WIDTH,
+  WORLD_HEIGHT,
   WALL_THICKNESS,
   SPRITE_SCALE,
   DEPTH
@@ -30,9 +32,9 @@ import { ensureBossTextures } from '../systems/bossTextures';
 import { loadMagmusFrames } from '../systems/magmusFrames';
 import { loadPixelFx, spawnPixelFx } from '../systems/pixelFx';
 
-const CLAY_SCALE = 0.8;
+const CLAY_SCALE = 0.84;
 const WALK_FRAME_MS = 150;
-const AKK_SCALE = 0.5;
+const AKK_SCALE = 0.54;
 const AKK_FRAMES = { idle: 1, walk: 4, attack: 5, charge: 7, thrust: 8, skill: 8, knock: 8 };
 type AkkClip = keyof typeof AKK_FRAMES;
 const akkKey = (clip: string, i: number) => `akk_${clip}_${String(i).padStart(2, '0')}`;
@@ -142,6 +144,8 @@ export class GameScene extends Phaser.Scene {
   private monster!: Boss;
   private bossHud!: BossHUD;
   private bossCollider: any;
+  private bossIndicator!: Phaser.GameObjects.Text;
+  private bossIndicatorLabel!: Phaser.GameObjects.Text;
 
   private lootBox: LootBox | null = null;
   private droppedItem: DroppedItem | null = null;
@@ -230,8 +234,8 @@ export class GameScene extends Phaser.Scene {
     this.huntLoot = [];
     this.huntStartTime = this.time.now;
 
-    const W = GAME_WIDTH;
-    const H = GAME_HEIGHT;
+    const W = WORLD_WIDTH;
+    const H = WORLD_HEIGHT;
     const t = WALL_THICKNESS;
     this.add.tileSprite(0, 0, W, H, 'floor').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.FLOOR);
     this.add.tileSprite(0, 0, W, t, 'wall').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.WALL);
@@ -242,25 +246,39 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(t, t, W - t * 2, H - t * 2);
     makeVignette(this);
 
-    // สร้างผู้เล่น
+    // สร้างผู้เล่น — เริ่มกลางฐานบนแผนที่ใหญ่
+    const playerStartX = WORLD_WIDTH / 2;
+    const playerStartY = WORLD_HEIGHT / 2;
     const startTexture = this.useAkk ? akkKey('idle', 1) : this.useClay ? 'hero_clay_idle' : 'hero';
-    this.player = this.physics.add.sprite(400, 300, startTexture) as any;
+    this.player = this.physics.add.sprite(playerStartX, playerStartY, startTexture) as any;
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(DEPTH.PLAYER);
     this.player.setScale(this.baseScale * this.character.scale);
     this.currentTexture = startTexture;
-    if (this.useAkk) this.player.body.setSize(90, 90); // กล่องชนให้เล็กกว่ารูป (รูปมีพื้นที่โปร่งใสรอบตัว)
+
+    // Hitbox วงกลมช่วยลดการเกี่ยวมุม และคุมขนาดชนให้ใกล้เคียงกันทุกตัวละคร
+    const minPlayerSide = Math.min(this.player.width, this.player.height);
+    const wantedHitboxDiameter = 48 / Math.max(this.player.scaleX, 0.001);
+    const hitboxDiameter = Math.min(wantedHitboxDiameter, minPlayerSide * 0.75);
+    const hitboxRadius = hitboxDiameter / 2;
+    this.player.body.setCircle(
+      hitboxRadius,
+      (this.player.width - hitboxDiameter) / 2,
+      (this.player.height - hitboxDiameter) / 2
+    );
     this.applyBaseTint();
 
     const shadowOffset = this.useClay ? this.player.displayHeight / 2 - 6 : 14;
+    const shadowWidth = Math.max(26, this.player.displayWidth * 0.38);
+    const shadowHeight = Math.max(10, this.player.displayWidth * 0.14);
     this.playerShadow = this.add
-      .ellipse(400, 300 + shadowOffset, 26, 10, 0x000000, 0.35)
+      .ellipse(playerStartX, playerStartY + shadowOffset, shadowWidth, shadowHeight, 0x000000, 0.35)
       .setDepth(DEPTH.PLAYER_SHADOW);
 
     // วงชาร์จ + โล่
     this.chargeGfx = this.add.graphics();
     this.chargeGfx.setDepth(DEPTH.PLAYER + 1);
-    this.shieldRing = this.add.circle(400, 300, 28);
+    this.shieldRing = this.add.circle(playerStartX, playerStartY, Math.max(28, this.player.displayWidth * 0.36));
     this.shieldRing.setStrokeStyle(3, 0x66e0ff);
     this.shieldRing.setDepth(DEPTH.PLAYER + 1);
     this.shieldRing.setVisible(false);
@@ -308,7 +326,8 @@ export class GameScene extends Phaser.Scene {
     this.burnLastInFire = 0;
     this.burnImmuneUntil = 0;
     this.burnFxAt = 0;
-    this.monster = createBoss(this, bossId, 600, 300, {
+    // บอสอยู่ห่างจากจุดเริ่ม เพื่อให้การออกล่ามีระยะทางจริง
+    this.monster = createBoss(this, bossId, WORLD_WIDTH * 0.78, WORLD_HEIGHT / 2, {
       getTargets: () => (this.isDead ? [] : [this.player]),
       onHitTarget: (target, damage, fromX, fromY) => this.damagePlayer(target, damage, fromX, fromY),
       onBurn: (_target, delta) => this.applyBurn(delta),
@@ -316,6 +335,27 @@ export class GameScene extends Phaser.Scene {
     });
     this.bossHud = new BossHUD(this, this.monster.def.name, this.monster.def.hp);
     this.bossCollider = this.physics.add.collider(this.player, this.monster.sprite);
+
+    // ลูกศรชี้บอสจะแสดงเฉพาะตอนบอสอยู่นอกหน้าจอ
+    this.bossIndicator = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '▲', {
+        fontFamily: 'Arial', fontSize: '28px', fontStyle: 'bold',
+        color: '#ffd166', stroke: '#4a2600', strokeThickness: 4
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.HUD)
+      .setScrollFactor(0)
+      .setVisible(false);
+    this.bossIndicatorLabel = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 24, 'บอส', {
+        fontFamily: '"Noto Sans Thai", monospace', fontSize: '12px', fontStyle: 'bold',
+        color: '#ffffff', backgroundColor: 'rgba(25, 15, 5, 0.78)',
+        padding: { x: 5, y: 2 }, stroke: '#000000', strokeThickness: 2
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.HUD)
+      .setScrollFactor(0)
+      .setVisible(false);
 
     this.hud = new PlayerHUD(this, this.maxPlayerHP);
 
@@ -536,7 +576,7 @@ export class GameScene extends Phaser.Scene {
             this.huntLoot.push(loot);
             this.droppedItem = null;
             showDamage(this, this.player.x, this.player.y - 40, `+ ${loot.name}`, loot.color, 1500);
-            this.exitPortal = new ExitPortal(this, GAME_WIDTH / 2, GAME_HEIGHT / 2);
+            this.exitPortal = new ExitPortal(this, WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
           });
         }
       }
@@ -576,6 +616,7 @@ export class GameScene extends Phaser.Scene {
     this.shieldRing.setPosition(this.player.x, this.player.y);
     this.shieldRing.setVisible(this.shield);
     this.updateHudTexts(now);
+    this.updateBossIndicator();
   }
 
   // =====================================================
@@ -1379,6 +1420,46 @@ export class GameScene extends Phaser.Scene {
 
     this.lootBox = new LootBox(this, this.monster.sprite.x, this.monster.sprite.y);
     if (this.bossCollider) this.bossCollider.destroy();
+  }
+
+  private updateBossIndicator() {
+    if (!this.bossIndicator || !this.bossIndicatorLabel || !this.monster?.isAlive) {
+      this.bossIndicator?.setVisible(false);
+      this.bossIndicatorLabel?.setVisible(false);
+      return;
+    }
+
+    const camera = this.cameras.main;
+    const boss = this.monster.sprite;
+    const view = camera.worldView;
+    const isVisible =
+      boss.x >= view.x && boss.x <= view.x + view.width &&
+      boss.y >= view.y && boss.y <= view.y + view.height;
+
+    if (isVisible) {
+      this.bossIndicator.setVisible(false);
+      this.bossIndicatorLabel.setVisible(false);
+      return;
+    }
+
+    const dx = boss.x - (view.x + view.width / 2);
+    const dy = boss.y - (view.y + view.height / 2);
+    const angle = Math.atan2(dy, dx);
+    const edgeX = camera.width / 2 - 42;
+    const edgeY = camera.height / 2 - 48;
+    const scaleX = edgeX / Math.max(Math.abs(dx), 0.001);
+    const scaleY = edgeY / Math.max(Math.abs(dy), 0.001);
+    const edgeScale = Math.min(scaleX, scaleY);
+    const screenX = camera.width / 2 + dx * edgeScale;
+    const screenY = camera.height / 2 + dy * edgeScale;
+
+    // ตัวอักษร ▲ หันขึ้นเป็นค่าเริ่มต้น จึงชดเชยมุมอีก 90 องศา
+    this.bossIndicator
+      .setPosition(screenX, screenY)
+      .setRotation(angle + Math.PI / 2)
+      .setVisible(true);
+    const labelY = screenY > GAME_HEIGHT * 0.72 ? screenY - 27 : screenY + 25;
+    this.bossIndicatorLabel.setPosition(screenX, labelY).setVisible(true);
   }
 
   private showControlsNotice() {

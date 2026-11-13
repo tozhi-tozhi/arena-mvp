@@ -1,7 +1,12 @@
 // ค่าคงที่ของเกม — แก้ตัวเลขที่นี่ที่เดียว ทั้งเกมเปลี่ยนตาม
 
+// ขนาดหน้าจอ (Viewport) — คงเดิมเพื่อไม่ให้ HUD และ UI เปลี่ยนสัดส่วน
 export const GAME_WIDTH = 800;
 export const GAME_HEIGHT = 600;
+
+// ขนาดโลกเกม — สนามใหญ่กว่าหน้าจอ 4 เท่าในแต่ละแกน
+export const WORLD_WIDTH = 3200;
+export const WORLD_HEIGHT = 2400;
 export const WALL_THICKNESS = 32;
 export const SPRITE_SCALE = 2;
 

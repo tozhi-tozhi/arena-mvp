@@ -149,8 +149,15 @@ export class PhasamaBoss extends BossBase {
     this.curKey = key;
     this.sprite.setTexture(key);
     this.sprite.setScale((this.def.displayWidth * this.frameScale) / this.sprite.width);
-    // กล่องชนขนาดเท่าตัวบอสจริง (ไม่รวมพื้นที่โปร่งใสรอบรูป)
-    this.sprite.body.setSize(this.sprite.width / this.frameScale, this.sprite.height / this.frameScale);
+    // วงชนยึดขนาดจากกรอบตัวบอสจริง ไม่รวมพื้นที่โปร่งใส และไม่เกี่ยวมุม
+    const bodyWidth = this.sprite.width / this.frameScale;
+    const bodyHeight = this.sprite.height / this.frameScale;
+    const diameter = Math.min(bodyWidth, bodyHeight) * 0.68;
+    this.sprite.body.setCircle(
+      diameter / 2,
+      (this.sprite.width - diameter) / 2,
+      (this.sprite.height - diameter) / 2
+    );
     this.updateGround();
   }
 
