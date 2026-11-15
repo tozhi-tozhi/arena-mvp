@@ -39,6 +39,7 @@ export class PhasamaBoss extends BossBase {
   private dir = new Phaser.Math.Vector2(1, 0);
   private flameAngle: number = 0;
   private particleTimer: number = 0;
+  private flameElapsed: number = 0;   // จับเวลาตั้งแต่เริ่มพ่นไฟ (ใช้หน่วงการหมุน)
   private hitDone: boolean = false;
 
   // ลูกข่าง
@@ -415,6 +416,7 @@ export class PhasamaBoss extends BossBase {
       this.state = 'flame';
       this.timer = PHASAMA.flame.durationMs;
       this.particleTimer = 0;
+      this.flameElapsed = 0;
       this.scene.cameras.main.shake(120, 0.004);
       const last = MAG_FRAMES.flame - 1;
       // ตอนพ่นไฟ แกว่งไป-กลับระหว่างสองเฟรมท้าย
@@ -439,15 +441,19 @@ export class PhasamaBoss extends BossBase {
   }
 
   // ---------- flame: พ่นไฟค้าง เดินได้ กรวยหมุนตามช้าๆ ----------
-  private updateFlame(delta: number) {
+    private updateFlame(delta: number) {
     const F = PHASAMA.flame;
     this.timer -= delta;
-
+    this.flameElapsed += delta;
     const t = this.nearestTarget();
+
     if (t) {
       const want = Math.atan2(t.y - this.sprite.y, t.x - this.sprite.x);
       const diff = Phaser.Math.Angle.Wrap(want - this.flameAngle);
-      const maxStep = (Phaser.Math.DegToRad(F.turnDegPerSec) * delta) / 1000;
+      // ช่วงต้นพ่นไฟหมุนช้า แล้วเร่งขึ้นจนถึงค่าเต็ม — ให้ผู้เล่นมีจังหวะวิ่ง vòng หนี
+      const ramp = Phaser.Math.Clamp(this.flameElapsed / F.turnRampMs, 0, 1);
+      const turnNow = F.turnDegPerSec * (F.turnStartRatio + (1 - F.turnStartRatio) * ramp);
+      const maxStep = (Phaser.Math.DegToRad(turnNow) * delta) / 1000;
       this.flameAngle += Phaser.Math.Clamp(diff, -maxStep, maxStep);
 
       const d = Phaser.Math.Distance.Between(this.sprite.x, this.sprite.y, t.x, t.y);

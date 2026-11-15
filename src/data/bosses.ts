@@ -50,15 +50,17 @@ export const PHASAMA = {
   walkSpeed: 55,
   rageSpeedMult: 1.25,
   chaseMs: [1100, 1900] as [number, number],
-  flame: {
-    telegraphMs: 600,
-    durationMs: 2800,
-    length: 240,
-    halfAngle: 28,        // ครึ่งมุมกรวยไฟ (องศา)
-    turnDegPerSec: 55,    // ความเร็วที่กรวยหมุนตามผู้เล่น (ตัวปรับความยากหลัก)
-    moveSpeed: 38,
-    recoverMs: 1000
-  },
+    flame: {
+    telegraphMs: 700,      // เตือนนานขึ้นเล็กน้อย ให้อ่านทิศทัน
+    durationMs: 2400,      // พ่นสั้นลงจาก 2800
+    length: 215,           // สั้นลงจาก 240 — ถอยหลังหนีได้จริง
+    halfAngle: 26,         // กรวยแคบลงจาก 28
+    turnDegPerSec: 30,     // ⬅️ ตัวหลัก: 55 → 30 (วิ่ง vòng หลบได้)
+    turnRampMs: 900,       // ช่วงแรกหมุนช้า แล้วค่อยเร่งถึงค่าบน
+    turnStartRatio: 0.35,  // เริ่มที่ 35% ของความเร็วสูงสุด
+    moveSpeed: 34,         // เดินไล่ช้าลงจาก 38
+    recoverMs: 1200        // เปิดช่องตีกลับนานขึ้นจาก 1000
+    },
   dash: {
     telegraphMs: 550,
     speed: 520,

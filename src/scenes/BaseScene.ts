@@ -1,17 +1,30 @@
 // หน้า "ฐานนักล่า" — เลือกตัวละคร / เครื่องราง / สัตว์เลี้ยง / บอส แล้วออกไปล่า
-// Phase 1: กระเป๋าแสดงเป็น row ไอคอน + จำนวน + ขอบ rarity (ไม่ใช่ text แล้ว)
+// กระเป๋าแยกไปหน้า BagScene แล้ว หน้านี้จึงโปร่งขึ้นมาก
 import Phaser from 'phaser';
 import { GAME_WIDTH, DEV_TOOLS } from '../config';
 import { CHARACTERS, CHARACTER_IDS, type CharacterId } from '../data/characters';
 import { CHARMS, CHARM_IDS, type CharmId } from '../data/charms';
 import { PETS, PET_IDS, type PetId } from '../data/pets';
+import { BOSSES, BOSS_IDS, type BossId } from '../data/bosses';
 import { LOOT_TABLE } from '../data/loot';
-import { RARITY } from '../data/rarity';
-import { huntSession, type BagEntry } from '../systems/HuntSession';
+import type { Rarity } from '../data/rarity';
+import { huntSession } from '../systems/HuntSession';
 import { loadout } from '../systems/Loadout';
 import { loadGame, saveGame, resetSave } from '../systems/SaveGame';
 import { ensureItemIcons } from '../systems/itemIcons';
-import { BOSSES, BOSS_IDS, type BossId, type BossChoice } from '../data/bosses';
+import { levelOf } from '../systems/Upgrades';
+
+// ---------- ตำแหน่งบนจอ (แก้เลย์เอาต์ที่นี่ที่เดียว) ----------
+const L = {
+  titleY: 30,
+  hintY: 56,
+  cardY: 172,
+  cardH: 200,
+  rowCharmY: 316,
+  rowPetY: 376,
+  rowBossY: 436,
+  buttonY: 540
+};
 
 let saveLoaded = false; // โหลดเซฟแค่ครั้งแรกที่เปิดเกม
 
@@ -19,22 +32,13 @@ export class BaseScene extends Phaser.Scene {
   private objs: Phaser.GameObjects.GameObject[] = [];
   private starting: boolean = false;
 
-  constructor() {
-    super({ key: 'BaseScene' });
-  }
+  constructor() { super({ key: 'BaseScene' }); }
 
-  preload() {
-    this.load.image('hero', 'assets/hero.png');
-  }
+  preload() { this.load.image('hero', 'assets/hero.png'); }
 
   create() {
-    // สร้างไอคอนไอเทม (idempotent — เรียกซ้ำได้ไม่พัง)
     ensureItemIcons(this);
-
-    if (!saveLoaded) {
-      loadGame();
-      saveLoaded = true;
-    }
+    if (!saveLoaded) { loadGame(); saveLoaded = true; }
     this.starting = false;
     this.objs = [];
     this.cameras.main.setBackgroundColor('#120f09');
@@ -44,48 +48,49 @@ export class BaseScene extends Phaser.Scene {
     kb.on('keydown-TWO', () => this.chooseCharacter(CHARACTER_IDS[1]));
     kb.on('keydown-C', () => this.cycleCharm());
     kb.on('keydown-P', () => this.cyclePet());
-    kb.on('keydown-B', () => this.cycleBoss());
+    kb.on('keydown-B', () => this.openBag());
+    kb.on('keydown-F', () => this.openForge());
     kb.on('keydown-ENTER', () => this.startHunt());
 
     if (DEV_TOOLS) {
+      // แจกของครบทุกระดับ เพื่อทดสอบหน้ากระเป๋า/หลอม/อัปเกรดได้ทันที
       kb.on('keydown-F2', () => {
+        const grant: { rarity: Rarity; n: number }[] = [
+          { rarity: 'common', n: 12 },
+          { rarity: 'rare', n: 4 },
+          { rarity: 'epic', n: 2 },
+          { rarity: 'legendary', n: 1 }
+        ];
         LOOT_TABLE.forEach((loot) => {
-          // ต้องส่ง rarity ไปด้วย เพื่อให้ตรงกับ type ใหม่ใน HuntSession
-          for (let i = 0; i < 5; i++) huntSession.addItem({ ...loot, rarity: 'common' });
+          grant.forEach((g) => {
+            for (let i = 0; i < g.n; i++) huntSession.addItem({ ...loot, rarity: g.rarity });
+          });
         });
         saveGame();
         this.render();
       });
-      kb.on('keydown-F9', () => {
-        resetSave();
-        this.render();
-      });
+      kb.on('keydown-F9', () => { resetSave(); this.render(); });
     }
 
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      kb.removeAllListeners();
-    });
-
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => kb.removeAllListeners());
     this.render();
   }
 
-  // ---------- ตัวช่วยสร้างของบนจอ ----------
-  private text(x: number, y: number, str: string, size: number, color: string, originX: number = 0.5, bold: boolean = false) {
-    const t = this.add
-      .text(x, y, str, {
-        fontFamily: '"Noto Sans Thai", monospace',
-        fontSize: `${size}px`,
-        fontStyle: bold ? 'bold' : 'normal',
-        color,
-        stroke: '#000000',
-        strokeThickness: 3
-      })
-      .setOrigin(originX, 0.5);
+  // ---------- ตัวช่วยวาด ----------
+  private text(x: number, y: number, str: string, size: number, color: string, originX = 0.5, bold = false) {
+    const t = this.add.text(x, y, str, {
+      fontFamily: '"Noto Sans Thai", monospace',
+      fontSize: `${size}px`,
+      fontStyle: bold ? 'bold' : 'normal',
+      color,
+      stroke: '#000000',
+      strokeThickness: 3
+    }).setOrigin(originX, 0.5);
     this.objs.push(t);
     return t;
   }
 
-  private rect(x: number, y: number, w: number, h: number, fill: number, alpha: number = 1, stroke?: number) {
+  private rect(x: number, y: number, w: number, h: number, fill: number, alpha = 1, stroke?: number) {
     const r = this.add.rectangle(x, y, w, h, fill, alpha);
     if (stroke !== undefined) r.setStrokeStyle(2, stroke);
     this.objs.push(r);
@@ -95,49 +100,31 @@ export class BaseScene extends Phaser.Scene {
   // ---------- การเลือก ----------
   private chooseCharacter(id: CharacterId) {
     if (loadout.characterId === id) return;
-    loadout.characterId = id;
-    saveGame();
-    this.render();
+    loadout.characterId = id; saveGame(); this.render();
   }
-
-  private setCharm(id: CharmId | null) {
-    loadout.charmId = id;
-    saveGame();
-    this.render();
-  }
-
-  private setPet(id: PetId | null) {
-    loadout.petId = id;
-    saveGame();
-    this.render();
-  }
-
+  private setCharm(id: CharmId | null) { loadout.charmId = id; saveGame(); this.render(); }
+  private setPet(id: PetId | null) { loadout.petId = id; saveGame(); this.render(); }
   private cycleCharm() {
     const list: (CharmId | null)[] = [null, ...CHARM_IDS];
-    const next = (list.indexOf(loadout.charmId) + 1) % list.length;
-    this.setCharm(list[next]);
+    this.setCharm(list[(list.indexOf(loadout.charmId) + 1) % list.length]);
   }
-
   private cyclePet() {
     const list: (PetId | null)[] = [null, ...PET_IDS];
-    const next = (list.indexOf(loadout.petId) + 1) % list.length;
-    this.setPet(list[next]);
+    this.setPet(list[(list.indexOf(loadout.petId) + 1) % list.length]);
   }
-
-  private setBoss(id: BossId | null) {
-    loadout.bossChoice = id ?? 'random';
+  private setBoss(id: BossId | null) { loadout.bossChoice = id ?? 'random'; saveGame(); this.render(); }
+  private openBag() {
+    if (this.starting) return;
     saveGame();
-    this.render();
+    if (!this.game.scene.getScene('BagScene')) return;
+    this.scene.start('BagScene');
   }
-
-  private cycleBoss() {
-    const list: BossChoice[] = ['random', ...BOSS_IDS];
-    const next = (list.indexOf(loadout.bossChoice) + 1) % list.length;
-    loadout.bossChoice = list[next];
+  private openForge() {
+    if (this.starting) return;
     saveGame();
-    this.render();
+    if (!this.game.scene.getScene('UpgradeScene')) return;
+    this.scene.start('UpgradeScene');
   }
-
   private startHunt() {
     if (this.starting) return;
     this.starting = true;
@@ -145,162 +132,100 @@ export class BaseScene extends Phaser.Scene {
     this.scene.start('GameScene');
   }
 
-  // แถวตัวเลือก: ป้ายชื่อ + ปุ่ม 3 อัน + คำอธิบายของอันที่เลือก
+  // ---------- แถวตัวเลือก ----------
   private optionRow<T extends string>(
-    y: number,
-    label: string,
-    options: (T | null)[],
-    current: T | null,
-    nameOf: (id: T | null) => string,
-    descOf: (id: T | null) => string,
+    y: number, label: string, options: (T | null)[], current: T | null,
+    nameOf: (id: T | null) => string, descOf: (id: T | null) => string,
     onPick: (id: T | null) => void
   ) {
-    this.text(20, y, label, 14, '#ffd54a', 0, true);
+    this.text(30, y, label, 14, '#ffd54a', 0, true);
+
+    const btnW = 168, gap = 14;
+    const totalW = options.length * btnW + (options.length - 1) * gap;
+    const startX = 440 - totalW / 2 + btnW / 2;
 
     options.forEach((opt, i) => {
-      const x = 290 + i * 200;
+      const x = startX + i * (btnW + gap);
       const selected = opt === current;
-      const btn = this.rect(x, y, 188, 34, selected ? 0x2a2210 : 0x1b1810, 1, selected ? 0xffd54a : 0x4a4130);
+      const btn = this.rect(x, y, btnW, 32, selected ? 0x2a2210 : 0x1b1810, 1, selected ? 0xffd54a : 0x4a4130);
       btn.setInteractive({ useHandCursor: true });
-      btn.on('pointerdown', () => {
-        this.time.delayedCall(0, () => onPick(opt));
-      });
-      this.text(x, y, nameOf(opt), 14, selected ? '#ffd54a' : '#e8e8e8', 0.5, selected);
+      btn.on('pointerdown', () => this.time.delayedCall(0, () => onPick(opt)));
+      this.text(x, y, nameOf(opt), 13, selected ? '#ffd54a' : '#e8e8e8', 0.5, selected);
     });
 
-    this.text(GAME_WIDTH / 2 + 60, y + 27, descOf(current), 12, '#c9c9c9');
+    this.text(440, y + 24, descOf(current), 11, '#a89f8c');
   }
 
-// แถวกระเป๋า: aggregate ตาม itemId, แสดง total count
-// ขอบไอคอนใช้สีของ rarity สูงสุดที่มีอยู่ (โชว์ให้เห็นว่าเคยได้ของดี)
-private drawBagRow(bag: BagEntry[]) {
-  // aggregate — total count + highest rarity ต่อ itemId
-  const summary = new Map<string, { total: number; highestRarity: any | null }>();
-  for (const entry of bag) {
-    const existing = summary.get(entry.itemId);
-    if (existing) {
-      existing.total += entry.count;
-      if (!existing.highestRarity || RARITY[entry.rarity].order > RARITY[existing.highestRarity].order) {
-        existing.highestRarity = entry.rarity;
-      }
-    } else {
-      summary.set(entry.itemId, { total: entry.count, highestRarity: entry.rarity });
-    }
-  }
-
-  const SLOT_W = 88;
-  const totalW = LOOT_TABLE.length * SLOT_W;
-  const startX = GAME_WIDTH / 2 - totalW / 2;
-  const y = 528;
-
-  LOOT_TABLE.forEach((def, i) => {
-    const data = summary.get(def.id);
-    const total = data?.total ?? 0;
-    const highestRarity = data?.highestRarity ?? 'common';
-    const rd = RARITY[highestRarity];
-    const slotX = startX + i * SLOT_W;
-
-    const border = this.add.rectangle(slotX + 20, y, 34, 34);
-    border.setStrokeStyle(2, rd.colorNum, total > 0 ? 0.9 : 0.2);
-    this.objs.push(border);
-
-    if (this.textures.exists(def.icon)) {
-      const icon = this.add.image(slotX + 20, y, def.icon);
-      icon.setDisplaySize(28, 28);
-      icon.setAlpha(total > 0 ? 1 : 0.25);
-      this.objs.push(icon);
-    }
-
-    const countText = this.add.text(slotX + 40, y, `x${total}`, {
-      fontFamily: 'monospace',
-      fontSize: '14px',
-      fontStyle: 'bold',
-      color: total > 0 ? '#ffffff' : '#555555',
-      stroke: '#000000',
-      strokeThickness: 3
-    }).setOrigin(0, 0.5);
-    this.objs.push(countText);
-  });
-}
-
-  // ---------- วาดหน้าจอทั้งหมดใหม่ ----------
+  // ---------- วาดหน้าจอ ----------
   private render() {
     this.objs.forEach((o) => o.destroy());
     this.objs = [];
     const cx = GAME_WIDTH / 2;
 
-    this.text(cx, 36, 'ฐานนักล่า', 30, '#ffd54a', 0.5, true);
-    this.text(cx, 64, 'ENTER = ออกล่า  ·  1/2 ตัวละคร  ·  C เครื่องราง  ·  P สัตว์เลี้ยง  ·  B บอส', 12, '#c9c9c9');
+    this.text(cx, L.titleY, 'ฐานนักล่า', 26, '#ffd54a', 0.5, true);
+    this.text(cx, L.hintY, 'ENTER ออกล่า · F โรงตีเหล็ก · B กระเป๋า · 1/2 ตัวละคร · C เครื่องราง · P สัตว์เลี้ยง', 11, '#a89f8c');
 
     // การ์ดตัวละคร
     CHARACTER_IDS.forEach((id, i) => {
       const def = CHARACTERS[id];
-      const x = cx + (i === 0 ? -170 : 170);
-      const y = 205;
+      const x = cx + (i === 0 ? -172 : 172);
+      const y = L.cardY;
       const selected = loadout.characterId === id;
 
-      const card = this.rect(x, y, 320, 250, selected ? 0x2a2210 : 0x1b1810, 1, selected ? 0xffd54a : 0x4a4130);
+      const card = this.rect(x, y, 330, L.cardH, selected ? 0x2a2210 : 0x1b1810, 1, selected ? 0xffd54a : 0x4a4130);
       card.setInteractive({ useHandCursor: true });
-      card.on('pointerdown', () => {
-        this.time.delayedCall(0, () => this.chooseCharacter(id));
-      });
+      card.on('pointerdown', () => this.time.delayedCall(0, () => this.chooseCharacter(id)));
 
-      this.text(x, y - 100, `${i + 1}  ${def.name}`, 22, selected ? '#ffd54a' : '#ffffff', 0.5, true);
-      this.text(x, y - 76, def.tagline, 12, '#c9c9c9');
+      this.text(x, y - 78, `${i + 1}  ${def.name}`, 20, selected ? '#ffd54a' : '#ffffff', 0.5, true);
+      this.text(x, y - 56, def.tagline, 11, '#a89f8c');
 
       if (this.textures.exists('hero')) {
-        const img = this.add.image(x, y - 34, 'hero').setScale(2).setTint(def.tint);
+        const img = this.add.image(x - 128, y + 16, 'hero').setScale(1.6).setTint(def.tint);
         this.objs.push(img);
       }
 
       def.lines.forEach((line, k) => {
-        this.text(x, y + 22 + k * 24, line, 12, '#e8e8e8');
+        this.text(x - 92, y - 24 + k * 22, line, 11, '#e8e8e8', 0);
       });
-
-      this.text(x, y + 112, `HP ${def.maxHP}`, 13, '#ff8a80', 0.5, true);
+      this.text(x, y + 80, `HP ${def.maxHP}`, 13, '#ff8a80', 0.5, true);
     });
 
-    // แถวเครื่องราง
-    this.optionRow<CharmId>(
-      352,
-      'เครื่องราง',
-      [null, ...CHARM_IDS],
-      loadout.charmId,
-      (id) => (id ? CHARMS[id].name : 'ไม่ใส่'),
+    // แถวตัวเลือก — โชว์เลเวลที่อัปเกรดไว้ด้วย
+    this.optionRow<CharmId>(L.rowCharmY, 'เครื่องราง', [null, ...CHARM_IDS], loadout.charmId,
+      (id) => (id ? `${CHARMS[id].name} Lv.${levelOf('charm', id)}` : 'ไม่ใส่'),
       (id) => (id ? CHARMS[id].desc : 'ไม่ใส่เครื่องราง'),
-      (id) => this.setCharm(id)
-    );
+      (id) => this.setCharm(id));
 
-    // แถวสัตว์เลี้ยง
-    this.optionRow<PetId>(
-      410,
-      'สัตว์เลี้ยง',
-      [null, ...PET_IDS],
-      loadout.petId,
-      (id) => (id ? PETS[id].name : 'ไม่ใส่'),
+    this.optionRow<PetId>(L.rowPetY, 'สัตว์เลี้ยง', [null, ...PET_IDS], loadout.petId,
+      (id) => (id ? `${PETS[id].name} Lv.${levelOf('pet', id)}` : 'ไม่ใส่'),
       (id) => (id ? PETS[id].desc : 'ไม่ใส่สัตว์เลี้ยง'),
-      (id) => this.setPet(id)
-    );
+      (id) => this.setPet(id));
 
-    // แถวบอส (null = สุ่ม) — เลื่อนขึ้นเพื่อให้กระเป๋ามีที่
-    this.optionRow<BossId>(
-      455,
-      'บอส',
-      [null, ...BOSS_IDS],
+    this.optionRow<BossId>(L.rowBossY, 'บอสที่จะล่า', [null, ...BOSS_IDS],
       loadout.bossChoice === 'random' ? null : loadout.bossChoice,
       (id) => (id ? BOSSES[id].name : 'สุ่ม'),
       (id) => (id ? BOSSES[id].desc : 'สุ่มบอสหนึ่งในสองตัว'),
-      (id) => this.setBoss(id)
-    );
+      (id) => this.setBoss(id));
 
-    // ---------- กระเป๋า (row แสดงไอคอน + จำนวน + ขอบ rarity) ----------
-    this.text(cx, 500, 'กระเป๋า', 12, '#ffd54a', 0.5, true);
-    this.drawBagRow(huntSession.getBag());
+    // ปุ่มล่างสุด 3 ปุ่ม: กระเป๋า / โรงตีเหล็ก / ออกล่า
+    const bagCount = huntSession.getTotalCount();
+    const bag = this.rect(cx - 250, L.buttonY, 200, 40, 0x241d10, 1, 0x8d8677);
+    bag.setInteractive({ useHandCursor: true });
+    bag.on('pointerdown', () => this.time.delayedCall(0, () => this.openBag()));
+    this.text(cx - 250, L.buttonY, `กระเป๋า (B) · ${bagCount} ชิ้น`, 14, '#e8e8e8', 0.5, true);
 
-    // ---------- ปุ่มออกล่า ----------
-    const btn = this.rect(cx, 572, 240, 34, 0x3a2a08, 1, 0xffd54a);
-    btn.setInteractive({ useHandCursor: true });
-    btn.on('pointerdown', () => this.startHunt());
-    this.text(cx, 572, 'กด ENTER เพื่อออกล่า', 16, '#ffd54a', 0.5, true);
+    const forge = this.rect(cx, L.buttonY, 200, 40, 0x3a2a08, 1, 0xffd54a);
+    forge.setInteractive({ useHandCursor: true });
+    forge.on('pointerdown', () => this.time.delayedCall(0, () => this.openForge()));
+    this.text(cx, L.buttonY, 'โรงตีเหล็ก (F)', 15, '#ffd54a', 0.5, true);
+
+    const hunt = this.rect(cx + 250, L.buttonY, 200, 40, 0x3a2a08, 1, 0xffd54a);
+    hunt.setInteractive({ useHandCursor: true });
+    hunt.on('pointerdown', () => this.time.delayedCall(0, () => this.startHunt()));
+    this.text(cx + 250, L.buttonY, 'ออกล่า (ENTER)', 15, '#ffd54a', 0.5, true);
+
+    if (DEV_TOOLS) {
+      this.text(GAME_WIDTH - 18, 584, 'F2 แจกของทดสอบ · F9 ล้างเซฟ', 9, '#6f6858', 1);
+    }
   }
 }

@@ -2,6 +2,8 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from './config';
 import { BaseScene } from './scenes/BaseScene';
+import { BagScene } from './scenes/BagScene';
+import { UpgradeScene } from './scenes/UpgradeScene';
 import { GameScene } from './scenes/GameScene';
 
 const config = {
@@ -11,20 +13,13 @@ const config = {
   backgroundColor: '#1a1a1a',
   parent: 'app',
   pixelArt: true,
-  input: {
-    keyboard: {
-      target: window
-    }
-  },
+  input: { keyboard: { target: window } },
   physics: {
     default: 'arcade',
-    arcade: {
-      gravity: { y: 0 } as any,
-      debug: false
-    }
+    arcade: { gravity: { y: 0 } as any, debug: false }
   },
   // ลำดับสำคัญ: ตัวแรกใน array = ฉากที่ Phaser สตาร์ทอัตโนมัติ
-  scene: [BaseScene, GameScene]
+  scene: [BaseScene, BagScene, UpgradeScene, GameScene]
 };
 
 new Phaser.Game(config);

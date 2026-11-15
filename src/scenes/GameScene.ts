@@ -190,6 +190,9 @@ private currentBossId: BossId = 'phasama';
       this.textures.exists('hero_clay_attack');
 
     this.character = CHARACTERS[loadout.characterId];
+    // รีเซ็ตทุกครั้งที่เข้าฉาก — กันค่าค้างจากตาที่เล่นอัคนี (ทำให้ลูมิไม่ยอมเปลี่ยนภาพ)
+    this.useAkk = false;
+    this.currentTexture = '';
     this.useAkk =
       this.character.id === 'akkhani' &&
       Object.entries(AKK_FRAMES).every(([clip, n]) =>
@@ -697,15 +700,16 @@ if (this.droppedItems.length > 0) {
     }
   }
 
-  private setPlayerTexture(key: string) {
+    private setPlayerTexture(key: string) {
     if (!this.useClay) return;
-    if (this.useAkk && key.startsWith('hero_clay')) return;
+    // บล็อกรูป clay เฉพาะตอนเล่นอัคนีที่มีเฟรมจริงเท่านั้น (ลูมิต้องเปลี่ยนรูปได้)
+    if (this.useAkk && this.character.id === 'akkhani' && key.startsWith('hero_clay')) return;
     if (this.currentTexture === key) return;
     if (!this.textures.exists(key)) return;
     this.player.setTexture(key);
     this.currentTexture = key;
     this.player.setScale(this.baseScale * this.character.scale);
-  }
+    }
 
   private playClip(clip: AkkClip, frameMs: number | number[], loop: boolean) {
     this.akkClip = clip;
@@ -755,15 +759,24 @@ if (this.droppedItems.length > 0) {
     return this.useAkk ? this.player.y + this.player.displayHeight * 0.45 : this.player.y + this.player.displayHeight / 2;
   }
 
-  private slashFx(scale: number) {
-    spawnPixelFx(this, 'sword-slash', {
-      x: this.player.x,
-      y: this.feetY(),
-      scale,
-      flipX: this.player.flipX,
-      depth: DEPTH.SLASH + 1
-    });
-  }
+private slashFx(scale: number) {
+spawnPixelFx(this, 'sword-slash', {
+x: this.player.x,
+y: this.feetY(),
+scale,
+flipX: this.player.flipX,
+depth: DEPTH.SLASH + 1
+});
+}
+
+// แสงวาบที่ปลายมือตอนยิงของลูมิ — งานภาพล้วน ไม่มีดาเมจ
+private muzzleFx(dir: Phaser.Math.Vector2, color: number) {
+const mx = this.player.x + dir.x * 20;
+const my = this.player.y + dir.y * 20;
+spawnArcSlash(this, mx, my, Math.atan2(dir.y, dir.x), 26, 35, color, 3, 130);
+ringEffect(this, mx, my, 18, color, 150);
+burst(this, mx, my, color, 4, 22, 3);
+}
 
   private bossRadius(): number {
     return this.monster.def.displayWidth * 0.4;
@@ -1130,25 +1143,23 @@ if (this.droppedItems.length > 0) {
     });
   }
 
-  private lumaLight() {
-    const L = LUMA.light;
-    const token = this.beginAction();
-    const dir = this.getAttackDir(L.assistRange, L.assistAngle);
-    if (Math.abs(dir.x) > 0.3) this.player.setFlipX(dir.x < 0);
-    this.facing.copy(dir);
-
-    this.isAttacking = true;
-    this.setPlayerTexture('hero_clay_attack');
-    sfx.swing();
-
-    this.fireShot(dir, L, 'light', ++this.actionSeq);
-
-    this.time.delayedCall(L.cooldownMs, () => {
-      if (token !== this.actionToken) return;
-      this.isAttacking = false;
-      this.setPlayerTexture('hero_clay_idle');
-    });
-  }
+private lumaLight() {
+const L = LUMA.light;
+const token = this.beginAction();
+const dir = this.getAttackDir(L.assistRange, L.assistAngle);
+if (Math.abs(dir.x) > 0.3) this.player.setFlipX(dir.x < 0);
+this.facing.copy(dir);
+this.isAttacking = true;
+this.setPlayerTexture('hero_clay_attack');
+sfx.swing();
+this.muzzleFx(dir, L.color);
+this.fireShot(dir, L, 'light', ++this.actionSeq);
+this.time.delayedCall(L.cooldownMs, () => {
+  if (token !== this.actionToken) return;
+  this.isAttacking = false;
+  this.setPlayerTexture('hero_clay_idle');
+});
+}
 
   private lumaCharged() {
     const C = LUMA.charged;
@@ -1200,33 +1211,35 @@ if (this.droppedItems.length > 0) {
     this.shots.push(shot);
   }
 
-  private onShotDetonate(
-    kind: 'light' | 'charge',
-    actionId: number,
-    x: number,
-    y: number,
-    ratio: number,
-    aoeRadius: number,
-    color: number
-  ) {
-    ringEffect(this, x, y, aoeRadius + 8, color, 220);
-    burst(this, x, y, color, kind === 'light' ? 6 : 3, aoeRadius * 1.2, 3);
+private onShotDetonate(
+kind: 'light' | 'charge',
+actionId: number,
+x: number,
+y: number,
+ratio: number,
+aoeRadius: number,
+color: number
+) {
+// ภาพระเบิด — งานภาพล้วน ไม่แตะดาเมจ
+ringEffect(this, x, y, aoeRadius + 8, color, 220);
+ringEffect(this, x, y, aoeRadius * 0.6, 0xffffff, 160);
+burst(this, x, y, color, kind === 'light' ? 10 : 5, aoeRadius * 1.3, 4);
+if (kind === 'light') this.cameras.main.shake(70, 0.0025);
 
-    if (!this.monster.isAlive) return;
-    const m = this.monster.sprite;
-    const d = Phaser.Math.Distance.Between(x, y, m.x, m.y);
-    if (d > aoeRadius + this.bossRadius()) return;
-
-    let damage: number;
-    if (kind === 'light') {
-      const far = ratio >= LUMA.light.farRatio;
-      damage = far ? LUMA.light.farDamage : LUMA.light.nearDamage;
-      if (far) showDamage(this, m.x, m.y - this.monster.sprite.displayHeight / 2 - 24, 'FAR!', '#9de7ff', 500);
-    } else {
-      damage = LUMA.charged.damage;
-    }
-    this.hitBoss(damage, actionId);
-  }
+if (!this.monster.isAlive) return;
+const m = this.monster.sprite;
+const d = Phaser.Math.Distance.Between(x, y, m.x, m.y);
+if (d > aoeRadius + this.bossRadius()) return;
+let damage: number;
+if (kind === 'light') {
+  const far = ratio >= LUMA.light.farRatio;
+  damage = far ? LUMA.light.farDamage : LUMA.light.nearDamage;
+  if (far) showDamage(this, m.x, m.y - this.monster.sprite.displayHeight / 2 - 24, 'FAR!', '#9de7ff', 500);
+} else {
+  damage = LUMA.charged.damage;
+}
+this.hitBoss(damage, actionId);
+}
 
   private lumaDash() {
     const D = LUMA.dash;
