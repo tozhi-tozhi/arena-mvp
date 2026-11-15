@@ -1,80 +1,123 @@
-// "กระเป๋า" ของนักล่า — จำข้ามรอบการล่า และถูกเซฟลงเครื่องผ่าน SaveGame.ts
-// หน้า Base อ่านค่าจากตรงนี้เพื่ออัปเกรดอุปกรณ์
+// กระเป๋านักล่า — เก็บไอเทมแบบ {itemId}_{rarity} แยกกัน
+// เช่น ore_common แยกจาก ore_legendary เพื่อให้อัปเกรดตาม rarity ได้
 import { LOOT_TABLE } from '../data/loot';
+import { migrateRarity, RARITY, type Rarity } from '../data/rarity';
 
-export interface BagItem {
-  id: string;
-  name: string;
-  icon: string;
-  rarity: string;
-  color: string;
+export interface BagEntry {
+  key: string;      // full key = 'ore_common'
+  itemId: string;   // 'ore'
+  name: string;     // 'แร่'
+  icon: string;     // 'item_ore'
+  rarity: Rarity;
   count: number;
 }
 
-class HuntSessionStore {
-  private bag: Map<string, BagItem> = new Map();
+// map ของไอเทมเก่า → ใหม่ (migrate v2 → v3)
+const LEGACY_ITEM_MAP: Record<string, string> = {
+  herb: 'ore',
+  essence: 'essence',
+  dream_shard: 'bone',
+  relic: 'essence'
+};
 
-  // เพิ่มไอเทมเข้ากระเป๋า (ถ้ามีอยู่แล้วให้นับจำนวนเพิ่ม)
-  addItem(item: { id: string; name: string; icon: string; rarity: string; color: string }): void {
-    const existing = this.bag.get(item.id);
+function migrateItemId(oldId: string): string {
+  return LEGACY_ITEM_MAP[oldId] ?? oldId;
+}
+
+class HuntSessionStore {
+  private bag: Map<string, BagEntry> = new Map();
+
+  // เพิ่มไอเทม — แยกตาม rarity
+  addItem(dropped: { id: string; name: string; icon: string; rarity: Rarity }): void {
+    const key = `${dropped.id}_${dropped.rarity}`;
+    const existing = this.bag.get(key);
     if (existing) {
       existing.count += 1;
     } else {
-      this.bag.set(item.id, {
-        id: item.id,
-        name: item.name,
-        icon: item.icon,
-        rarity: item.rarity,
-        color: item.color,
+      this.bag.set(key, {
+        key,
+        itemId: dropped.id,
+        name: dropped.name,
+        icon: dropped.icon,
+        rarity: dropped.rarity,
         count: 1
       });
     }
   }
 
-  getBag(): BagItem[] {
+  getBag(): BagEntry[] {
     return Array.from(this.bag.values());
   }
 
-  getCount(id: string): number {
-    const item = this.bag.get(id);
-    return item ? item.count : 0;
+  // ยอดรวมของ itemId หนึ่ง (ทุกระดับ rarity) — ใช้แสดงใน Base
+  getItemTotal(itemId: string): number {
+    let total = 0;
+    for (const entry of this.bag.values()) {
+      if (entry.itemId === itemId) total += entry.count;
+    }
+    return total;
   }
 
-  // ใช้ของ (คืน true ถ้าของพอและหักแล้ว)
-  spend(id: string, amount: number): boolean {
-    const item = this.bag.get(id);
-    if (!item || item.count < amount) return false;
-    item.count -= amount;
-    if (item.count <= 0) this.bag.delete(id);
+  // จำนวนของ rarity ที่ระบุ — ใช้ตอนอัปเกรด
+  getCountByRarity(itemId: string, rarity: Rarity): number {
+    return this.bag.get(`${itemId}_${rarity}`)?.count ?? 0;
+  }
+
+
+
+  // ใช้ของ (ตาม rarity) — คืน true ถ้าพอ
+  spend(itemId: string, rarity: Rarity, amount: number): boolean {
+    const key = `${itemId}_${rarity}`;
+    const entry = this.bag.get(key);
+    if (!entry || entry.count < amount) return false;
+    entry.count -= amount;
+    if (entry.count <= 0) this.bag.delete(key);
     return true;
   }
 
   getTotalCount(): number {
     let total = 0;
-    for (const item of this.bag.values()) total += item.count;
+    for (const entry of this.bag.values()) total += entry.count;
     return total;
   }
 
-  // แปลงเป็นข้อมูลเรียบ ๆ สำหรับเซฟ
-  exportBag(): Array<{ id: string; count: number }> {
-    return Array.from(this.bag.values()).map((i) => ({ id: i.id, count: i.count }));
+  // เซฟ: แค่ id + rarity + count
+  exportBag(): Array<{ itemId: string; rarity: Rarity; count: number }> {
+    return Array.from(this.bag.values()).map((e) => ({
+      itemId: e.itemId,
+      rarity: e.rarity,
+      count: e.count
+    }));
   }
 
-  // โหลดจากเซฟ (ข้ามไอเทมที่ไม่มีในตารางแล้ว)
-  importBag(entries: Array<{ id: string; count: number }>): void {
+  // โหลด: รองรับทั้ง v2 (id) และ v3 (itemId) + migrate item เก่า
+  importBag(entries: any[]): void {
     this.bag.clear();
+    if (!Array.isArray(entries)) return;
     for (const e of entries) {
-      const def = LOOT_TABLE.find((l) => l.id === e.id);
+      if (!e) continue;
+      const rawId = String(e.itemId ?? e.id ?? '');
+      const itemId = migrateItemId(rawId);
+      const def = LOOT_TABLE.find((l) => l.id === itemId);
+      if (!def) continue;
       const count = Math.floor(Number(e.count));
-      if (!def || !(count > 0)) continue;
-      this.bag.set(def.id, {
-        id: def.id,
-        name: def.name,
-        icon: def.icon,
-        rarity: def.rarity,
-        color: def.color,
-        count
-      });
+      if (!(count > 0)) continue;
+
+      const rarity = migrateRarity(e.rarity);
+      const key = `${itemId}_${rarity}`;
+      const existing = this.bag.get(key);
+      if (existing) {
+        existing.count += count;
+      } else {
+        this.bag.set(key, {
+          key,
+          itemId: def.id,
+          name: def.name,
+          icon: def.icon,
+          rarity,
+          count
+        });
+      }
     }
   }
 
@@ -83,5 +126,4 @@ class HuntSessionStore {
   }
 }
 
-// singleton — มีก้อนเดียวในเครื่อง ไม่หายตอนเปลี่ยน scene
 export const huntSession = new HuntSessionStore();

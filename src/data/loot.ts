@@ -1,27 +1,82 @@
-// ตารางของล่า (Loot) — รายการไอเทมที่ดรอปจากกล่อง
-// เพิ่มไอเทมใหม่ = เพิ่มอีกก้อนในตารางนี้ (เปลี่ยน icon เป็นชื่อรูปที่มีจริงได้เลย)
+// ตารางไอเทมและดรอป — ไอเทม 4 ตัว แต่ละตัวมีที่ไปชัดเจน
+// ภัสมะ → ore + essence  |  มายา → wood + bone
+// ทุกไอเทมดรอปได้ทั้ง 4 rarity — rarity กำหนด "points" ของชิ้นนั้น
+import type { Rarity } from './rarity';
+import type { BossId } from './bosses';
+
+// ไอเทมฐาน — ไม่มี rarity (rarity มาจากการดรอป)
 export interface LootDef {
   id: string;
   name: string;
-  icon: string;   // ชื่อรูปใน preload (ตอนนี้ใช้ green_potion ทั้งหมด)
-  weight: number; // ค่าน้ำหนักสุ่ม — ยิ่งมากยิ่งออกบ่อย
-  rarity: string; // ระดับความหายาก (ไว้แสดง)
-  color: string;  // สีชื่อไอเทมตามระดับ
+  icon: string;
 }
 
+// ไอเทมที่ดรอปจริง — LootDef + rarity
+export interface DroppedLoot extends LootDef {
+  rarity: Rarity;
+}
+
+// ไอเทมทั้ง 4 ตัว
 export const LOOT_TABLE: LootDef[] = [
-  { id: 'herb',    name: 'สมุนไพร',      icon: 'green_potion', weight: 60, rarity: 'ทั่วไป', color: '#a8e6a3' },
-  { id: 'essence', name: 'ธาตุสกัด',     icon: 'green_potion', weight: 30, rarity: 'หายาก',  color: '#7db8ff' },
-  { id: 'relic',   name: 'ชิ้นส่วนโบราณ', icon: 'green_potion', weight: 10, rarity: 'ตำนาน',  color: '#ffd54a' }
+  { id: 'ore',     name: 'แร่',      icon: 'item_ore' },
+  { id: 'wood',    name: 'ไม้',      icon: 'item_wood' },
+  { id: 'bone',    name: 'กระดูก',   icon: 'item_bone' },
+  { id: 'essence', name: 'ธาตุสกัด', icon: 'item_essence' }
 ];
 
-// สุ่มไอเทมตามน้ำหนัก (weight สูง = โอกาสออกสูง)
-export function rollLoot(random: () => number = Math.random): LootDef {
-  const totalWeight = LOOT_TABLE.reduce((sum, item) => sum + item.weight, 0);
-  let roll = random() * totalWeight;
-  for (const item of LOOT_TABLE) {
-    roll -= item.weight;
-    if (roll < 0) return item;
+// Drop table ต่อบอส (น้ำหนักสัมพัทธ์)
+export const BOSS_DROPS: Record<BossId, { itemId: string; weight: number }[]> = {
+  phasama: [
+    { itemId: 'ore',     weight: 60 },
+    { itemId: 'essence', weight: 40 }
+  ],
+  maya: [
+    { itemId: 'wood', weight: 50 },
+    { itemId: 'bone', weight: 50 }
+  ]
+};
+
+// น้ำหนัก rarity — รวม = 100
+const RARITY_WEIGHTS: { rarity: Rarity; weight: number }[] = [
+  { rarity: 'common',    weight: 55 },
+  { rarity: 'rare',      weight: 30 },
+  { rarity: 'epic',      weight: 12 },
+  { rarity: 'legendary', weight: 3 }
+];
+
+function rollRarity(random: () => number = Math.random): Rarity {
+  const total = RARITY_WEIGHTS.reduce((s, x) => s + x.weight, 0);
+  let roll = random() * total;
+  for (const r of RARITY_WEIGHTS) {
+    roll -= r.weight;
+    if (roll < 0) return r.rarity;
   }
-  return LOOT_TABLE[0]; // กันเหนียว (ปกติไม่มาถึง)
+  return 'common';
+}
+
+// ดรอปชิ้นเดียวจากบอส (เลือก item → เลือก rarity)
+function rollSingleDrop(bossId: BossId, random: () => number = Math.random): DroppedLoot {
+  const table = BOSS_DROPS[bossId];
+  const totalWeight = table.reduce((s, x) => s + x.weight, 0);
+  let roll = random() * totalWeight;
+  let itemId = table[0].itemId;
+  for (const opt of table) {
+    roll -= opt.weight;
+    if (roll < 0) { itemId = opt.itemId; break; }
+  }
+  const base = LOOT_TABLE.find((l) => l.id === itemId)!;
+  return { ...base, rarity: rollRarity(random) };
+}
+
+// ดรอปจากบอส (default 4 ชิ้นต่อการสังหาร)
+export function rollBossDrops(
+  bossId: BossId,
+  count: number = 4,
+  random: () => number = Math.random
+): DroppedLoot[] {
+  const results: DroppedLoot[] = [];
+  for (let i = 0; i < count; i++) {
+    results.push(rollSingleDrop(bossId, random));
+  }
+  return results;
 }

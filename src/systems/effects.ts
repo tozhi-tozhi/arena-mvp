@@ -1,6 +1,7 @@
 // เอฟเฟกต์ภาพทั้งหมด — แต่ละฟังก์ชันรับ scene เข้ามา แล้ววาดเอฟเฟกต์ลงไป
 import Phaser from 'phaser';
 import { DEPTH, GAME_WIDTH, GAME_HEIGHT } from '../config';
+import { RARITY, type Rarity } from '../data/rarity';
 
 // ตัวเลขดาเมจลอยขึ้นแล้วจาง
 export function showDamage(scene: Phaser.Scene, x: number, y: number, text: string, color: string, durationMs: number = 600) {
@@ -70,7 +71,6 @@ export function spawnSlash(scene: Phaser.Scene, x: number, y: number, facingLeft
   });
 }
 
-
 // เส้นแทงพุ่งตรงสำหรับอาวุธประเภทหอก
 export function spawnThrust(
   scene: Phaser.Scene,
@@ -84,14 +84,12 @@ export function spawnThrust(
   g.setPosition(x, y);
   g.setDepth(DEPTH.SLASH);
 
-  // ก้านหอก/เส้นแรงปะทะ
   g.lineStyle(5, 0xf4f8ff, 0.95);
   g.beginPath();
   g.moveTo(direction * 8, 0);
   g.lineTo(direction * length, 0);
   g.strokePath();
 
-  // ปลายแหลม
   g.fillStyle(0x9de7ff, 1);
   g.beginPath();
   g.moveTo(direction * length, 0);
@@ -129,7 +127,6 @@ export function spawnAfterimage(scene: Phaser.Scene, sprite: any) {
 export function makeVignette(scene: Phaser.Scene) {
   const w = GAME_WIDTH;
   const h = GAME_HEIGHT;
-  // ตอนกด R เริ่มใหม่ texture นี้มีอยู่แล้ว ไม่ต้องสร้างซ้ำ
   if (!scene.textures.exists('vignette')) {
     const tex = scene.textures.createCanvas('vignette', w, h) as any;
     const ctx = tex.getContext();
@@ -164,6 +161,7 @@ export function ringEffect(
     onComplete: () => ring.destroy()
   });
 }
+
 // เส้นแทงหอก หมุนไปตามทิศใดก็ได้ — level สูงขึ้น = หอกหนาขึ้น/สีเปลี่ยน
 export function spawnThrustDir(
   scene: Phaser.Scene,
@@ -179,18 +177,15 @@ export function spawnThrustDir(
   g.setDepth(DEPTH.SLASH);
   g.setRotation(Math.atan2(dy, dx));
 
-  // เลเวลกำหนดความหนา + สี (Lv.1 = ขาว, Lv.2 = ฟ้า, Lv.3 = ทอง)
   const thickness = 4 + level * 1.5;
   const color = level >= 3 ? 0xffd54a : level >= 2 ? 0x9de7ff : 0xf4f8ff;
 
-  // ก้านหอก
   g.lineStyle(thickness, color, 0.95);
   g.beginPath();
   g.moveTo(8, 0);
   g.lineTo(length, 0);
   g.strokePath();
 
-  // ปลายแหลม (ใหญ่ขึ้นตามเลเวล)
   g.fillStyle(color, 1);
   g.beginPath();
   g.moveTo(length, 0);
@@ -199,7 +194,6 @@ export function spawnThrustDir(
   g.closePath();
   g.fillPath();
 
-  // Lv.3+: เพิ่มเส้นเรืองรอง (glow) รอบก้าน
   if (level >= 3) {
     g.lineStyle(11, color, 0.2);
     g.beginPath();
@@ -215,5 +209,76 @@ export function spawnThrustDir(
     y: y + dy * 8,
     duration: 140,
     onComplete: () => g.destroy()
+  });
+}
+
+// แบนเนอร์ประกาศ rarity (epic ขึ้นไปเท่านั้น — common/rare ไม่ต้องเด้ง)
+export function showRarityBanner(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  rarity: Rarity,
+  itemName: string
+) {
+  const rd = RARITY[rarity];
+  if (!rd.glow) return; // เฉพาะ epic/legendary
+
+  const isLegendary = rarity === 'legendary';
+  const title = isLegendary ? `★ ${rd.name} ★` : `✦ ${rd.name}`;
+
+  const bg = scene.add.rectangle(x, y, 240, 44, 0x000000, 0.78);
+  bg.setStrokeStyle(3, rd.colorNum);
+  bg.setDepth(DEPTH.DAMAGE_POPUP);
+  bg.setScale(0.5);
+  bg.setAlpha(0.5);
+
+  const label = scene.add.text(x, y - 6, title, {
+    fontFamily: '"Noto Sans Thai", monospace',
+    fontSize: '20px',
+    fontStyle: 'bold',
+    color: rd.color,
+    stroke: '#000000',
+    strokeThickness: 4
+  }).setOrigin(0.5).setDepth(DEPTH.DAMAGE_POPUP + 1).setAlpha(0);
+
+  // แสดงชื่อไอเทม (ไม่มีตัวเลขแล้ว)
+  const itemLabel = scene.add.text(x, y + 18, itemName, {
+    fontFamily: '"Noto Sans Thai", monospace',
+    fontSize: '14px',
+    color: '#ffffff',
+    stroke: '#000000',
+    strokeThickness: 3
+  }).setOrigin(0.5).setDepth(DEPTH.DAMAGE_POPUP + 1).setAlpha(0);
+
+  scene.tweens.add({
+    targets: bg,
+    scaleX: 1, scaleY: 1, alpha: 1,
+    duration: 250,
+    ease: 'Back.easeOut'
+  });
+  scene.tweens.add({
+    targets: [label, itemLabel],
+    alpha: 1,
+    duration: 200,
+    delay: 100
+  });
+
+  if (isLegendary) {
+    burst(scene, x, y - 10, rd.colorNum, 14, 70, 4);
+    scene.cameras.main.flash(120, 255, 230, 150);
+  }
+
+  scene.time.delayedCall(1400, () => {
+    scene.tweens.add({
+      targets: [bg, label, itemLabel],
+      y: y - 40,
+      alpha: 0,
+      duration: 500,
+      onComplete: () => {
+        bg.destroy();
+        label.destroy();
+        itemLabel.destroy();
+      }
+    });
   });
 }

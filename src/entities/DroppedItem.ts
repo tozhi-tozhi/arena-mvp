@@ -1,45 +1,58 @@
-// ไอเทมที่ตกอยู่บนพื้น — ผู้เล่นเดินเข้าใกล้แล้วกด E เพื่อเก็บเข้ากระเป๋า
+// ไอเทมตกพื้น — เปลี่ยน type จาก LootDef → DroppedLoot (มี rarity)
+// เพื่อดึงสีกรอบ rarity ที่ถูกต้อง
 import Phaser from 'phaser';
 import { DEPTH } from '../config';
-import type { LootDef } from '../data/loot';
+import type { DroppedLoot } from '../data/loot';
+import { RARITY } from '../data/rarity';
+import { ensureItemIcons } from '../systems/itemIcons';
 
-// ---------- ตัวเลขที่ปรับแต่งได้ ----------
-const ITEM_SIZE = 24;     // ขนาดไอเทมที่แสดง (px)
-const FLOAT_RANGE = 5;    // ระยะลอยขึ้นลงเบา ๆ
-const PICKUP_RANGE = 50;  // ระยะที่กด E เก็บได้
+const ITEM_SIZE = 32;
+const BORDER_SIZE = 42;
+const FLOAT_RANGE = 5;
+const PICKUP_RANGE = 50;
 
 export class DroppedItem {
   public sprite: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
   public isCollected: boolean = false;
-  public loot: LootDef;
+  public loot: DroppedLoot;
   private scene: Phaser.Scene;
+  private border: Phaser.GameObjects.Rectangle;
   private promptText: Phaser.GameObjects.Text;
-  private floatTween: Phaser.Tweens.Tween;
-  private baseScaleX: number; // scale ปกติ (รูปกับสี่เหลี่ยมมี scale ต่างกัน)
+  private floatTween: Phaser.Tweens.Tween | null = null;
+  private baseScaleX: number;
   private baseScaleY: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, loot: LootDef) {
+  constructor(scene: Phaser.Scene, x: number, y: number, loot: DroppedLoot) {
     this.scene = scene;
     this.loot = loot;
+    ensureItemIcons(scene);
 
-    // ใช้รูปไอเทมถ้ามี ถ้าไม่มีใช้สี่เหลี่ยมสีทองแทน (เกมไม่พัง)
+    const rd = RARITY[loot.rarity];
+
+    this.border = scene.add.rectangle(x, y, BORDER_SIZE, BORDER_SIZE);
+    this.border.setStrokeStyle(2, rd.colorNum, 1);
+    this.border.setDepth(DEPTH.ENEMY - 0.1);
+
     if (scene.textures.exists(loot.icon)) {
       const img = scene.add.image(x, y, loot.icon);
       img.setDisplaySize(ITEM_SIZE, ITEM_SIZE);
       img.setDepth(DEPTH.ENEMY);
       this.sprite = img;
     } else {
-      const rect = scene.add.rectangle(x, y, 18, 18, 0xffd700);
+      const rect = scene.add.rectangle(x, y, 20, 20, rd.colorNum);
       rect.setStrokeStyle(2, 0xffffff);
       rect.setDepth(DEPTH.ENEMY);
       this.sprite = rect;
     }
 
-    // จำ scale ปกติไว้ก่อน แล้วค่อยทำอนิเมชันเด้งออกจากกล่อง
     this.baseScaleX = this.sprite.scaleX;
     this.baseScaleY = this.sprite.scaleY;
+
     this.sprite.setAlpha(0);
     this.sprite.setScale(this.baseScaleX * 0.3, this.baseScaleY * 0.3);
+    this.border.setAlpha(0);
+    this.border.setScale(0.3);
+
     scene.tweens.add({
       targets: this.sprite,
       alpha: 1,
@@ -48,10 +61,17 @@ export class DroppedItem {
       duration: 300,
       ease: 'Back.easeOut'
     });
+    scene.tweens.add({
+      targets: this.border,
+      alpha: 1,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 300,
+      ease: 'Back.easeOut'
+    });
 
-    // ลอยขึ้นลงเบา ๆ (เริ่มหลังอนิเมชันเด้งเสร็จ)
     this.floatTween = scene.tweens.add({
-      targets: this.sprite,
+      targets: [this.sprite, this.border],
       y: y - FLOAT_RANGE,
       duration: 700,
       yoyo: true,
@@ -60,7 +80,19 @@ export class DroppedItem {
       delay: 300
     });
 
-    this.promptText = scene.add.text(x, y - 28, '[E] เก็บ', {
+    if (rd.glow) {
+      scene.tweens.add({
+        targets: this.border,
+        scaleX: { from: 1, to: 1.15 },
+        scaleY: { from: 1, to: 1.15 },
+        duration: 700,
+        yoyo: true,
+        repeat: -1,
+        delay: 400
+      });
+    }
+
+    this.promptText = scene.add.text(x, y - 32, '[E] เก็บ', {
       fontFamily: 'monospace',
       fontSize: '14px',
       color: '#7dff9b',
@@ -73,32 +105,35 @@ export class DroppedItem {
     if (this.isCollected) return;
     const dist = Phaser.Math.Distance.Between(this.sprite.x, this.sprite.y, playerX, playerY);
     this.promptText.setVisible(dist <= PICKUP_RANGE);
-    this.promptText.setPosition(this.sprite.x, this.sprite.y - 28);
+    this.promptText.setPosition(this.sprite.x, this.sprite.y - 32);
   }
 
-  // เก็บไอเทม — เล่นอนิเมชัน "ฟิ้ว" เข้ากระเป๋า แล้วเรียก onComplete
   collect(onComplete: () => void) {
     if (this.isCollected) return;
     this.isCollected = true;
-    this.floatTween.stop();
-    this.promptText.destroy();
+    if (this.floatTween) this.floatTween.stop();
+    if (this.promptText.active) this.promptText.destroy();
+
+    this.scene.tweens.killTweensOf(this.border);
 
     this.scene.tweens.add({
-      targets: this.sprite,
+      targets: [this.sprite, this.border],
       y: this.sprite.y - 40,
       alpha: 0,
-      scaleX: this.baseScaleX * 1.4,
-      scaleY: this.baseScaleY * 1.4,
       duration: 350,
       ease: 'Sine.easeIn',
-      onComplete: () => this.sprite.destroy()
+      onComplete: () => {
+        if (this.sprite.active) this.sprite.destroy();
+        if (this.border.active) this.border.destroy();
+      }
     });
     this.scene.time.delayedCall(200, () => onComplete());
   }
 
   destroy() {
-    this.floatTween.stop();
-    this.promptText.destroy();
-    this.sprite.destroy();
+    if (this.floatTween) this.floatTween.stop();
+    if (this.promptText.active) this.promptText.destroy();
+    if (this.sprite.active) this.sprite.destroy();
+    if (this.border.active) this.border.destroy();
   }
 }

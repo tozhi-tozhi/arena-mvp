@@ -1,13 +1,16 @@
-// หน้า "ฐานนักล่า" — เลือกตัวละคร / เครื่องราง / สัตว์เลี้ยง แล้วออกไปล่า
+// หน้า "ฐานนักล่า" — เลือกตัวละคร / เครื่องราง / สัตว์เลี้ยง / บอส แล้วออกไปล่า
+// Phase 1: กระเป๋าแสดงเป็น row ไอคอน + จำนวน + ขอบ rarity (ไม่ใช่ text แล้ว)
 import Phaser from 'phaser';
 import { GAME_WIDTH, DEV_TOOLS } from '../config';
 import { CHARACTERS, CHARACTER_IDS, type CharacterId } from '../data/characters';
 import { CHARMS, CHARM_IDS, type CharmId } from '../data/charms';
 import { PETS, PET_IDS, type PetId } from '../data/pets';
 import { LOOT_TABLE } from '../data/loot';
-import { huntSession } from '../systems/HuntSession';
+import { RARITY } from '../data/rarity';
+import { huntSession, type BagEntry } from '../systems/HuntSession';
 import { loadout } from '../systems/Loadout';
 import { loadGame, saveGame, resetSave } from '../systems/SaveGame';
+import { ensureItemIcons } from '../systems/itemIcons';
 import { BOSSES, BOSS_IDS, type BossId, type BossChoice } from '../data/bosses';
 
 let saveLoaded = false; // โหลดเซฟแค่ครั้งแรกที่เปิดเกม
@@ -25,6 +28,9 @@ export class BaseScene extends Phaser.Scene {
   }
 
   create() {
+    // สร้างไอคอนไอเทม (idempotent — เรียกซ้ำได้ไม่พัง)
+    ensureItemIcons(this);
+
     if (!saveLoaded) {
       loadGame();
       saveLoaded = true;
@@ -44,7 +50,8 @@ export class BaseScene extends Phaser.Scene {
     if (DEV_TOOLS) {
       kb.on('keydown-F2', () => {
         LOOT_TABLE.forEach((loot) => {
-          for (let i = 0; i < 5; i++) huntSession.addItem(loot);
+          // ต้องส่ง rarity ไปด้วย เพื่อให้ตรงกับ type ใหม่ใน HuntSession
+          for (let i = 0; i < 5; i++) huntSession.addItem({ ...loot, rarity: 'common' });
         });
         saveGame();
         this.render();
@@ -117,7 +124,7 @@ export class BaseScene extends Phaser.Scene {
     this.setPet(list[next]);
   }
 
-    private setBoss(id: BossId | null) {
+  private setBoss(id: BossId | null) {
     loadout.bossChoice = id ?? 'random';
     saveGame();
     this.render();
@@ -130,6 +137,7 @@ export class BaseScene extends Phaser.Scene {
     saveGame();
     this.render();
   }
+
   private startHunt() {
     if (this.starting) return;
     this.starting = true;
@@ -162,6 +170,58 @@ export class BaseScene extends Phaser.Scene {
 
     this.text(GAME_WIDTH / 2 + 60, y + 27, descOf(current), 12, '#c9c9c9');
   }
+
+// แถวกระเป๋า: aggregate ตาม itemId, แสดง total count
+// ขอบไอคอนใช้สีของ rarity สูงสุดที่มีอยู่ (โชว์ให้เห็นว่าเคยได้ของดี)
+private drawBagRow(bag: BagEntry[]) {
+  // aggregate — total count + highest rarity ต่อ itemId
+  const summary = new Map<string, { total: number; highestRarity: any | null }>();
+  for (const entry of bag) {
+    const existing = summary.get(entry.itemId);
+    if (existing) {
+      existing.total += entry.count;
+      if (!existing.highestRarity || RARITY[entry.rarity].order > RARITY[existing.highestRarity].order) {
+        existing.highestRarity = entry.rarity;
+      }
+    } else {
+      summary.set(entry.itemId, { total: entry.count, highestRarity: entry.rarity });
+    }
+  }
+
+  const SLOT_W = 88;
+  const totalW = LOOT_TABLE.length * SLOT_W;
+  const startX = GAME_WIDTH / 2 - totalW / 2;
+  const y = 528;
+
+  LOOT_TABLE.forEach((def, i) => {
+    const data = summary.get(def.id);
+    const total = data?.total ?? 0;
+    const highestRarity = data?.highestRarity ?? 'common';
+    const rd = RARITY[highestRarity];
+    const slotX = startX + i * SLOT_W;
+
+    const border = this.add.rectangle(slotX + 20, y, 34, 34);
+    border.setStrokeStyle(2, rd.colorNum, total > 0 ? 0.9 : 0.2);
+    this.objs.push(border);
+
+    if (this.textures.exists(def.icon)) {
+      const icon = this.add.image(slotX + 20, y, def.icon);
+      icon.setDisplaySize(28, 28);
+      icon.setAlpha(total > 0 ? 1 : 0.25);
+      this.objs.push(icon);
+    }
+
+    const countText = this.add.text(slotX + 40, y, `x${total}`, {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: total > 0 ? '#ffffff' : '#555555',
+      stroke: '#000000',
+      strokeThickness: 3
+    }).setOrigin(0, 0.5);
+    this.objs.push(countText);
+  });
+}
 
   // ---------- วาดหน้าจอทั้งหมดใหม่ ----------
   private render() {
@@ -222,9 +282,9 @@ export class BaseScene extends Phaser.Scene {
       (id) => this.setPet(id)
     );
 
-    // แถวบอส (null = สุ่ม)
+    // แถวบอส (null = สุ่ม) — เลื่อนขึ้นเพื่อให้กระเป๋ามีที่
     this.optionRow<BossId>(
-      468,
+      455,
       'บอส',
       [null, ...BOSS_IDS],
       loadout.bossChoice === 'random' ? null : loadout.bossChoice,
@@ -233,13 +293,14 @@ export class BaseScene extends Phaser.Scene {
       (id) => this.setBoss(id)
     );
 
-    const bag = huntSession.getBag();
-    const bagText = bag.length > 0 ? bag.map((it) => `${it.name} x${it.count}`).join('  ·  ') : 'ว่างเปล่า';
-    this.text(cx, 520, `กระเป๋า: ${bagText}`, 12, '#a8e6a3');
+    // ---------- กระเป๋า (row แสดงไอคอน + จำนวน + ขอบ rarity) ----------
+    this.text(cx, 500, 'กระเป๋า', 12, '#ffd54a', 0.5, true);
+    this.drawBagRow(huntSession.getBag());
 
-    const btn = this.rect(cx, 560, 280, 40, 0x3a2a08, 1, 0xffd54a);
+    // ---------- ปุ่มออกล่า ----------
+    const btn = this.rect(cx, 572, 240, 34, 0x3a2a08, 1, 0xffd54a);
     btn.setInteractive({ useHandCursor: true });
     btn.on('pointerdown', () => this.startHunt());
-    this.text(cx, 560, 'กด ENTER เพื่อออกล่า', 18, '#ffd54a', 0.5, true);
+    this.text(cx, 572, 'กด ENTER เพื่อออกล่า', 16, '#ffd54a', 0.5, true);
   }
 }

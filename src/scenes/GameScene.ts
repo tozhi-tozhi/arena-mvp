@@ -1,4 +1,5 @@
 // src/scenes/GameScene.ts — เฟส 1: ตัวละครใหม่ (อัคนี / ลูมิ)
+// Phase 1 update: Loot ใช้ RARITY color + แบนเนอร์ epic/legendary
 import Phaser from 'phaser';
 import {
   GAME_WIDTH,
@@ -9,7 +10,7 @@ import {
   SPRITE_SCALE,
   DEPTH
 } from '../config';
-import { showDamage, burst, spawnThrustDir, makeVignette, ringEffect } from '../systems/effects';
+import { showDamage, burst, spawnThrustDir, makeVignette, ringEffect, showRarityBanner } from '../systems/effects';
 import { spawnArcSlash } from '../systems/combatFx';
 import { sfx } from '../systems/sfx';
 import { PlayerHUD } from '../ui/PlayerHUD';
@@ -24,7 +25,9 @@ import { LootBox } from '../entities/LootBox';
 import { showHuntSummary } from '../ui/HuntSummaryScreen';
 import { DroppedItem } from '../entities/DroppedItem';
 import { ExitPortal } from '../entities/ExitPortal';
-import { rollLoot, type LootDef } from '../data/loot';
+import { rollBossDrops, type DroppedLoot } from '../data/loot';
+import type { BossId } from '../data/bosses';
+import { RARITY } from '../data/rarity';
 import { huntSession } from '../systems/HuntSession';
 import { createBoss, type Boss } from '../entities/createBoss';
 import { pickRandomBossId, BURN } from '../data/bosses';
@@ -38,11 +41,10 @@ const AKK_SCALE = 0.43;
 const AKK_FRAMES = { idle: 1, walk: 4, attack: 5, charge: 7, thrust: 8, skill: 8, knock: 8 };
 type AkkClip = keyof typeof AKK_FRAMES;
 const akkKey = (clip: string, i: number) => `akk_${clip}_${String(i).padStart(2, '0')}`;
-const KNOCK_HOLD_MS = 1600; // ท่า knock เล่น ~1 วินาที + ค้างครึ่งวินาที ก่อนขึ้น Game Over
-const SKILL_SHIELD_FROM = 3; // เฟรมของสกิลที่เริ่มโชว์ออร่าอมตะ (นับจาก 1)
-const SKILL_SLASH_AT = 5; // เฟรมของสกิลที่เริ่มฟันใหญ่ (นับจาก 1)
+const KNOCK_HOLD_MS = 1600;
+const SKILL_SHIELD_FROM = 3;
+const SKILL_SLASH_AT = 5;
 
-// พื้นที่ฟันที่กำลัง "ออกฤทธิ์" อยู่ (ตรวจชนบอสทุกเฟรมจนกว่าจะโดนหรือหมดเวลา)
 interface Sweep {
   dir: Phaser.Math.Vector2;
   range: number;
@@ -54,7 +56,6 @@ interface Sweep {
   onHit?: () => void;
 }
 
-// ช่วงพุ่งดาบของอัคนี
 interface Thrust {
   until: number;
   damage: number;
@@ -71,7 +72,6 @@ export class GameScene extends Phaser.Scene {
   private keyA: any;
   private keyS: any;
   private keyD: any;
-  // เมาส์: คลิกซ้าย = โจมตี (ค้าง = ชาร์จ), คลิกขวา = สกิล
   private attackHeld: boolean = false;
   private attackPressed: boolean = false;
   private attackReleased: boolean = false;
@@ -81,23 +81,21 @@ export class GameScene extends Phaser.Scene {
   private keyInteract: any;
   private keyMute: any;
 
-  // สถานะการต่อสู้
   private isAttacking: boolean = false;
-  private isActionLocked: boolean = false; // ล็อกการเดิน (ท่าชาร์จ / สกิลอัคนี)
+  private isActionLocked: boolean = false;
   private isLunging: boolean = false;
   private isDashing: boolean = false;
   private isCharging: boolean = false;
   private chargeStartAt: number = 0;
   private skillInvincible: boolean = false;
-  private actionToken: number = 0; // เพิ่มค่าเมื่อท่าถูกขัดจังหวะ — callback เก่าจะไม่ทำงาน
-  private actionSeq: number = 0;   // เลขประจำ "การโจมตี 1 ครั้ง" (ใช้นับพาสซีฟ)
+  private actionToken: number = 0;
+  private actionSeq: number = 0;
   private actionStartedAt: number = 0;
   private sweep: Sweep | null = null;
   private thrust: Thrust | null = null;
   private skillReadyAt: number = 0;
   private shots: PlayerShot[] = [];
 
-  // พาสซีฟ
   private shield: boolean = false;
   private passiveReadyAt: number = 0;
   private hitCounter: number = 0;
@@ -122,7 +120,7 @@ export class GameScene extends Phaser.Scene {
   private passiveText: any;
   private charmText: any;
   private perks!: Perks;
-    // ไฟไหม้ (จากภัสมะ)
+
   private burnLevel: number = 0;
   private burnExposure: number = 0;
   private burnTick: number = 0;
@@ -148,10 +146,11 @@ export class GameScene extends Phaser.Scene {
   private bossIndicatorLabel!: Phaser.GameObjects.Text;
 
   private lootBox: LootBox | null = null;
-  private droppedItem: DroppedItem | null = null;
-  private exitPortal: ExitPortal | null = null;
-  private huntLoot: LootDef[] = [];
-  private huntStartTime: number = 0;
+private droppedItems: DroppedItem[] = [];
+private exitPortal: ExitPortal | null = null;
+private huntLoot: DroppedLoot[] = [];
+private huntStartTime: number = 0;
+private currentBossId: BossId = 'phasama';
 
   constructor() {
     super({ key: 'GameScene' });
@@ -162,7 +161,7 @@ export class GameScene extends Phaser.Scene {
     this.load.image('hero_clay_walk1', 'assets/hero_clay_walk1.png');
     this.load.image('hero_clay_walk2', 'assets/hero_clay_walk2.png');
     this.load.image('hero_clay_attack', 'assets/hero_clay_attack.png');
-        for (const [clip, n] of Object.entries(AKK_FRAMES)) {
+    for (const [clip, n] of Object.entries(AKK_FRAMES)) {
       for (let i = 1; i <= n; i++) {
         const nn = String(i).padStart(2, '0');
         this.load.image(akkKey(clip, i), `assets/characters/akkhani/char_akkhani_${clip}_${nn}.png`);
@@ -200,7 +199,6 @@ export class GameScene extends Phaser.Scene {
     this.baseScale = this.useAkk ? AKK_SCALE : this.useClay ? CLAY_SCALE : SPRITE_SCALE;
     this.akkClip = '';
 
-    // รีเซ็ตสถานะ
     this.maxPlayerHP = this.character.maxHP;
     this.playerHP = this.maxPlayerHP;
     this.isAttacking = false;
@@ -229,7 +227,7 @@ export class GameScene extends Phaser.Scene {
     this.walkFrameIndex = 0;
 
     this.lootBox = null;
-    this.droppedItem = null;
+    this.droppedItems = [];
     this.exitPortal = null;
     this.huntLoot = [];
     this.huntStartTime = this.time.now;
@@ -247,7 +245,6 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(t, t, W - t * 2, H - t * 2);
     makeVignette(this);
 
-    // สร้างผู้เล่น — เริ่มกลางฐานบนแผนที่ใหญ่
     const playerStartX = WORLD_WIDTH / 2;
     const playerStartY = WORLD_HEIGHT / 2;
     const startTexture = this.useAkk ? akkKey('idle', 1) : this.useClay ? 'hero_clay_idle' : 'hero';
@@ -257,7 +254,6 @@ export class GameScene extends Phaser.Scene {
     this.player.setScale(this.baseScale * this.character.scale);
     this.currentTexture = startTexture;
 
-    // Hitbox วงกลมช่วยลดการเกี่ยวมุม และคุมขนาดชนให้ใกล้เคียงกันทุกตัวละคร
     const minPlayerSide = Math.min(this.player.width, this.player.height);
     const wantedHitboxDiameter = 48 / Math.max(this.player.scaleX, 0.001);
     const hitboxDiameter = Math.min(wantedHitboxDiameter, minPlayerSide * 0.75);
@@ -276,7 +272,6 @@ export class GameScene extends Phaser.Scene {
       .ellipse(playerStartX, playerStartY + shadowOffset, shadowWidth, shadowHeight, 0x000000, 0.35)
       .setDepth(DEPTH.PLAYER_SHADOW);
 
-    // วงชาร์จ + โล่
     this.chargeGfx = this.add.graphics();
     this.chargeGfx.setDepth(DEPTH.PLAYER + 1);
     this.shieldRing = this.add.circle(playerStartX, playerStartY, Math.max(28, this.player.displayWidth * 0.36));
@@ -284,13 +279,11 @@ export class GameScene extends Phaser.Scene {
     this.shieldRing.setDepth(DEPTH.PLAYER + 1);
     this.shieldRing.setVisible(false);
 
-    // Input
     const keyboard = this.input.keyboard as any;
     this.keyW = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
     this.keyA = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
     this.keyS = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
     this.keyD = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
-    // เมาส์: ซ้าย = ตี, ขวา = สกิล (เก็บเป็นแฟล็ก แล้ว update() ค่อยหยิบไปใช้)
     this.attackHeld = false;
     this.attackPressed = false;
     this.attackReleased = false;
@@ -317,9 +310,9 @@ export class GameScene extends Phaser.Scene {
     this.keyInteract = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.keyMute = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
 
-    // สร้างบอส
     ensureBossTextures(this);
     const bossId = loadout.bossChoice === 'random' ? pickRandomBossId() : loadout.bossChoice;
+    this.currentBossId = bossId;
     this.burnLevel = 0;
     this.burnExposure = 0;
     this.burnTick = 0;
@@ -327,7 +320,6 @@ export class GameScene extends Phaser.Scene {
     this.burnLastInFire = 0;
     this.burnImmuneUntil = 0;
     this.burnFxAt = 0;
-    // บอสอยู่ห่างจากจุดเริ่ม เพื่อให้การออกล่ามีระยะทางจริง
     this.monster = createBoss(this, bossId, WORLD_WIDTH * 0.78, WORLD_HEIGHT / 2, {
       getTargets: () => (this.isDead ? [] : [this.player]),
       onHitTarget: (target, damage, fromX, fromY) => this.damagePlayer(target, damage, fromX, fromY),
@@ -337,7 +329,6 @@ export class GameScene extends Phaser.Scene {
     this.bossHud = new BossHUD(this, this.monster.def.name, this.monster.def.hp);
     this.bossCollider = this.physics.add.collider(this.player, this.monster.sprite);
 
-    // ลูกศรชี้บอสจะแสดงเฉพาะตอนบอสอยู่นอกหน้าจอ
     this.bossIndicator = this.add
       .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '▲', {
         fontFamily: 'Arial', fontSize: '28px', fontStyle: 'bold',
@@ -390,13 +381,10 @@ export class GameScene extends Phaser.Scene {
 
     this.showControlsNotice();
 
-const camera = this.cameras.main;
-
-camera.setBounds(0, 0, W, H);
-camera.startFollow(this.player, true, 0.08, 0.08);
-
-// ผู้เล่นเดินได้ในพื้นที่นี้ก่อน กล้องจึงเริ่มเคลื่อนตาม
-camera.setDeadzone(440, 340);
+    const camera = this.cameras.main;
+    camera.setBounds(0, 0, W, H);
+    camera.startFollow(this.player, true, 0.08, 0.08);
+    camera.setDeadzone(440, 340);
 
     this.sys.game.canvas.addEventListener('click', () => {
       this.sys.game.canvas.focus();
@@ -406,7 +394,6 @@ camera.setDeadzone(440, 340);
   update(_time: number, delta: number) {
     if (!this.player) return;
 
-    // เก็บสถานะเมาส์ของเฟรมนี้ แล้วเคลียร์ทันที (กันค้างข้ามเฟรม)
     const attackPressed = this.attackPressed;
     const attackReleased = this.attackReleased;
     const skillPressed = this.skillPressed;
@@ -430,7 +417,6 @@ camera.setDeadzone(440, 340);
     const now = this.time.now;
     const isHitStopped = now < this.hitStopUntil;
 
-    // ---------- เดิน ----------
     const speed = this.character.speed * (this.isCharging ? 0.5 : 1) * this.perks.speedMultiplier(now);
     const canMove =
       !isHitStopped && !this.isDashing && !this.isLunging && !this.isStunned && !this.isActionLocked;
@@ -447,7 +433,6 @@ camera.setDeadzone(440, 340);
         const len = Math.hypot(vx, vy);
         vx /= len;
         vy /= len;
-
       }
       this.player.setVelocity(vx * speed, vy * speed);
     } else if (isHitStopped) {
@@ -455,14 +440,13 @@ camera.setDeadzone(440, 340);
     } else if (this.isActionLocked && !this.isLunging && !this.isDashing && !this.isStunned) {
       this.player.setVelocity(0);
     }
-        // ---------- หันหน้า/ทิศโจมตีตามเมาส์ ----------
+
     if (!this.isActionLocked && !this.isLunging && !this.isDashing && !this.isStunned) {
       const aim = this.getAimDir();
       this.facing.copy(aim);
       if (Math.abs(aim.x) > 0.15) this.player.setFlipX(aim.x < 0);
     }
 
-    // ---------- สลับ texture ----------
     if (this.useAkk) {
       this.updateAkkVisual(now, vx !== 0 || vy !== 0);
     } else if (!this.isAttacking) {
@@ -479,7 +463,6 @@ camera.setDeadzone(440, 340);
       }
     }
 
-    // ---------- สกิล (Shift) ----------
     if (
       skillPressed &&
       now >= this.skillReadyAt &&
@@ -493,7 +476,6 @@ camera.setDeadzone(440, 340);
       else this.lumaDash();
     }
 
-    // ---------- โจมตี (Space: กดแล้วปล่อย = ตีเบา / ค้างจนวงเต็ม = ตีชาร์จ) ----------
     const canAct =
       !this.isAttacking && !this.isActionLocked && !this.isStunned && !this.isDashing && !isHitStopped;
 
@@ -503,7 +485,7 @@ camera.setDeadzone(440, 340);
         this.isCharging = true;
         this.chargeStartAt = now;
       } else {
-        this.attackBufferUntil = now + 180; // กดเร็วไปนิด — จำไว้แป๊บนึง
+        this.attackBufferUntil = now + 180;
       }
     } else if (canAct && !this.isCharging && now <= this.attackBufferUntil) {
       this.attackBufferUntil = 0;
@@ -529,7 +511,6 @@ camera.setDeadzone(440, 340);
       }
     }
 
-    // ---------- บอส + การตรวจโดน ----------
     this.monster.update(delta);
     this.perks.update(now, delta);
     this.updateBurn(delta, now);
@@ -539,54 +520,95 @@ camera.setDeadzone(440, 340);
     for (const s of this.shots) s.update(delta);
     this.shots = this.shots.filter((s) => s.isAlive());
 
-    // ---------- ระบบเก็บของ ----------
     const justPressedE = Phaser.Input.Keyboard.JustDown(this.keyInteract);
 
-    if (this.lootBox) {
-      this.lootBox.checkPlayerDistance(this.player.x, this.player.y);
-      if (justPressedE && !this.lootBox.isOpened) {
-        const dist = Phaser.Math.Distance.Between(
-          this.lootBox.sprite.x,
-          this.lootBox.sprite.y,
-          this.player.x,
-          this.player.y
-        );
-        if (dist <= 60) {
-          sfx.open();
-          this.lootBox.open(() => {
-            const boxX = this.lootBox!.sprite.x;
-            const boxY = this.lootBox!.sprite.y;
-            const rolledLoot = rollLoot();
-            this.droppedItem = new DroppedItem(this, boxX, boxY, rolledLoot);
-            this.lootBox = null;
-          });
-        }
-      }
-    }
+if (this.lootBox) {
+  this.lootBox.checkPlayerDistance(this.player.x, this.player.y);
+  if (justPressedE && !this.lootBox.isOpened) {
+    const dist = Phaser.Math.Distance.Between(
+      this.lootBox.sprite.x,
+      this.lootBox.sprite.y,
+      this.player.x,
+      this.player.y
+    );
+    if (dist <= 60) {
+      sfx.open();
+      this.lootBox.open(() => {
+        const boxX = this.lootBox!.sprite.x;
+        const boxY = this.lootBox!.sprite.y;
+        this.lootBox = null;
 
-    if (this.droppedItem) {
-      this.droppedItem.checkPlayerDistance(this.player.x, this.player.y);
-      if (justPressedE && !this.droppedItem.isCollected) {
-        const dist = Phaser.Math.Distance.Between(
-          this.droppedItem.sprite.x,
-          this.droppedItem.sprite.y,
-          this.player.x,
-          this.player.y
-        );
-        if (dist <= 50) {
-          const loot = this.droppedItem.loot;
-          this.droppedItem.collect(() => {
-            sfx.pickup();
-            huntSession.addItem(loot);
-            saveGame();
-            this.huntLoot.push(loot);
-            this.droppedItem = null;
-            showDamage(this, this.player.x, this.player.y - 40, `+ ${loot.name}`, loot.color, 1500);
-            this.exitPortal = new ExitPortal(this, WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
-          });
+        // ดรอป 4 ชิ้นจากบอสนี้
+        const rolledDrops = rollBossDrops(this.currentBossId, 4);
+        const margin = WALL_THICKNESS + 30;
+        for (let i = 0; i < rolledDrops.length; i++) {
+          const angle = (i * Math.PI) / 2 + (Math.random() - 0.5) * 0.4;
+          const dist = 40 + Math.random() * 20;
+          const ix = Phaser.Math.Clamp(
+            boxX + Math.cos(angle) * dist,
+            margin,
+            WORLD_WIDTH - margin
+          );
+          const iy = Phaser.Math.Clamp(
+            boxY + Math.sin(angle) * dist,
+            margin,
+            WORLD_HEIGHT - margin
+          );
+          const item = new DroppedItem(this, ix, iy, rolledDrops[i]);
+          this.droppedItems.push(item);
         }
-      }
+
+        // แบนเนอร์เฉพาะ rarity สูงสุด
+        const highest = rolledDrops.reduce((max, d) =>
+          RARITY[d.rarity].order > RARITY[max.rarity].order ? d : max
+        );
+        if (RARITY[highest.rarity].glow) {
+          showRarityBanner(this, boxX, boxY - 70, highest.rarity, highest.name);
+        }
+
+        // ประตูออกเกิดตรงจุดที่บอสตาย (ใต้กล่องลงมานิดนึง) เพื่อให้ผู้เล่นหาเจอทันที
+        this.exitPortal = new ExitPortal(this, boxX, boxY + 80);
+      });
     }
+  }
+}
+
+// เก็บได้ทีละหลายชิ้น — E ครั้งเดียวเก็บทุกไอเทมในระยะ
+if (this.droppedItems.length > 0) {
+  for (const item of this.droppedItems) {
+    item.checkPlayerDistance(this.player.x, this.player.y);
+  }
+  if (justPressedE) {
+    const toCollect = this.droppedItems.filter((item) => {
+      if (item.isCollected) return false;
+      const dist = Phaser.Math.Distance.Between(
+        item.sprite.x,
+        item.sprite.y,
+        this.player.x,
+        this.player.y
+      );
+      return dist <= 50;
+    });
+    for (const item of toCollect) {
+      const loot = item.loot;
+      this.droppedItems = this.droppedItems.filter((d) => d !== item);
+      item.collect(() => {
+        sfx.pickup();
+        huntSession.addItem(loot);
+        saveGame();
+        this.huntLoot.push(loot);
+        showDamage(
+          this,
+          this.player.x,
+          this.player.y - 40,
+          `+ ${loot.name}`,
+          RARITY[loot.rarity].color,
+          1500
+        );
+      });
+    }
+  }
+}
 
     if (this.exitPortal) {
       this.exitPortal.checkPlayerDistance(this.player.x, this.player.y);
@@ -616,7 +638,6 @@ camera.setDeadzone(440, 340);
       }
     }
 
-    // ---------- เงา / โล่ / HUD ----------
     const shadowOffset = this.useClay ? this.player.displayHeight / 2 - 6 : 14;
     this.playerShadow.setPosition(this.player.x, this.player.y + shadowOffset);
     this.shieldRing.setPosition(this.player.x, this.player.y);
@@ -633,67 +654,48 @@ camera.setDeadzone(440, 340);
     if (!this.useAkk) this.player.setTint(this.character.tint);
   }
 
-private createFloorDetails() {
-  const g = this.add.graphics();
-  g.setDepth(DEPTH.FLOOR + 0.5);
+  private createFloorDetails() {
+    const g = this.add.graphics();
+    g.setDepth(DEPTH.FLOOR + 0.5);
 
-  // Random แบบกำหนด Seed เพื่อให้ตำแหน่งรายละเอียดคงที่
-  let seed = 20261113;
-  const rand = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
+    let seed = 20261113;
+    const rand = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
 
-  const dirtColors = [
-    0x66543d,
-    0x85704d,
-    0x9b8158,
-    0x596044,
-    0x77705a
-  ];
+    const dirtColors = [0x66543d, 0x85704d, 0x9b8158, 0x596044, 0x77705a];
 
-  // คราบดินและสีพื้นหลายเฉด
-  for (let i = 0; i < 650; i++) {
-    const x = rand() * WORLD_WIDTH;
-    const y = rand() * WORLD_HEIGHT;
-    const w = 12 + rand() * 45;
-    const h = 8 + rand() * 25;
-    const color = dirtColors[
-      Math.floor(rand() * dirtColors.length)
-    ];
+    for (let i = 0; i < 650; i++) {
+      const x = rand() * WORLD_WIDTH;
+      const y = rand() * WORLD_HEIGHT;
+      const w = 12 + rand() * 45;
+      const h = 8 + rand() * 25;
+      const color = dirtColors[Math.floor(rand() * dirtColors.length)];
+      g.fillStyle(color, 0.08 + rand() * 0.09);
+      g.fillEllipse(x, y, w, h);
+    }
 
-    g.fillStyle(color, 0.08 + rand() * 0.09);
-    g.fillEllipse(x, y, w, h);
+    for (let i = 0; i < 320; i++) {
+      const x = rand() * WORLD_WIDTH;
+      const y = rand() * WORLD_HEIGHT;
+      const r = 2 + rand() * 5;
+      g.fillStyle(rand() > 0.5 ? 0xaaa18a : 0x403e38, 0.18 + rand() * 0.12);
+      g.fillEllipse(x, y, r * 2, r);
+    }
+
+    for (let i = 0; i < 180; i++) {
+      const x = rand() * WORLD_WIDTH;
+      const y = rand() * WORLD_HEIGHT;
+      g.lineStyle(2, 0x596d3d, 0.25);
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x - 4 - rand() * 5, y - 5 - rand() * 7);
+      g.moveTo(x, y);
+      g.lineTo(x + 4 + rand() * 5, y - 4 - rand() * 6);
+      g.strokePath();
+    }
   }
-
-  // เศษหินเล็ก ๆ
-  for (let i = 0; i < 320; i++) {
-    const x = rand() * WORLD_WIDTH;
-    const y = rand() * WORLD_HEIGHT;
-    const r = 2 + rand() * 5;
-
-    g.fillStyle(
-      rand() > 0.5 ? 0xaaa18a : 0x403e38,
-      0.18 + rand() * 0.12
-    );
-    g.fillEllipse(x, y, r * 2, r);
-  }
-
-  // กอหญ้าเล็ก ๆ
-  for (let i = 0; i < 180; i++) {
-    const x = rand() * WORLD_WIDTH;
-    const y = rand() * WORLD_HEIGHT;
-
-    g.lineStyle(2, 0x596d3d, 0.25);
-    g.beginPath();
-    g.moveTo(x, y);
-    g.lineTo(x - 4 - rand() * 5, y - 5 - rand() * 7);
-    g.moveTo(x, y);
-    g.lineTo(x + 4 + rand() * 5, y - 4 - rand() * 6);
-    g.strokePath();
-  }
-}
-
 
   private setPlayerTexture(key: string) {
     if (!this.useClay) return;
@@ -705,7 +707,6 @@ private createFloorDetails() {
     this.player.setScale(this.baseScale * this.character.scale);
   }
 
-  // frameMs: ตัวเลขเดียว (ทุกเฟรมเท่ากัน) หรืออาร์เรย์ (เวลาของแต่ละเฟรม)
   private playClip(clip: AkkClip, frameMs: number | number[], loop: boolean) {
     this.akkClip = clip;
     this.akkClipStart = this.time.now;
@@ -743,7 +744,6 @@ private createFloorDetails() {
     if (want && want !== this.akkClip) {
       if (want === 'walk') this.playClip('walk', 120, true);
       else if (want === 'charge') {
-        // ให้ถึงเฟรมสุดท้ายพอดีตอนชาร์จเต็ม แล้วค้างไว้
         const ms = Math.max(30, (this.chargeNeeded() - 120) / (AKK_FRAMES.charge - 1));
         this.playClip('charge', ms, false);
       } else this.playClip('idle', 1000, true);
@@ -755,7 +755,6 @@ private createFloorDetails() {
     return this.useAkk ? this.player.y + this.player.displayHeight * 0.45 : this.player.y + this.player.displayHeight / 2;
   }
 
-  // PixelFX: รอยฟัน หันซ้าย/ขวาตามทิศตัวละคร
   private slashFx(scale: number) {
     spawnPixelFx(this, 'sword-slash', {
       x: this.player.x,
@@ -765,23 +764,21 @@ private createFloorDetails() {
       depth: DEPTH.SLASH + 1
     });
   }
+
   private bossRadius(): number {
     return this.monster.def.displayWidth * 0.4;
   }
 
-    // ทิศจากตัวผู้เล่นไปยังเคอร์เซอร์เมาส์
   private getAimDir(): Phaser.Math.Vector2 {
     const p = this.input.activePointer;
     const cam = this.cameras.main;
     const dx = p.x + cam.scrollX - this.player.x;
     const dy = p.y + cam.scrollY - this.player.y;
     const len = Math.hypot(dx, dy);
-    if (len < 6) return this.facing.clone(); // เคอร์เซอร์ทับตัวพอดี: ใช้ทิศเดิม
+    if (len < 6) return this.facing.clone();
     return new Phaser.Math.Vector2(dx / len, dy / len);
   }
 
-  // ท่าทั้งหมดเรียกฟังก์ชันนี้ — ตอนนี้ใช้ทิศเมาส์ล้วนๆ
-  // (พารามิเตอร์เล็งอัตโนมัติเลิกใช้แล้ว เพราะเมาส์เล็งแม่นกว่า ไม่ต้องให้เกมช่วยดึง)
   private getAttackDir(_assistRange: number, _assistAngle: number): Phaser.Math.Vector2 {
     return this.getAimDir();
   }
@@ -816,7 +813,6 @@ private createFloorDetails() {
     }
   }
 
-  // เริ่มท่าใหม่: ล้างสถานะค้างจากท่าก่อนหน้า (กัน callback เก่าถูกยกเลิกแล้วสถานะไม่ถูกปลด)
   private beginAction(): number {
     this.actionToken++;
     this.actionStartedAt = this.time.now;
@@ -827,7 +823,7 @@ private createFloorDetails() {
     this.thrust = null;
     return this.actionToken;
   }
-  // ขัดจังหวะทุกท่า (ตอนโดนตี)
+
   private interruptActions() {
     this.actionToken++;
     this.isAttacking = false;
@@ -861,15 +857,12 @@ private createFloorDetails() {
       this.passiveText.setText(`นับโจมตี ${this.hitCounter}/${LUMA.passive.hitsNeeded}`).setColor('#ffc8f5');
     }
     const ch = this.perks.charmHud();
-     this.charmText.setText(ch ? ch.text : '').setColor(ch ? ch.color : '#bbbbbb');
-      this.burnText
+    this.charmText.setText(ch ? ch.text : '').setColor(ch ? ch.color : '#bbbbbb');
+    this.burnText
       .setText(this.burnLevel > 0 ? `ไหม้ Lv ${this.burnLevel}/${BURN.maxLevel}` : '')
       .setColor('#ff9a3a');
   }
 
-  // =====================================================
-  // การตรวจโดนบอส
-  // =====================================================
   private sweepHits(s: Sweep): boolean {
     const m = this.monster.sprite;
     const r = this.bossRadius();
@@ -881,7 +874,7 @@ private createFloorDetails() {
 
     const dot = Phaser.Math.Clamp((dx * s.dir.x + dy * s.dir.y) / dist, -1, 1);
     const angle = Math.acos(dot);
-    const widen = Math.asin(Math.min(1, r / dist)); // บอสตัวใหญ่ = กรวยกว้างขึ้นนิดหน่อย
+    const widen = Math.asin(Math.min(1, r / dist));
     return angle <= Phaser.Math.DegToRad(s.halfAngle) + widen;
   }
 
@@ -915,7 +908,6 @@ private createFloorDetails() {
     }
   }
 
-  // ทุกการสร้างดาเมจให้บอสผ่านที่นี่ที่เดียว (actionId -1 = ดาเมจจากสัตว์เลี้ยง)
   private hitBoss(damage: number, actionId: number) {
     if (!this.monster.isAlive || !this.monster.isTargetable) return;
     damage = this.perks.onPlayerHit(damage, actionId);
@@ -941,7 +933,6 @@ private createFloorDetails() {
     }
   }
 
-  // พาสซีฟลูมิ: นับ "การโจมตี 1 ครั้งที่โดน" (กระสุนพัดหลายนัดนับเป็น 1)
   private countAttackHit(actionId: number) {
     if (this.character.id !== 'luma') return;
     if (actionId === this.lastCountedAction) return;
@@ -955,9 +946,6 @@ private createFloorDetails() {
     }
   }
 
-  // =====================================================
-  // ตีเบา / ตีชาร์จ
-  // =====================================================
   private performLight() {
     if (this.character.id === 'akkhani') this.akkhaniLight();
     else this.lumaLight();
@@ -968,7 +956,6 @@ private createFloorDetails() {
     else this.lumaCharged();
   }
 
-  // ---------- อัคนี: ตีเบา = ฟันกวาด ----------
   private akkhaniLight() {
     const A = AKKHANI.light;
     const token = this.beginAction();
@@ -1008,7 +995,6 @@ private createFloorDetails() {
     });
   }
 
-  // ---------- อัคนี: ตีค้าง = ฟันกวาด แล้วพุ่งดาบ ----------
   private akkhaniCharged() {
     const C = AKKHANI.charged;
     const token = this.beginAction();
@@ -1023,7 +1009,6 @@ private createFloorDetails() {
     this.playAttackClip(C.thrustDelayMs / AKK_FRAMES.attack);
     this.player.setVelocity(0);
 
-    // 1) ฟันกวาด
     sfx.swing();
     spawnArcSlash(this, this.player.x, this.player.y, Math.atan2(dir.y, dir.x), C.sweepRange, C.sweepHalfAngle, 0xffb15a, 7, 200);
     this.slashFx(2);
@@ -1038,7 +1023,6 @@ private createFloorDetails() {
       actionId
     };
 
-    // 2) พุ่งดาบ
     this.time.delayedCall(C.thrustDelayMs, () => {
       if (token !== this.actionToken) return;
       if (this.useAkk) this.playClip('thrust', C.thrustMs / AKK_FRAMES.thrust, false);
@@ -1056,7 +1040,6 @@ private createFloorDetails() {
       this.player.setVelocity(0);
     });
 
-    // 3) จบท่า
     this.time.delayedCall(C.totalMs, () => {
       if (token !== this.actionToken) return;
       this.isAttacking = false;
@@ -1065,7 +1048,6 @@ private createFloorDetails() {
     });
   }
 
-  // ---------- อัคนี: สกิล = อมตะ แล้วฟันกวาดใหญ่ ----------
   private akkhaniSkill() {
     const S = AKKHANI.skill;
     const token = this.beginAction();
@@ -1076,7 +1058,6 @@ private createFloorDetails() {
     this.skillInvincible = true;
     this.player.setVelocity(0);
 
-    // เฟรมก่อนฟัน (ท่าเตรียม) แบ่งเวลา windupMs / เฟรมตั้งแต่ฟัน แบ่งเวลา activeMs
     const nPre = SKILL_SLASH_AT - 1;
     const nPost = AKK_FRAMES.skill - nPre;
     if (this.useAkk) {
@@ -1095,7 +1076,6 @@ private createFloorDetails() {
       repeat: Math.floor(S.windupMs / 160)
     });
 
-    // PixelFX: ออร่าอมตะ ขึ้นตั้งแต่เฟรม SKILL_SHIELD_FROM จนจบช่วงเตรียม
     const shieldAt = ((SKILL_SHIELD_FROM - 1) * S.windupMs) / nPre;
     this.time.delayedCall(shieldAt, () => {
       if (token !== this.actionToken) return;
@@ -1122,7 +1102,6 @@ private createFloorDetails() {
       sfx.swing();
       spawnArcSlash(this, this.player.x, this.player.y, Math.atan2(dir.y, dir.x), S.range, S.halfAngle, 0xff3b2f, 10, 300);
       ringEffect(this, this.player.x, this.player.y, S.range * 0.7, 0xff8a5a, 300);
-      // PixelFX: วงฟันใหญ่
       spawnPixelFx(this, 'spin-slash', {
         x: this.player.x,
         y: this.feetY(),
@@ -1151,7 +1130,6 @@ private createFloorDetails() {
     });
   }
 
-  // ---------- ลูมิ: ตีเบา = ยิงกระสุน ระเบิดปลายทาง ----------
   private lumaLight() {
     const L = LUMA.light;
     const token = this.beginAction();
@@ -1172,7 +1150,6 @@ private createFloorDetails() {
     });
   }
 
-  // ---------- ลูมิ: ตีชาร์จ = ยิงกระสุนพัด ----------
   private lumaCharged() {
     const C = LUMA.charged;
     const token = this.beginAction();
@@ -1251,7 +1228,6 @@ private createFloorDetails() {
     this.hitBoss(damage, actionId);
   }
 
-  // ---------- ลูมิ: สกิล = แดช (ไม่อมตะ) ----------
   private lumaDash() {
     const D = LUMA.dash;
     const token = this.beginAction();
@@ -1297,13 +1273,9 @@ private createFloorDetails() {
     });
   }
 
-  // =====================================================
-  // ผู้เล่นโดนตี / ตาย / บอสตาย
-  // =====================================================
   private damagePlayer(player: any, amount: number, fromX: number, fromY: number) {
     if (this.isDead || this.isVictory || this.isInvincible || this.skillInvincible) return;
 
-    // โล่กัน 1 ฮิต
     if (this.shield) {
       this.shield = false;
       sfx.hit();
@@ -1347,7 +1319,6 @@ private createFloorDetails() {
       return;
     }
 
-    // พาสซีฟอัคนี: เลือดลดแล้วได้โล่ (มีคูลดาวน์)
     if (this.character.id === 'akkhani' && !this.shield && this.time.now >= this.passiveReadyAt) {
       this.shield = true;
       this.passiveReadyAt = this.time.now + AKKHANI.passive.shieldCooldownMs;
@@ -1368,9 +1339,6 @@ private createFloorDetails() {
     });
   }
 
-    // =====================================================
-  // ไฟไหม้ (ภัสมะเรียกทุกเฟรมที่ผู้เล่นอยู่ในไฟ)
-  // =====================================================
   private applyBurn(delta: number) {
     if (this.isDead || this.isVictory || this.skillInvincible) return;
     const now = this.time.now;
@@ -1378,7 +1346,6 @@ private createFloorDetails() {
     this.burnLastInFire = now;
 
     if (this.burnLevel === 0) {
-      // เริ่มติดไฟ — โล่กันได้ 1 ครั้ง
       if (this.shield) {
         this.shield = false;
         this.burnImmuneUntil = now + BURN.shieldImmuneMs;
@@ -1405,7 +1372,6 @@ private createFloorDetails() {
   private updateBurn(delta: number, now: number) {
     if (this.burnLevel <= 0 || this.isDead || this.isVictory) return;
 
-    // ออกจากไฟนานพอ → ค่อยๆ ลดระดับ
     if (now - this.burnLastInFire > BURN.graceMs) {
       this.burnDecay += delta;
       if (this.burnDecay >= BURN.decayMsPerLevel) {
@@ -1418,7 +1384,6 @@ private createFloorDetails() {
     }
     if (this.burnLevel <= 0) return;
 
-    // ติ๊กดาเมจ (ถี่ขึ้นตามระดับ)
     this.burnTick += delta;
     if (this.burnTick >= BURN.tickIntervals[this.burnLevel]) {
       this.burnTick = 0;
@@ -1431,7 +1396,6 @@ private createFloorDetails() {
     }
   }
 
-  // ดาเมจจากไฟ: ไม่ขัดจังหวะท่า ไม่สะบัด ไม่ติดช่วงอมตะ (ไม่สนช่วง i-frame หลังโดนตี)
   private burnDamage(n: number) {
     if (this.isDead || this.isVictory || this.skillInvincible) return;
     this.perks.onPlayerHurt();
@@ -1449,13 +1413,13 @@ private createFloorDetails() {
       return;
     }
 
-    // พาสซีฟอัคนี: เลือดลดแล้วได้โล่
     if (this.character.id === 'akkhani' && !this.shield && this.time.now >= this.passiveReadyAt) {
       this.shield = true;
       this.passiveReadyAt = this.time.now + AKKHANI.passive.shieldCooldownMs;
       ringEffect(this, this.player.x, this.player.y, 40, 0x66e0ff, 400);
     }
   }
+
   private gameOver() {
     this.isDead = true;
     this.cancelCharge();
@@ -1521,7 +1485,6 @@ private createFloorDetails() {
     const screenX = camera.width / 2 + dx * edgeScale;
     const screenY = camera.height / 2 + dy * edgeScale;
 
-    // ตัวอักษร ▲ หันขึ้นเป็นค่าเริ่มต้น จึงชดเชยมุมอีก 90 องศา
     this.bossIndicator
       .setPosition(screenX, screenY)
       .setRotation(angle + Math.PI / 2)
