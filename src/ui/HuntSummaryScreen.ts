@@ -11,6 +11,8 @@ export interface HuntReportData {
   timeTakenMs: number;
   huntLoot: DroppedLoot[];
   bag: BagEntry[];
+  /** ข้อความท้ายหน้าจอ (ไม่ใส่ = 'กด R เพื่อล่าอีกครั้ง') */
+  footer?: string;
 }
 
 function formatTime(ms: number): string {
@@ -103,7 +105,7 @@ export function showHuntSummary(scene: Phaser.Scene, data: HuntReportData) {
   txt(210, 410, 'ในกระเป๋าทั้งหมด', 17, '#ffffff', 0);
   txt(590, 410, `${bagTotal} ชิ้น`, 18, '#7dff9b', 1, true);
 
-  txt(cx, 462, 'กด R เพื่อล่าอีกครั้ง', 20, '#ffffff', 0.5);
+  txt(cx, 462, data.footer ?? 'กด R เพื่อล่าอีกครั้ง', 20, '#ffffff', 0.5);
 
   objects.forEach((o: any) => o.setAlpha(0));
   scene.tweens.add({ targets: objects, alpha: 1, duration: 400, delay: 150 });

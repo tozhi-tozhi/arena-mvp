@@ -5,6 +5,7 @@ import { BaseScene } from './scenes/BaseScene';
 import { BagScene } from './scenes/BagScene';
 import { UpgradeScene } from './scenes/UpgradeScene';
 import { GameScene } from './scenes/GameScene';
+import { WorldScene } from './scenes/WorldScene';
 
 const config = {
   type: Phaser.AUTO,
@@ -19,7 +20,7 @@ const config = {
     arcade: { gravity: { y: 0 } as any, debug: false }
   },
   // ลำดับสำคัญ: ตัวแรกใน array = ฉากที่ Phaser สตาร์ทอัตโนมัติ
-  scene: [BaseScene, BagScene, UpgradeScene, GameScene]
+  scene: [BaseScene, BagScene, UpgradeScene, GameScene, WorldScene]
 };
 
 new Phaser.Game(config);

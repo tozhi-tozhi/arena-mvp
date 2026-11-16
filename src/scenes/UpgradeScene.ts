@@ -16,10 +16,12 @@ import {
   performUpgrade, meltItems, nextRarity, materialOf,
   charmEffectLines, petEffectLines, type UpgradeType, type EffectLine,
   MAX_STARS, starsOf, starCostForNext, canAddStar, performStarUp,
-  starEffectLines, starName, STAR_MATERIAL
+  starEffectLines, starName, STAR_MATERIAL,
+  POUCH_MAX_LEVEL, POUCH_MATERIAL, pouchLevelNow, pouchCostForNext, canUpgradePouch,
+  performUpgradePouch, pouchEffectLine, pouchCapacityNow
 } from '../systems/Upgrades';
 
-type Tab = 'charm' | 'pet' | 'star' | 'melt';
+type Tab = 'charm' | 'pet' | 'star' | 'melt' | 'pouch';
 
 // ---------- ตำแหน่งบนจอ (ปรับที่นี่ที่เดียว) ----------
 const PAD = 28;
@@ -55,6 +57,7 @@ export class UpgradeScene extends Phaser.Scene {
     kb.on('keydown-TWO', () => this.switchTab('pet'));
     kb.on('keydown-THREE', () => this.switchTab('star'));
     kb.on('keydown-FOUR', () => this.switchTab('melt'));
+    kb.on('keydown-FIVE', () => this.switchTab('pouch'));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => kb.removeAllListeners());
 
     this.render();
@@ -123,23 +126,25 @@ export class UpgradeScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
 
     this.text(cx, L.titleY, 'โรงตีเหล็ก', 26, '#ffd54a', 0.5, true);
-    this.text(cx, L.hintY, '1 เครื่องราง · 2 สัตว์เลี้ยง · 3 ดาวตัวละคร · 4 หลอมของ · ESC กลับฐาน', 11, '#a89f8c');
+    this.text(cx, L.hintY, '1 เครื่องราง · 2 สัตว์เลี้ยง · 3 ดาวตัวละคร · 4 หลอมของ · 5 ถุงพกพา · ESC กลับฐาน', 11, '#a89f8c');
 
     const tabs: { id: Tab; label: string; x: number }[] = [
-      { id: 'charm', label: 'เครื่องราง', x: cx - 285 },
-      { id: 'pet', label: 'สัตว์เลี้ยง', x: cx - 95 },
-      { id: 'star', label: 'ดาวตัวละคร', x: cx + 95 },
-      { id: 'melt', label: 'หลอมของ', x: cx + 285 }
+      { id: 'charm', label: 'เครื่องราง', x: cx - 304 },
+      { id: 'pet', label: 'สัตว์เลี้ยง', x: cx - 152 },
+      { id: 'star', label: 'ดาวตัวละคร', x: cx },
+      { id: 'melt', label: 'หลอมของ', x: cx + 152 },
+      { id: 'pouch', label: 'ถุงพกพา', x: cx + 304 }
     ];
     for (const t of tabs) {
       const on = this.activeTab === t.id;
-      const box = this.rect(t.x, L.tabY, 178, 32, on ? 0x3a2a08 : 0x1b1810, 1, on ? 0xffd54a : 0x4a4130);
+      const box = this.rect(t.x, L.tabY, 144, 32, on ? 0x3a2a08 : 0x1b1810, 1, on ? 0xffd54a : 0x4a4130);
       box.setInteractive({ useHandCursor: true });
       box.on('pointerdown', () => this.time.delayedCall(0, () => this.switchTab(t.id)));
       this.text(t.x, L.tabY, t.label, 14, on ? '#ffd54a' : '#8d8677', 0.5, on);
     }
 
     if (this.activeTab === 'melt') this.renderMelt();
+    else if (this.activeTab === 'pouch') this.renderPouch();
     else if (this.activeTab === 'star') this.renderStars();
     else this.renderUpgrade(this.activeTab);
 
@@ -275,6 +280,60 @@ export class UpgradeScene extends Phaser.Scene {
         }
       }, 0xc084fc);
     });
+  }
+
+  // ---------- แท็บถุงพกพา ----------
+  private renderPouch() {
+    const cardW = 720;
+    const cx = GAME_WIDTH / 2;
+    const left = cx - cardW / 2;
+    const top = L.cardTop;
+    const lv = pouchLevelNow();
+    const cost = pouchCostForNext(lv);
+    const ok = canUpgradePouch();
+    const matName = LOOT_TABLE.find((l) => l.id === POUCH_MATERIAL)?.name ?? POUCH_MATERIAL;
+
+    this.rect(cx, top + L.cardH / 2, cardW, L.cardH, 0x1b1810, 1, ok ? 0x5a4a20 : 0x3d3524);
+    this.text(left + PAD, top + 24, 'ถุงพกพา', 19, '#ffffff', 0, true);
+    this.text(left + PAD + 190, top + 24, `ขั้น ${lv}/${POUCH_MAX_LEVEL}`, 15, '#ffd54a', 0, true);
+    for (let k = 0; k < POUCH_MAX_LEVEL; k++) {
+      this.rect(left + PAD + 300 + k * 20, top + 24, 16, 8, k < lv ? 0xffd54a : 0x3a352a);
+    }
+
+    const headY = top + 52;
+    const nowX = left + 400;
+    const arrowX = left + 470;
+    const nextX = left + 545;
+    this.text(nowX, headY, 'ตอนนี้', 12, '#8d8677', 0.5, true);
+    this.text(nextX, headY, lv >= POUCH_MAX_LEVEL ? '' : 'หลังอัปเกรด', 12, '#7dff9b', 0.5, true);
+    this.effectRow(top + 76, pouchEffectLine(lv), left + PAD, nowX, arrowX, nextX);
+
+    const footY = top + L.cardH - 24;
+    if (!cost) {
+      this.text(left + PAD, footY, 'อัปเกรดสูงสุดแล้ว', 13, '#ffd54a', 0, true);
+    } else {
+      const parts: string[] = [];
+      const have = huntSession.getCountByRarity(POUCH_MATERIAL, cost.reqRarity);
+      parts.push(`${matName}[${RARITY[cost.reqRarity].name}] ${have}/${cost.amount}`);
+      if (cost.reqRarity2) {
+        const have2 = huntSession.getCountByRarity(POUCH_MATERIAL, cost.reqRarity2);
+        parts.push(`[${RARITY[cost.reqRarity2].name}] ${have2}/${cost.amount2}`);
+      }
+      this.text(left + PAD, footY, `ใช้: ${parts.join('  +  ')}`, 12, ok ? '#e8e8e8' : '#8d8677', 0);
+    }
+    const label = !cost ? 'สูงสุด' : ok ? 'อัปเกรด' : 'ของไม่พอ';
+    this.button(left + cardW - 92, footY, 140, 34, label, ok, () => {
+      if (performUpgradePouch()) {
+        sfx.pickup();
+        this.render();
+        this.flash(`ถุงพกพาเป็น ${pouchCapacityNow()} ช่องแล้ว — ใช้งานทันทีในการสำรวจครั้งถัดไป`);
+      }
+    }, 0x7dff9b);
+
+    const noteY = top + L.cardH + 36;
+    this.text(cx, noteY, 'ของที่เก็บในแอเรียเข้าถุงนี้ก่อน (1 ชิ้น = 1 ช่อง)', 13, '#c9c2b2');
+    this.text(cx, noteY + 26, 'กลับฐานผ่านประตูฟ้า = โอนเข้ากระเป๋าทั้งหมด', 13, '#9de7ff');
+    this.text(cx, noteY + 52, 'ตายกลางทาง = เสียของในถุงครึ่งหนึ่ง', 13, '#ff8a7a');
   }
 
   // ---------- แท็บหลอมของ ----------

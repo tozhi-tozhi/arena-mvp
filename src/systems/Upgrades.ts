@@ -14,6 +14,7 @@ class UpgradeStore {
   public charmLevels: Record<string, number> = {};
   public petLevels: Record<string, number> = {};
   public charStars: Record<string, number> = {};
+  public pouchLevel: number = 0; // ถุงพกพา 0..POUCH_MAX_LEVEL (0 = 12 ช่องเริ่มต้น)
 
   getCharmLevel(id: string): number { return clampLevel(this.charmLevels[id] ?? 1); }
   getPetLevel(id: string): number { return clampLevel(this.petLevels[id] ?? 1); }
@@ -27,7 +28,8 @@ class UpgradeStore {
     return {
       charmLevels: this.charmLevels,
       petLevels: this.petLevels,
-      charStars: this.charStars
+      charStars: this.charStars,
+      pouchLevel: this.pouchLevel
     };
   }
 
@@ -35,15 +37,22 @@ class UpgradeStore {
     this.charmLevels = sanitize(data?.charmLevels, clampLevel);
     this.petLevels = sanitize(data?.petLevels, clampLevel);
     this.charStars = sanitize(data?.charStars, clampStars);
+    this.pouchLevel = clampPouch(data?.pouchLevel);
   }
 
-  reset() { this.charmLevels = {}; this.petLevels = {}; this.charStars = {}; }
+  reset() { this.charmLevels = {}; this.petLevels = {}; this.charStars = {}; this.pouchLevel = 0; }
 }
 
 function clampLevel(lv: any): number {
   const n = Number(lv);
   if (!Number.isFinite(n)) return 1;
   return Math.max(1, Math.min(MAX_LEVEL, Math.floor(n)));
+}
+
+function clampPouch(v: any): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(POUCH_MAX_LEVEL, Math.floor(n)));
 }
 
 function clampStars(v: any): number {
@@ -335,4 +344,73 @@ export function meltItems(itemId: string, fromRarity: Rarity): boolean {
 
   void import('./SaveGame').then((m) => m.saveGame()).catch(() => {});
   return true;
+}
+
+
+// =====================================================
+// ถุงพกพา (Pouch) — Phase 3C
+// ความจุเริ่มต้น 12 ช่อง · +4 ช่องต่อขั้น · 12 ขั้น · สูงสุด 60 ช่อง · ใช้แร่ (ore) ไล่ระดับ rarity
+// =====================================================
+export const POUCH_BASE_SLOTS = 12;
+export const POUCH_SLOTS_PER_LEVEL = 4;
+export const POUCH_MAX_LEVEL = 12;
+export const POUCH_MATERIAL = 'ore';
+
+// ราคาขั้น 0→1, 1→2, ... 11→12 (ยังไม่ผ่านการเล่นจริง — ปรับได้ที่นี่ที่เดียว)
+export const POUCH_COSTS: UpgradeCost[] = [
+  { reqRarity: 'common',    amount: 6 },   // 12 → 16 ช่อง
+  { reqRarity: 'common',    amount: 10 },
+  { reqRarity: 'common',    amount: 14 },
+  { reqRarity: 'common',    amount: 18 },
+  { reqRarity: 'rare',      amount: 3 },
+  { reqRarity: 'rare',      amount: 5 },
+  { reqRarity: 'rare',      amount: 7 },
+  { reqRarity: 'rare',      amount: 9 },
+  { reqRarity: 'epic',      amount: 2 },
+  { reqRarity: 'epic',      amount: 3 },
+  { reqRarity: 'epic',      amount: 4 },
+  { reqRarity: 'legendary', amount: 1, reqRarity2: 'epic', amount2: 3 } // 56 → 60 ช่อง
+];
+
+export function pouchLevelNow(): number { return upgrades.pouchLevel; }
+
+export function pouchCapacityAt(level: number): number {
+  const lv = Math.max(0, Math.min(POUCH_MAX_LEVEL, Math.floor(level)));
+  return POUCH_BASE_SLOTS + lv * POUCH_SLOTS_PER_LEVEL;
+}
+
+export function pouchCapacityNow(): number { return pouchCapacityAt(upgrades.pouchLevel); }
+
+export function pouchCostForNext(level: number): UpgradeCost | null {
+  if (level >= POUCH_MAX_LEVEL) return null;
+  return POUCH_COSTS[level] ?? null;
+}
+
+export function canUpgradePouch(): boolean {
+  const cost = pouchCostForNext(upgrades.pouchLevel);
+  if (!cost) return false;
+  if (huntSession.getCountByRarity(POUCH_MATERIAL, cost.reqRarity) < cost.amount) return false;
+  if (cost.reqRarity2 && huntSession.getCountByRarity(POUCH_MATERIAL, cost.reqRarity2) < (cost.amount2 ?? 0)) return false;
+  return true;
+}
+
+export function performUpgradePouch(): boolean {
+  const cost = pouchCostForNext(upgrades.pouchLevel);
+  if (!cost || !canUpgradePouch()) return false;
+  huntSession.spend(POUCH_MATERIAL, cost.reqRarity, cost.amount);
+  if (cost.reqRarity2) huntSession.spend(POUCH_MATERIAL, cost.reqRarity2, cost.amount2 ?? 0);
+  upgrades.pouchLevel = clampPouch(upgrades.pouchLevel + 1);
+  void import('./SaveGame').then((m) => m.saveGame()).catch(() => {});
+  return true;
+}
+
+/** แถว "ตอนนี้ → หลังอัป" สำหรับหน้าโรงตีเหล็ก */
+export function pouchEffectLine(level: number): EffectLine {
+  const maxed = level >= POUCH_MAX_LEVEL;
+  return {
+    label: 'ช่องถุงพกพา',
+    now: `${pouchCapacityAt(level)} ช่อง`,
+    next: maxed ? null : `${pouchCapacityAt(level + 1)} ช่อง`,
+    improved: !maxed
+  };
 }

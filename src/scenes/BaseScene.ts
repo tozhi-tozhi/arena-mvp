@@ -51,6 +51,7 @@ export class BaseScene extends Phaser.Scene {
     kb.on('keydown-B', () => this.openBag());
     kb.on('keydown-F', () => this.openForge());
     kb.on('keydown-ENTER', () => this.startHunt());
+    kb.on('keydown-W', () => this.startWorld());
 
     if (DEV_TOOLS) {
       // แจกของครบทุกระดับ เพื่อทดสอบหน้ากระเป๋า/หลอม/อัปเกรดได้ทันที
@@ -125,6 +126,13 @@ export class BaseScene extends Phaser.Scene {
     if (!this.game.scene.getScene('UpgradeScene')) return;
     this.scene.start('UpgradeScene');
   }
+    // เข้า The World (Phase 3) — ทดสอบ
+  private startWorld() {
+    if (this.starting) return;
+    this.starting = true;
+    saveGame();
+    this.scene.start('WorldScene');
+  }
   private startHunt() {
     if (this.starting) return;
     this.starting = true;
@@ -163,7 +171,7 @@ export class BaseScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
 
     this.text(cx, L.titleY, 'ฐานนักล่า', 26, '#ffd54a', 0.5, true);
-    this.text(cx, L.hintY, 'ENTER ออกล่า · F โรงตีเหล็ก · B กระเป๋า · 1/2 ตัวละคร · C เครื่องราง · P สัตว์เลี้ยง', 11, '#a89f8c');
+    this.text(cx, L.hintY, 'ENTER ออกล่า · W เดอะเวิลด์ · F โรงตีเหล็ก · P สัตว์เลี้ยง', 11, '#a89f8c');
 
     // การ์ดตัวละคร
     CHARACTER_IDS.forEach((id, i) => {
