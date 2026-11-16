@@ -20,6 +20,7 @@ import { PlayerShot } from '../entities/PlayerShot';
 import { CHARACTERS, AKKHANI, LUMA, type CharacterDef } from '../data/characters';
 import { loadout } from '../systems/Loadout';
 import { Perks } from '../systems/Perks';
+import { charStarEffectNow, starsOf, starName, type CharStarEffect } from '../systems/Upgrades';
 import { saveGame } from '../systems/SaveGame';
 import { LootBox } from '../entities/LootBox';
 import { showHuntSummary } from '../ui/HuntSummaryScreen';
@@ -119,7 +120,8 @@ export class GameScene extends Phaser.Scene {
   private skillText: any;
   private passiveText: any;
   private charmText: any;
-  private perks!: Perks;
+private perks!: Perks;
+private starFx!: CharStarEffect;   // ผลของดาวตัวละคร อ่านครั้งเดียวตอนเริ่มฉาก
 
   private burnLevel: number = 0;
   private burnExposure: number = 0;
@@ -189,7 +191,8 @@ private currentBossId: BossId = 'phasama';
       this.textures.exists('hero_clay_walk2') &&
       this.textures.exists('hero_clay_attack');
 
-    this.character = CHARACTERS[loadout.characterId];
+this.character = CHARACTERS[loadout.characterId];
+ this.starFx = charStarEffectNow(this.character.id);
     // รีเซ็ตทุกครั้งที่เข้าฉาก — กันค่าค้างจากตาที่เล่นอัคนี (ทำให้ลูมิไม่ยอมเปลี่ยนภาพ)
     this.useAkk = false;
     this.currentTexture = '';
@@ -867,7 +870,7 @@ burst(this, mx, my, color, 4, 22, 3);
         this.passiveText.setText('โล่: รอตอนถูกตี').setColor('#bbbbbb');
       }
     } else {
-      this.passiveText.setText(`นับโจมตี ${this.hitCounter}/${LUMA.passive.hitsNeeded}`).setColor('#ffc8f5');
+   this.passiveText.setText(`นับโจมตี ${this.hitCounter}/${this.starFx.passiveHitsNeeded}`).setColor('#ffc8f5');
     }
     const ch = this.perks.charmHud();
     this.charmText.setText(ch ? ch.text : '').setColor(ch ? ch.color : '#bbbbbb');
@@ -891,19 +894,46 @@ burst(this, mx, my, color, 4, 22, 3);
     return angle <= Phaser.Math.DegToRad(s.halfAngle) + widen;
   }
 
-  private updateSweep(now: number) {
-    const s = this.sweep;
-    if (!s) return;
-    if (now > s.until || !this.monster.isAlive) {
-      this.sweep = null;
-      return;
-    }
-    if (s.hit) return;
-    if (!this.sweepHits(s)) return;
+// ตรวจว่าจุดหนึ่งอยู่ในกรวยฟันไหม (ใช้ทั้งตัวจริงและร่างปลอม)
+private inSweepCone(s: Sweep, tx: number, ty: number, tr: number): boolean {
+const dx = tx - this.player.x;
+const dy = ty - this.player.y;
+const dist = Math.hypot(dx, dy);
+if (dist > s.range + tr) return false;
+if (dist <= tr + 14) return true;
+const dot = Phaser.Math.Clamp((dx * s.dir.x + dy * s.dir.y) / dist, -1, 1);
+const angle = Math.acos(dot);
+const widen = Math.asin(Math.min(1, tr / dist));
+return angle <= Phaser.Math.DegToRad(s.halfAngle) + widen;
+}
+
+private updateSweep(now: number) {
+const s = this.sweep;
+if (!s) return;
+if (now > s.until || !this.monster.isAlive) {
+this.sweep = null;
+return;
+}
+if (s.hit) return;
+
+// ร่างปลอมก่อน — ตีโดนร่างปลอมถือว่าเสียท่าไปฟรี (เลือดบอสไม่ลด)
+for (const d of this.monster.getDecoys()) {
+  if (this.inSweepCone(s, d.x, d.y, d.r)) {
     s.hit = true;
-    this.hitBoss(s.damage, s.actionId);
-    s.onHit?.();
+    if (this.monster.hitDecoy(d.index)) {
+      sfx.hit();
+      this.cameras.main.shake(90, 0.004);
+      this.hitStop(50);
+    }
+    return;
   }
+}
+
+if (!this.sweepHits(s)) return;
+s.hit = true;
+this.hitBoss(s.damage, s.actionId);
+s.onHit?.();
+}
 
   private updateThrust(now: number) {
     const t = this.thrust;
@@ -912,14 +942,29 @@ burst(this, mx, my, color, 4, 22, 3);
       this.thrust = null;
       return;
     }
-    if (t.hit) return;
-    const m = this.monster.sprite;
-    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, m.x, m.y);
-    if (d <= this.bossRadius() + 30) {
-      t.hit = true;
-      this.hitBoss(t.damage, t.actionId);
+if (t.hit) return;
+
+// ร่างปลอมขวางทางพุ่ง — ชนแล้วแตก แต่บอสไม่เจ็บ
+for (const dc of this.monster.getDecoys()) {
+  const dd = Phaser.Math.Distance.Between(this.player.x, this.player.y, dc.x, dc.y);
+  if (dd <= dc.r + 30) {
+    t.hit = true;
+    if (this.monster.hitDecoy(dc.index)) {
+      sfx.hit();
+      this.cameras.main.shake(90, 0.004);
+      this.hitStop(50);
     }
+    return;
   }
+}
+
+const m = this.monster.sprite;
+const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, m.x, m.y);
+if (d <= this.bossRadius() + 30) {
+t.hit = true;
+this.hitBoss(t.damage, t.actionId);
+}
+}
 
   private hitBoss(damage: number, actionId: number) {
     if (!this.monster.isAlive || !this.monster.isTargetable) return;
@@ -950,8 +995,8 @@ burst(this, mx, my, color, 4, 22, 3);
     if (this.character.id !== 'luma') return;
     if (actionId === this.lastCountedAction) return;
     this.lastCountedAction = actionId;
-    this.hitCounter++;
-    if (this.hitCounter >= LUMA.passive.hitsNeeded) {
+this.hitCounter++;
+if (this.hitCounter >= this.starFx.passiveHitsNeeded) {
       this.hitCounter = 0;
       this.skillReadyAt = 0;
       showDamage(this, this.player.x, this.player.y - 40, 'แดชพร้อม!', '#9de7ff', 900);
@@ -1041,8 +1086,9 @@ burst(this, mx, my, color, 4, 22, 3);
       if (this.useAkk) this.playClip('thrust', C.thrustMs / AKK_FRAMES.thrust, false);
       this.isLunging = true;
       this.thrust = { until: this.time.now + C.thrustMs, damage: C.thrustDamage, hit: false, actionId };
-      this.player.setVelocity(dir.x * C.thrustSpeed, dir.y * C.thrustSpeed);
-      sfx.dash();
+   const thrustSpeed = C.thrustSpeed * this.starFx.thrustSpeedMult;
+   this.player.setVelocity(dir.x * thrustSpeed, dir.y * thrustSpeed);
+   sfx.dash();
       spawnThrustDir(this, this.player.x, this.player.y, dir.x, dir.y, 150, 3);
       this.cameras.main.shake(120, 0.005);
       this.time.addEvent({ delay: 40, repeat: 4, callback: () => this.spawnAfterimage(0xff8a5a) });
@@ -1131,7 +1177,7 @@ burst(this, mx, my, color, 4, 22, 3);
         until: this.time.now + S.activeMs,
         hit: false,
         actionId: ++this.actionSeq,
-        onHit: () => this.healPlayer(S.heal)
+     onHit: () => this.healPlayer(this.starFx.skillHeal)
       };
     });
 
@@ -1174,12 +1220,14 @@ this.time.delayedCall(L.cooldownMs, () => {
     sfx.swing();
     this.cameras.main.shake(100, 0.004);
 
-    const baseAngle = Math.atan2(dir.y, dir.x);
-    for (let i = 0; i < C.count; i++) {
-      const offset = Phaser.Math.DegToRad((i - (C.count - 1) / 2) * C.spreadDeg);
-      const d = new Phaser.Math.Vector2(Math.cos(baseAngle + offset), Math.sin(baseAngle + offset));
-      this.fireShot(d, C, 'charge', actionId);
-    }
+const baseAngle = Math.atan2(dir.y, dir.x);
+// ★1 พัดกว้าง: เพิ่มจำนวนนัด แต่คงมุมห่างต่อนัดเดิม (พัดกว้างขึ้นจริง)
+const shotCount = C.count + this.starFx.chargedCountBonus;
+for (let i = 0; i < shotCount; i++) {
+  const offset = Phaser.Math.DegToRad((i - (shotCount - 1) / 2) * C.spreadDeg);
+  const d = new Phaser.Math.Vector2(Math.cos(baseAngle + offset), Math.sin(baseAngle + offset));
+  this.fireShot(d, C, 'charge', actionId);
+}
 
     this.time.delayedCall(C.totalMs, () => {
       if (token !== this.actionToken) return;
@@ -1206,9 +1254,11 @@ this.time.delayedCall(L.cooldownMs, () => {
         const m = this.monster.sprite;
         return { x: m.x, y: m.y, r: this.bossRadius() };
       },
-      (x, y, ratio) => this.onShotDetonate(kind, actionId, x, y, ratio, cfg.aoeRadius, cfg.color)
-    );
-    this.shots.push(shot);
+(x, y, ratio) => this.onShotDetonate(kind, actionId, x, y, ratio, cfg.aoeRadius, cfg.color),
+// ร่างปลอมระหว่างทาง — กระสุนชนแล้วระเบิดที่ร่างนั้นเลย
+() => this.monster.getDecoys()
+);
+this.shots.push(shot);
   }
 
 private onShotDetonate(
@@ -1225,8 +1275,22 @@ ringEffect(this, x, y, aoeRadius + 8, color, 220);
 ringEffect(this, x, y, aoeRadius * 0.6, 0xffffff, 160);
 burst(this, x, y, color, kind === 'light' ? 10 : 5, aoeRadius * 1.3, 4);
 if (kind === 'light') this.cameras.main.shake(70, 0.0025);
-
 if (!this.monster.isAlive) return;
+
+// ระเบิดโดนร่างปลอม -> แตก แต่เลือดบอสไม่ลด
+let brokeDecoy = false;
+for (const dc of this.monster.getDecoys()) {
+  const dd = Phaser.Math.Distance.Between(x, y, dc.x, dc.y);
+  if (dd <= aoeRadius + dc.r) {
+    if (this.monster.hitDecoy(dc.index)) brokeDecoy = true;
+  }
+}
+if (brokeDecoy) {
+  sfx.hit();
+  this.hitStop(50);
+  return;
+}
+
 const m = this.monster.sprite;
 const d = Phaser.Math.Distance.Between(x, y, m.x, m.y);
 if (d > aoeRadius + this.bossRadius()) return;
@@ -1254,15 +1318,18 @@ this.hitBoss(damage, actionId);
       dx = this.facing.x;
       dy = this.facing.y;
     }
-    const len = Math.hypot(dx, dy) || 1;
-    this.player.setVelocity((dx / len) * D.speed, (dy / len) * D.speed);
-    this.player.setAlpha(0.8);
+ const len = Math.hypot(dx, dy) || 1;
+ // ★2 แดชยาว: เร็วขึ้นและนานขึ้นตามตัวคูณเดียวกัน
+ const dashSpeed = D.speed * this.starFx.dashDistMult;
+ const dashMs = D.durationMs * this.starFx.dashDistMult;
+ this.player.setVelocity((dx / len) * dashSpeed, (dy / len) * dashSpeed);
+ this.player.setAlpha(0.8);
 
     this.time.addEvent({ delay: 30, repeat: 5, callback: () => this.spawnAfterimage(0x66ccff) });
 
-    this.time.delayedCall(D.durationMs, () => {
-      if (token !== this.actionToken) return;
-      this.isDashing = false;
+ this.time.delayedCall(dashMs, () => {
+   if (token !== this.actionToken) return;
+   this.isDashing = false;
       if (!this.isDead) {
         this.player.setAlpha(1);
         this.player.setVelocity(0);
@@ -1358,8 +1425,9 @@ this.hitBoss(damage, actionId);
     if (now < this.burnImmuneUntil) return;
     this.burnLastInFire = now;
 
-    if (this.burnLevel === 0) {
-      if (this.shield) {
+if (this.burnLevel === 0) {
+   // ★2 โล่กันไฟ: ก่อนได้ดาว โล่กันดาเมจได้แต่ยังติดไฟ
+   if (this.shield && this.starFx.shieldBlocksBurn) {
         this.shield = false;
         this.burnImmuneUntil = now + BURN.shieldImmuneMs;
         sfx.hit();
@@ -1529,12 +1597,41 @@ this.hitBoss(damage, actionId);
       .setAlpha(0);
 
     this.tweens.add({ targets: notice, alpha: 1, duration: 250 });
-    this.tweens.add({
-      targets: notice,
-      alpha: 0,
-      delay: 2600,
-      duration: 500,
-      onComplete: () => notice.destroy()
-    });
-  }
+ this.tweens.add({
+   targets: notice,
+   alpha: 0,
+   delay: 2600,
+   duration: 500,
+   onComplete: () => notice.destroy()
+ });
+
+ // โชว์ดาวที่ปลดล็อกแล้ว ให้ผู้เล่นรู้ว่าของใหม่ทำงาน
+ const st = starsOf(this.character.id);
+ if (st > 0) {
+   const names = Array.from({ length: st }, (_, i) => starName(this.character.id, i)).join(' · ');
+   const starNotice = this.add
+     .text(GAME_WIDTH / 2, 92, `${'★'.repeat(st)} ${names}`, {
+       fontFamily: '"Noto Sans Thai", monospace',
+       fontSize: '14px',
+       fontStyle: 'bold',
+       color: '#ffd54a',
+       backgroundColor: 'rgba(0,0,0,0.55)',
+       padding: { x: 10, y: 4 },
+       stroke: '#000000',
+       strokeThickness: 3
+     })
+     .setOrigin(0.5)
+     .setDepth(DEPTH.HUD)
+     .setScrollFactor(0)
+     .setAlpha(0);
+   this.tweens.add({ targets: starNotice, alpha: 1, duration: 250, delay: 200 });
+   this.tweens.add({
+     targets: starNotice,
+     alpha: 0,
+     delay: 3000,
+     duration: 500,
+     onComplete: () => starNotice.destroy()
+   });
+ }
+}
 }

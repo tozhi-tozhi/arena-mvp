@@ -1,4 +1,4 @@
-// ระบบอัปเกรดเครื่องราง/สัตว์เลี้ยง — ตัวเลขสมดุลอยู่ที่นี่ที่เดียว
+// ระบบอัปเกรดเครื่องราง/สัตว์เลี้ยง + ดาวตัวละคร — ตัวเลขสมดุลอยู่ที่นี่ที่เดียว
 // UI เรียกใช้เฉพาะผลลัพธ์สำเร็จรูป ไม่คำนวณเอง
 import { huntSession } from './HuntSession';
 import { LOOT_TABLE } from '../data/loot';
@@ -7,25 +7,37 @@ import type { Rarity } from '../data/rarity';
 export type UpgradeType = 'charm' | 'pet';
 export const MAX_LEVEL = 10;
 export const MELT_NEED = 10;
+export const MAX_STARS = 3;
 
-// ---------- เก็บเลเวล ----------
+// ---------- เก็บเลเวล + ดาว ----------
 class UpgradeStore {
   public charmLevels: Record<string, number> = {};
   public petLevels: Record<string, number> = {};
+  public charStars: Record<string, number> = {};
 
   getCharmLevel(id: string): number { return clampLevel(this.charmLevels[id] ?? 1); }
   getPetLevel(id: string): number { return clampLevel(this.petLevels[id] ?? 1); }
   setCharmLevel(id: string, lv: number) { this.charmLevels[id] = clampLevel(lv); }
   setPetLevel(id: string, lv: number) { this.petLevels[id] = clampLevel(lv); }
 
-  export() { return { charmLevels: this.charmLevels, petLevels: this.petLevels }; }
+  getStars(id: string): number { return clampStars(this.charStars[id] ?? 0); }
+  setStars(id: string, n: number) { this.charStars[id] = clampStars(n); }
 
-  import(data: any) {
-    this.charmLevels = sanitize(data?.charmLevels);
-    this.petLevels = sanitize(data?.petLevels);
+  export() {
+    return {
+      charmLevels: this.charmLevels,
+      petLevels: this.petLevels,
+      charStars: this.charStars
+    };
   }
 
-  reset() { this.charmLevels = {}; this.petLevels = {}; }
+  import(data: any) {
+    this.charmLevels = sanitize(data?.charmLevels, clampLevel);
+    this.petLevels = sanitize(data?.petLevels, clampLevel);
+    this.charStars = sanitize(data?.charStars, clampStars);
+  }
+
+  reset() { this.charmLevels = {}; this.petLevels = {}; this.charStars = {}; }
 }
 
 function clampLevel(lv: any): number {
@@ -34,17 +46,23 @@ function clampLevel(lv: any): number {
   return Math.max(1, Math.min(MAX_LEVEL, Math.floor(n)));
 }
 
+function clampStars(v: any): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(MAX_STARS, Math.floor(n)));
+}
+
 // เซฟเก่าอาจพังมา — กรองให้เหลือแต่ตัวเลขที่ใช้ได้
-function sanitize(raw: any): Record<string, number> {
+function sanitize(raw: any, clamp: (v: any) => number): Record<string, number> {
   const out: Record<string, number> = {};
   if (!raw || typeof raw !== 'object') return out;
-  for (const key of Object.keys(raw)) out[key] = clampLevel(raw[key]);
+  for (const key of Object.keys(raw)) out[key] = clamp(raw[key]);
   return out;
 }
 
 export const upgrades = new UpgradeStore();
 
-// ---------- ตารางราคา (บังคับระดับ rarity) ----------
+// ---------- ตารางราคาเลเวล (บังคับระดับ rarity) ----------
 export interface UpgradeCost {
   reqRarity: Rarity;
   amount: number;
@@ -64,7 +82,6 @@ export const UPGRADE_COSTS: UpgradeCost[] = [
   { reqRarity: 'legendary', amount: 1, reqRarity2: 'epic', amount2: 3 } // Lv.9 → 10
 ];
 
-// ไอเทมที่ใช้: เครื่องราง = แร่, สัตว์เลี้ยง = ไม้
 export function materialOf(type: UpgradeType): string {
   return type === 'charm' ? 'ore' : 'wood';
 }
@@ -73,7 +90,6 @@ export function levelOf(type: UpgradeType, id: string): number {
   return type === 'charm' ? upgrades.getCharmLevel(id) : upgrades.getPetLevel(id);
 }
 
-// ราคาของ "ขั้นถัดไป" — คืน null ถ้าตันแล้ว
 export function costForNext(currentLv: number): UpgradeCost | null {
   if (currentLv >= MAX_LEVEL) return null;
   return UPGRADE_COSTS[currentLv - 1] ?? null;
@@ -88,7 +104,6 @@ export function canUpgrade(type: UpgradeType, currentLv: number): boolean {
   return true;
 }
 
-// หักของแล้วเพิ่มเลเวล — เซฟให้ทันที กันลืมเรียกจากฝั่ง UI
 export function performUpgrade(type: UpgradeType, id: string): boolean {
   const currentLv = levelOf(type, id);
   const cost = costForNext(currentLv);
@@ -109,24 +124,23 @@ export function performUpgrade(type: UpgradeType, id: string): boolean {
 //  ผลของเลเวล — ที่เดียวที่ UI และเกมต่อสู้ใช้ร่วมกัน
 // =====================================================
 export interface CharmEffect {
-  healChance: number;      // โอกาสฟื้นเลือดต่อการโจมตีโดน (0-1)
-  healAmount: number;      // ฟื้นครั้งละกี่หน่วย
-  healMaxPerHunt: number;  // ฟื้นได้กี่ครั้งต่อการล่า
-  streakHitsNeeded: number;// ต้องตีติดกี่ครั้งเพื่อชาร์จ
-  streakMultiplier: number;// ดาเมจตอนชาร์จเต็ม
+  healChance: number;
+  healAmount: number;
+  healMaxPerHunt: number;
+  streakHitsNeeded: number;
+  streakMultiplier: number;
 }
 
 export interface PetEffect {
-  swiftIntervalMs: number; // บัฟความเร็วออกทุกกี่ ms
-  swiftDurationMs: number; // บัฟนานกี่ ms
-  swiftBonusPct: number;   // เร็วขึ้นกี่ %
-  mortarIntervalMs: number;// ครกยิงทุกกี่ ms
-  mortarDamage: number;    // ดาเมจครกต่อลูก
+  swiftIntervalMs: number;
+  swiftDurationMs: number;
+  swiftBonusPct: number;
+  mortarIntervalMs: number;
+  mortarDamage: number;
 }
 
-// เครื่องราง: เลเวลเพิ่มโอกาส/จำนวนครั้ง/ชาร์จไว
 export function charmEffectAt(id: string, lv: number): CharmEffect {
-  const L = clampLevel(lv) - 1; // 0..9
+  const L = clampLevel(lv) - 1;
   return {
     healChance: Math.min(0.75, 0.30 + L * 0.05),
     healAmount: 1 + Math.floor(L / 5),
@@ -136,7 +150,6 @@ export function charmEffectAt(id: string, lv: number): CharmEffect {
   };
 }
 
-// สัตว์เลี้ยง: เลเวลลดคูลดาวน์ + เพิ่มความแรง/ระยะเวลา
 export function petEffectAt(id: string, lv: number): PetEffect {
   const L = clampLevel(lv) - 1;
   return {
@@ -155,7 +168,7 @@ export function petEffectNow(id: string): PetEffect { return petEffectAt(id, upg
 export interface EffectLine {
   label: string;
   now: string;
-  next: string | null; // null = ตันแล้ว
+  next: string | null;
   improved: boolean;
 }
 
@@ -199,6 +212,100 @@ export function petEffectLines(id: string, lv: number): EffectLine[] {
   return [
     line('ครกยิงทุก', sec(a.mortarIntervalMs), sec(b.mortarIntervalMs)),
     line('ดาเมจต่อลูก', `${a.mortarDamage}`, `${b.mortarDamage}`)
+  ];
+}
+
+// =====================================================
+//  ดาวตัวละคร (0-3) — ปลดล็อก "กลไก" ไม่แตะ Stat พื้นฐาน
+//  ใช้กระดูกจากมายาเท่านั้น
+// =====================================================
+export interface StarCost { rarity: Rarity; amount: number; }
+
+export const STAR_MATERIAL = 'bone';
+
+export const STAR_COSTS: StarCost[] = [
+  { rarity: 'rare',      amount: 5 },  // ★0 → ★1
+  { rarity: 'epic',      amount: 3 },  // ★1 → ★2
+  { rarity: 'legendary', amount: 1 }   // ★2 → ★3
+];
+
+export function starsOf(id: string): number { return upgrades.getStars(id); }
+
+export function starCostForNext(stars: number): StarCost | null {
+  if (stars >= MAX_STARS) return null;
+  return STAR_COSTS[stars] ?? null;
+}
+
+export function canAddStar(id: string): boolean {
+  const cost = starCostForNext(starsOf(id));
+  if (!cost) return false;
+  return huntSession.getCountByRarity(STAR_MATERIAL, cost.rarity) >= cost.amount;
+}
+
+export function performStarUp(id: string): boolean {
+  const cur = starsOf(id);
+  const cost = starCostForNext(cur);
+  if (!cost || !canAddStar(id)) return false;
+  huntSession.spend(STAR_MATERIAL, cost.rarity, cost.amount);
+  upgrades.setStars(id, cur + 1);
+  void import('./SaveGame').then((m) => m.saveGame()).catch(() => {});
+  return true;
+}
+
+// ---------- ผลของดาว: อ่านได้ทุกที่ ทั้ง UI และ GameScene ----------
+export interface CharStarEffect {
+  // อัคนี
+  thrustSpeedMult: number;   // ★1 พุ่งดาบไกลขึ้น
+  shieldBlocksBurn: boolean; // ★2 โล่กันไฟไหม้ได้ด้วย
+  skillHeal: number;         // ★3 สกิลฟื้นเลือด 2 แทน 1
+  // ลูมิ
+  chargedCountBonus: number; // ★1 กระสุนพัด +2 นัด
+  dashDistMult: number;      // ★2 แดชไกลขึ้น
+  passiveHitsNeeded: number; // ★3 รีเซ็ตแดชไวขึ้น
+}
+
+export function charStarEffectAt(id: string, stars: number): CharStarEffect {
+  const s = clampStars(stars);
+  return {
+    thrustSpeedMult: s >= 1 ? 1.35 : 1,
+    shieldBlocksBurn: s >= 2,
+    skillHeal: s >= 3 ? 2 : 1,
+    chargedCountBonus: s >= 1 ? 2 : 0,
+    dashDistMult: s >= 2 ? 1.4 : 1,
+    passiveHitsNeeded: s >= 3 ? 6 : 8
+  };
+}
+
+export function charStarEffectNow(id: string): CharStarEffect {
+  return charStarEffectAt(id, starsOf(id));
+}
+
+// ชื่อดาวแต่ละดวง (ใช้ทั้ง UI และข้อความปลดล็อกในเกม)
+export function starName(id: string, starIndex: number): string {
+  const akk = ['พุ่งทะลวง', 'โล่กันไฟ', 'ฟันดูดชีวิต'];
+  const lum = ['พัดกว้าง', 'แดชยาว', 'แดชไวขึ้น'];
+  const list = id === 'akkhani' ? akk : lum;
+  return list[starIndex] ?? '';
+}
+
+export function starEffectLines(id: string, stars: number): EffectLine[] {
+  const a = charStarEffectAt(id, stars);
+  const maxed = stars >= MAX_STARS;
+  const b = maxed ? a : charStarEffectAt(id, stars + 1);
+  const line = (label: string, now: string, next: string): EffectLine =>
+    ({ label, now, next: maxed ? null : next, improved: !maxed && now !== next });
+
+  if (id === 'akkhani') {
+    return [
+      line('ระยะพุ่งดาบ', a.thrustSpeedMult > 1 ? 'ไกลขึ้น' : 'ปกติ', b.thrustSpeedMult > 1 ? 'ไกลขึ้น' : 'ปกติ'),
+      line('โล่กันไฟไหม้', a.shieldBlocksBurn ? 'กันได้' : 'กันไม่ได้', b.shieldBlocksBurn ? 'กันได้' : 'กันไม่ได้'),
+      line('สกิลฟื้นเลือด', `${a.skillHeal} หน่วย`, `${b.skillHeal} หน่วย`)
+    ];
+  }
+  return [
+    line('กระสุนพัดเพิ่ม', `${a.chargedCountBonus} นัด`, `${b.chargedCountBonus} นัด`),
+    line('ระยะแดช', a.dashDistMult > 1 ? 'ไกลขึ้น' : 'ปกติ', b.dashDistMult > 1 ? 'ไกลขึ้น' : 'ปกติ'),
+    line('ตีครบกี่ครั้งรีเซ็ตแดช', `${a.passiveHitsNeeded} ครั้ง`, `${b.passiveHitsNeeded} ครั้ง`)
   ];
 }
 

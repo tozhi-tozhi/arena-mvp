@@ -1,9 +1,11 @@
 // โรงตีเหล็ก — ฉากเต็มจอแยกจากฐาน ไม่มีปัญหา UI ทับกัน
 // การ์ดผลลัพธ์: "ตอนนี้ได้อะไร → อัปแล้วจะได้อะไร" ไม่โชว์สูตรคูณใด ๆ
+// แท็บ 3 = ดาวตัวละคร (ใช้กระดูก ปลดล็อกกลไก ไม่ใช่ Stat)
 import Phaser from 'phaser';
 import { GAME_WIDTH } from '../config';
 import { CHARMS, CHARM_IDS } from '../data/charms';
 import { PETS, PET_IDS } from '../data/pets';
+import { CHARACTERS, CHARACTER_IDS } from '../data/characters';
 import { LOOT_TABLE } from '../data/loot';
 import { RARITY, type Rarity } from '../data/rarity';
 import { huntSession } from '../systems/HuntSession';
@@ -12,21 +14,23 @@ import { sfx } from '../systems/sfx';
 import {
   MAX_LEVEL, MELT_NEED, levelOf, costForNext, canUpgrade,
   performUpgrade, meltItems, nextRarity, materialOf,
-  charmEffectLines, petEffectLines, type UpgradeType, type EffectLine
+  charmEffectLines, petEffectLines, type UpgradeType, type EffectLine,
+  MAX_STARS, starsOf, starCostForNext, canAddStar, performStarUp,
+  starEffectLines, starName, STAR_MATERIAL
 } from '../systems/Upgrades';
 
-type Tab = 'charm' | 'pet' | 'melt';
+type Tab = 'charm' | 'pet' | 'star' | 'melt';
 
 // ---------- ตำแหน่งบนจอ (ปรับที่นี่ที่เดียว) ----------
-const PAD = 28; // ระยะขอบในการ์ด
+const PAD = 28;
 const L = {
-  titleY: 32,
-  hintY: 58,
-  tabY: 96,
-  cardTop: 132,
+  titleY: 30,
+  hintY: 54,
+  tabY: 90,
+  cardTop: 126,
   cardH: 186,
   cardGap: 16,
-  meltTop: 132,
+  meltTop: 126,
   meltH: 92,
   meltGap: 8,
   toastY: 534,
@@ -49,7 +53,8 @@ export class UpgradeScene extends Phaser.Scene {
     kb.on('keydown-ESC', () => this.backToBase());
     kb.on('keydown-ONE', () => this.switchTab('charm'));
     kb.on('keydown-TWO', () => this.switchTab('pet'));
-    kb.on('keydown-THREE', () => this.switchTab('melt'));
+    kb.on('keydown-THREE', () => this.switchTab('star'));
+    kb.on('keydown-FOUR', () => this.switchTab('melt'));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => kb.removeAllListeners());
 
     this.render();
@@ -118,22 +123,24 @@ export class UpgradeScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
 
     this.text(cx, L.titleY, 'โรงตีเหล็ก', 26, '#ffd54a', 0.5, true);
-    this.text(cx, L.hintY, '1 เครื่องราง · 2 สัตว์เลี้ยง · 3 หลอมของ · ESC กลับฐาน', 12, '#a89f8c');
+    this.text(cx, L.hintY, '1 เครื่องราง · 2 สัตว์เลี้ยง · 3 ดาวตัวละคร · 4 หลอมของ · ESC กลับฐาน', 11, '#a89f8c');
 
     const tabs: { id: Tab; label: string; x: number }[] = [
-      { id: 'charm', label: 'เครื่องราง', x: cx - 190 },
-      { id: 'pet', label: 'สัตว์เลี้ยง', x: cx },
-      { id: 'melt', label: 'หลอมของ', x: cx + 190 }
+      { id: 'charm', label: 'เครื่องราง', x: cx - 285 },
+      { id: 'pet', label: 'สัตว์เลี้ยง', x: cx - 95 },
+      { id: 'star', label: 'ดาวตัวละคร', x: cx + 95 },
+      { id: 'melt', label: 'หลอมของ', x: cx + 285 }
     ];
     for (const t of tabs) {
       const on = this.activeTab === t.id;
-      const box = this.rect(t.x, L.tabY, 170, 34, on ? 0x3a2a08 : 0x1b1810, 1, on ? 0xffd54a : 0x4a4130);
+      const box = this.rect(t.x, L.tabY, 178, 32, on ? 0x3a2a08 : 0x1b1810, 1, on ? 0xffd54a : 0x4a4130);
       box.setInteractive({ useHandCursor: true });
       box.on('pointerdown', () => this.time.delayedCall(0, () => this.switchTab(t.id)));
-      this.text(t.x, L.tabY, t.label, 15, on ? '#ffd54a' : '#8d8677', 0.5, on);
+      this.text(t.x, L.tabY, t.label, 14, on ? '#ffd54a' : '#8d8677', 0.5, on);
     }
 
     if (this.activeTab === 'melt') this.renderMelt();
+    else if (this.activeTab === 'star') this.renderStars();
     else this.renderUpgrade(this.activeTab);
 
     this.button(cx, L.backY, 180, 34, 'กลับฐาน', true, () => this.backToBase());
@@ -151,7 +158,7 @@ export class UpgradeScene extends Phaser.Scene {
     }
   }
 
-  // ---------- แท็บอัปเกรด ----------
+  // ---------- แท็บอัปเกรด Charm / Pet ----------
   private renderUpgrade(type: UpgradeType) {
     const ids = type === 'charm' ? CHARM_IDS : PET_IDS;
     const defs: Record<string, { name: string }> = type === 'charm' ? (CHARMS as any) : (PETS as any);
@@ -170,14 +177,12 @@ export class UpgradeScene extends Phaser.Scene {
 
       this.rect(cx, top + L.cardH / 2, cardW, L.cardH, 0x1b1810, 1, ok ? 0x5a4a20 : 0x3d3524);
 
-      // หัวการ์ด: ชื่อ + เลเวล + แถบ progress
       this.text(left + PAD, top + 24, defs[id].name, 19, '#ffffff', 0, true);
       this.text(left + PAD + 190, top + 24, `Lv.${lv}/${MAX_LEVEL}`, 15, '#ffd54a', 0, true);
       for (let k = 0; k < MAX_LEVEL; k++) {
         this.rect(left + PAD + 300 + k * 20, top + 24, 16, 8, k < lv ? 0xffd54a : 0x3a352a);
       }
 
-      // คอลัมน์ผลลัพธ์
       const headY = top + 52;
       const nowX = left + 400;
       const arrowX = left + 470;
@@ -189,7 +194,6 @@ export class UpgradeScene extends Phaser.Scene {
         this.effectRow(top + 76 + k * 24, ln, left + PAD, nowX, arrowX, nextX);
       });
 
-      // ราคา + ปุ่ม (แถวล่างการ์ด)
       const footY = top + L.cardH - 24;
       if (!cost) {
         this.text(left + PAD, footY, 'อัปเกรดสูงสุดแล้ว', 13, '#ffd54a', 0, true);
@@ -212,6 +216,64 @@ export class UpgradeScene extends Phaser.Scene {
           this.flash(`${defs[id].name} เป็น Lv.${levelOf(type, id)} แล้ว — ผลใหม่ใช้งานทันทีในการล่าครั้งถัดไป`);
         }
       }, 0x7dff9b);
+    });
+  }
+
+  // ---------- แท็บดาวตัวละคร ----------
+  private renderStars() {
+    const cardW = 720;
+    const cx = GAME_WIDTH / 2;
+    const left = cx - cardW / 2;
+    const matName = LOOT_TABLE.find((l) => l.id === STAR_MATERIAL)?.name ?? 'กระดูก';
+
+    CHARACTER_IDS.forEach((id, i) => {
+      const top = L.cardTop + i * (L.cardH + L.cardGap);
+      const st = starsOf(id);
+      const cost = starCostForNext(st);
+      const ok = canAddStar(id);
+      const lines = starEffectLines(id, st);
+
+      this.rect(cx, top + L.cardH / 2, cardW, L.cardH, 0x1b1810, 1, ok ? 0x5a4a20 : 0x3d3524);
+
+      this.text(left + PAD, top + 24, CHARACTERS[id].name, 19, '#ffffff', 0, true);
+
+      // ดาว 3 ดวง
+      for (let k = 0; k < MAX_STARS; k++) {
+        this.text(left + PAD + 140 + k * 30, top + 24, k < st ? '★' : '☆', 22, k < st ? '#ffd54a' : '#4a4438', 0.5, true);
+      }
+      this.text(left + PAD + 230, top + 24,
+        st >= MAX_STARS ? 'ครบทุกดวง' : `ดวงถัดไป: ${starName(id, st)}`,
+        13, '#c9b0ff', 0);
+
+      const headY = top + 52;
+      const nowX = left + 400;
+      const arrowX = left + 470;
+      const nextX = left + 545;
+      this.text(nowX, headY, 'ตอนนี้', 12, '#8d8677', 0.5, true);
+      this.text(nextX, headY, st >= MAX_STARS ? '' : 'ได้ดาวเพิ่ม', 12, '#7dff9b', 0.5, true);
+
+      lines.forEach((ln, k) => {
+        this.effectRow(top + 76 + k * 24, ln, left + PAD, nowX, arrowX, nextX);
+      });
+
+      const footY = top + L.cardH - 24;
+      if (!cost) {
+        this.text(left + PAD, footY, 'ปลดล็อกครบทุกกลไกแล้ว', 13, '#ffd54a', 0, true);
+      } else {
+        const have = huntSession.getCountByRarity(STAR_MATERIAL, cost.rarity);
+        this.text(left + PAD, footY,
+          `ใช้: ${matName}[${RARITY[cost.rarity].name}] ${have}/${cost.amount}  (ได้จากมายา)`,
+          12, ok ? '#e8e8e8' : '#8d8677', 0);
+      }
+
+      const label = !cost ? 'ครบแล้ว' : ok ? 'เพิ่มดาว' : 'ของไม่พอ';
+      this.button(left + cardW - 92, footY, 140, 34, label, ok, () => {
+        if (performStarUp(id)) {
+          sfx.pickup();
+          this.render();
+          this.flash(`${CHARACTERS[id].name} ได้ ★${starsOf(id)} — ปลดล็อก "${starName(id, starsOf(id) - 1)}" แล้ว`);
+        }
+      }, 0xc084fc);
     });
   }
 

@@ -12,7 +12,7 @@ import { huntSession } from '../systems/HuntSession';
 import { loadout } from '../systems/Loadout';
 import { loadGame, saveGame, resetSave } from '../systems/SaveGame';
 import { ensureItemIcons } from '../systems/itemIcons';
-import { levelOf } from '../systems/Upgrades';
+import { levelOf, starsOf, MAX_STARS } from '../systems/Upgrades';
 
 // ---------- ตำแหน่งบนจอ (แก้เลย์เอาต์ที่นี่ที่เดียว) ----------
 const L = {
@@ -57,9 +57,9 @@ export class BaseScene extends Phaser.Scene {
       kb.on('keydown-F2', () => {
         const grant: { rarity: Rarity; n: number }[] = [
           { rarity: 'common', n: 12 },
-          { rarity: 'rare', n: 4 },
-          { rarity: 'epic', n: 2 },
-          { rarity: 'legendary', n: 1 }
+          { rarity: 'rare', n: 6 },     // พอสำหรับดาว ★1 (ต้องการ 5)
+          { rarity: 'epic', n: 3 },     // พอสำหรับดาว ★2
+          { rarity: 'legendary', n: 1 } // พอสำหรับดาว ★3
         ];
         LOOT_TABLE.forEach((loot) => {
           grant.forEach((g) => {
@@ -187,7 +187,11 @@ export class BaseScene extends Phaser.Scene {
       def.lines.forEach((line, k) => {
         this.text(x - 92, y - 24 + k * 22, line, 11, '#e8e8e8', 0);
       });
-      this.text(x, y + 80, `HP ${def.maxHP}`, 13, '#ff8a80', 0.5, true);
+      this.text(x - 40, y + 80, `HP ${def.maxHP}`, 13, '#ff8a80', 0.5, true);
+      // ดาวที่ปลดล็อกแล้ว — เห็นจากหน้าฐานเลยว่าตัวไหนเก่งขึ้นแค่ไหน
+      const st = starsOf(id);
+      const starStr = '★'.repeat(st) + '☆'.repeat(MAX_STARS - st);
+      this.text(x + 55, y + 80, starStr, 15, st > 0 ? '#ffd54a' : '#4a4438', 0.5, true);
     });
 
     // แถวตัวเลือก — โชว์เลเวลที่อัปเกรดไว้ด้วย
