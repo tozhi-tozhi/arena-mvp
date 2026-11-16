@@ -129,3 +129,7 @@ punishTriSize: 78,           // ตีผิดร่าง → สามเห�
 punishWarnMs: 620
 }
 };
+// รายชื่อบอสที่สามารถสุ่มเกิดใน The World ได้
+export const SPAWNABLE_BOSSES: BossId[] = ['phasama', 'maya'];
+
+// 🚀 อนาคต: เพิ่มบอสใหม่ ก็แค่เติมชื่อใน array นี้

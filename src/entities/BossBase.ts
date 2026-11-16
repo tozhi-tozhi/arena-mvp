@@ -6,7 +6,7 @@ export interface BossHooks {
 getTargets: () => any[];
 onHitTarget: (target: any, damage: number, fromX: number, fromY: number) => void;
 onBurn?: (target: any, deltaMs: number) => void;
-onDeath: () => void;
+onDeath: (boss: BossBase) => void;
 onPhaseChange?: () => void;
 }
 export interface BossDef {
@@ -31,7 +31,8 @@ protected scene: Phaser.Scene;
 protected hooks: BossHooks;
 protected shadow: any;
 protected gfx: any;
-protected dead: boolean = false;
+  protected dead: boolean = false;
+  protected sleeping: boolean = false
 protected rage: boolean = false;
 protected rageRatio: number = 0.5;
 protected targetable: boolean = true;
@@ -58,9 +59,19 @@ this.gfx.setDepth(DEPTH.TELEGRAPH);
 get isAlive(): boolean {
 return !this.dead;
 }
-get isTargetable(): boolean {
-return !this.dead && this.targetable;
-}
+  get isTargetable(): boolean {
+    return !this.dead && this.targetable;
+  }
+
+  // 👇 เพิ่ม 2 ฟังก์ชันนี้
+  setSleeping(sleep: boolean) {
+    this.sleeping = sleep;
+    if (!sleep) this.resetTint();
+  }
+
+  get isSleeping(): boolean {
+    return this.sleeping;
+  }
 protected get radius(): number {
 return this.sprite.displayWidth * 0.4;
 }
@@ -86,15 +97,21 @@ radius,
 (this.sprite.height - diameter) / 2
 );
 }
-update(delta: number) {
-if (this.dead) return;
-this.shadow.setPosition(
-this.sprite.x,
-this.sprite.y + this.sprite.displayHeight / 2 - 4 + this.groundOffsetY
-);
-this.shadow.setVisible(this.shadowVisible);
-this.tick(delta);
-}
+  update(delta: number) {
+    if (this.dead) return;
+    this.shadow.setPosition(
+      this.sprite.x,
+      this.sprite.y + this.sprite.displayHeight / 2 - 4 + this.groundOffsetY
+    );
+    this.shadow.setVisible(this.shadowVisible);
+
+    if (this.sleeping) {
+      this.sprite.setVelocity(0); // หยุดเดิน
+      return;                     // ไม่ประมวลผล AI (ไม่โจมตี)
+    }
+
+    this.tick(delta);
+  }
 protected abstract tick(delta: number): void;
 protected abstract onRage(): void;
 protected onDie(): void {}
@@ -139,7 +156,7 @@ this.scene.tweens.killTweensOf(this.sprite);
 this.sprite.destroy();
 this.shadow.destroy();
 this.gfx.destroy();
-this.hooks.onDeath();
+this.hooks.onDeath(this);
 }
 protected baseTint(): number | null {
 return this.rage ? 0xffb0a0 : null;
