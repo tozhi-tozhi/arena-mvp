@@ -1,6 +1,6 @@
 // ตารางไอเทมและดรอป — ไอเทม 4 ตัว แต่ละตัวมีที่ไปชัดเจน
 // ภัสมะ → ore + essence  |  มายา → wood + bone
-// ทุกไอเทมดรอปได้ทั้ง 4 rarity — rarity กำหนด "points" ของชิ้นนั้น
+// ทุกไอเทมดรอปได้ทั้ง 4 rarity — rarity กำหนดมูลค่าของชิ้นนั้น
 import type { Rarity } from './rarity';
 import type { BossId } from './bosses';
 
@@ -52,6 +52,14 @@ function rollRarity(random: () => number = Math.random): Rarity {
     if (roll < 0) return r.rarity;
   }
   return 'common';
+}
+
+// สุ่มของตกพื้นใน The World: สุ่มไอเทมจากทั้ง 4 ชนิด แล้วสุ่ม rarity
+// แต่ละชนิดมีโอกาสเท่ากัน ส่วน rarity ใช้น้ำหนักเดียวกับของที่ดรอปจากบอส
+export function rollGroundLoot(random: () => number = Math.random): DroppedLoot {
+  const index = Math.floor(random() * LOOT_TABLE.length);
+  const base = LOOT_TABLE[index] ?? LOOT_TABLE[0];
+  return { ...base, rarity: rollRarity(random) };
 }
 
 // ดรอปชิ้นเดียวจากบอส (เลือก item → เลือก rarity)
