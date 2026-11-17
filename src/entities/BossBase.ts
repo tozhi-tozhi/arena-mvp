@@ -132,7 +132,7 @@ takeDamage(amount: number) {
   if (this.dead || !this.targetable) return;
   const dmg = Math.round(amount * this.damageMult * 10) / 10;
   this.hp = Math.max(0, this.hp - dmg);
-  this.sprite.setTint(0xffffff);
+  this.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
   this.scene.time.delayedCall(100, () => {
     if (!this.dead) this.resetTint();
   });
@@ -192,8 +192,8 @@ takeDamage(amount: number) {
 
   protected resetTint() {
     const t = this.baseTint();
-    if (t === null) this.sprite.clearTint();
-    else this.sprite.setTint(t);
+    this.sprite.clearTint(); // ล้างโหมดแฟลชด้วยเสมอ
+    if (t !== null) this.sprite.setTint(t);
   }
 
   protected nearestTarget(): any {

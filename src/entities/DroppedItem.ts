@@ -6,6 +6,9 @@ import type { DroppedLoot } from '../data/loot';
 import { RARITY } from '../data/rarity';
 import { ensureItemIcons } from '../systems/itemIcons';
 
+/** แหล่งที่มาของของตกพื้น — เควสเก็บของนับเฉพาะ 'ground' */
+export type ItemSource = 'ground' | 'minion' | 'boss' | 'seal' | 'other';
+
 const ITEM_SIZE = 32;
 const BORDER_SIZE = 42;
 const FLOAT_RANGE = 5;
@@ -15,6 +18,7 @@ export class DroppedItem {
   public sprite: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
   public isCollected: boolean = false;
   public loot: DroppedLoot;
+  public readonly source: ItemSource;
   private scene: Phaser.Scene;
   private border: Phaser.GameObjects.Rectangle;
   private promptText: Phaser.GameObjects.Text;
@@ -22,9 +26,10 @@ export class DroppedItem {
   private baseScaleX: number;
   private baseScaleY: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, loot: DroppedLoot) {
+  constructor(scene: Phaser.Scene, x: number, y: number, loot: DroppedLoot, source: ItemSource = 'other') {
     this.scene = scene;
     this.loot = loot;
+    this.source = source;
     ensureItemIcons(scene);
 
     const rd = RARITY[loot.rarity];

@@ -9,6 +9,7 @@ import {
   TRAIL, GLINT, type QuestDef
 } from '../data/quests';
 import { SealedCache } from '../entities/SealedCache';
+import { GROUND_LOOT_PER_SPOT } from '../data/world';
 import { showDamage, burst, ringEffect } from './effects';
 import { sfx } from './sfx';
 
@@ -28,6 +29,8 @@ export interface ActiveQuest {
   cache: SealedCache | null;
   done: boolean;
   collected: number;
+  /** จำนวนของพื้นที่ต้องเก็บ (ไม่เกินของพื้นที่มีจริงในแมพ) */
+  collectNeed: number;
 }
 
 export interface QuestContext {
@@ -45,11 +48,14 @@ export function setupAreaQuest(
   bossCount: number
 ): ActiveQuest {
   const rng = makeRng(seed ^ 0x9e3779b9);
-  const pool = QUEST_POOL.filter((q) => q.kind !== 'hunt' || bossCount > 0);
-  const def = pool[Math.floor(rng() * pool.length)];
+  const pool = QUEST_POOL.filter((q) => q.kind !== 'hunt' || bossCount > 0);  const pool = QUEST_POOL.filter((q) =>
+    (q.kind !== 'hunt' || bossCount > 0) &&
+    (q.kind !== 'collect' || layout.lootSpots.length > 0)
+  );  const def = pool[Math.floor(rng() * pool.length)];
 
   const quest: ActiveQuest = {
-    def, sites: [], visited: [], visuals: [], cache: null, done: false, collected: 0
+    def, sites: [], visited: [], visuals: [], cache: null, done: false, collected: 0,
+    collectNeed: Math.min(COLLECT_NEED, layout.lootSpots.length * GROUND_LOOT_PER_SPOT)
   };
 
   if (def.kind === 'explore') {
@@ -155,7 +161,7 @@ export function tickQuest(scene: Phaser.Scene, quest: ActiveQuest, ctx: QuestCon
   let ok = false;
   switch (quest.def.kind) {
     case 'collect':
-      ok = quest.collected >= COLLECT_NEED;
+      ok = quest.collectNeed > 0 && quest.collected >= quest.collectNeed;
       break;
     case 'hunt':
       ok = ctx.totalBosses > 0 && ctx.aliveBosses === 0;
@@ -182,7 +188,7 @@ export function tickQuest(scene: Phaser.Scene, quest: ActiveQuest, ctx: QuestCon
 export function questProgressText(quest: ActiveQuest, ctx: QuestContext): string {
   if (quest.done) return 'สำเร็จ!';
   switch (quest.def.kind) {
-    case 'collect': return `${quest.collected}/${COLLECT_NEED} ชิ้น`;
+    case 'collect': return `${quest.collected}/${quest.collectNeed} ชิ้น`;
     case 'hunt':    return `บอสเหลือ ${ctx.aliveBosses}`;
     case 'explore': return `${quest.visited.filter(Boolean).length}/${quest.sites.length} จุด`;
     case 'seal':    return quest.cache?.isBroken ? 'ผนึกพังแล้ว' : 'ยังไม่แกะ';
@@ -213,7 +219,9 @@ export function tickQuestGlint(
 }
 
 /** ใบ้เชิงทิศ+ระยะ — คมขึ้น: ทิศ 8 ทิศ + เมตรตัวเลข + จำนวนจุดที่เหลือ */
-export function questDirectionHint(quest: ActiveQuest, px: number, py: number, layout: AreaLayout): string {
+export function questDirectionHint(
+  quest: ActiveQuest, px: number, py: number, layout: AreaLayout, groundSpots: Point[] = []
+): string {
   let target: Point | null = null;
 
   if (quest.def.kind === 'explore') {
@@ -229,7 +237,7 @@ export function questDirectionHint(quest: ActiveQuest, px: number, py: number, l
     target = quest.sites[0] ?? null;
   } else if (quest.def.kind === 'collect') {
     let bestD = Infinity;
-    for (const s of layout.lootSpots) {
+    for (const s of groundSpots) {
       const d = Math.hypot(s.x - px, s.y - py);
       if (d < bestD) { bestD = d; target = s; }
     }

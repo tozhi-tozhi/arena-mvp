@@ -115,7 +115,7 @@ export class HealShrine {
     this.channeling = true;
     this.tickTimer = 0;
     this.prompt.setVisible(false);
-    sfx.open();
+    sfx.shrineStart();
     return true;
   }
 
@@ -146,7 +146,7 @@ export class HealShrine {
       this.tickTimer = 0;
       burst(this.scene, px, py - 10, HEAL_SHRINE.color, 6, 30, 3);
       ringEffect(this.scene, this.x, this.y, 50, HEAL_SHRINE.color, 300);
-      sfx.pickup();
+      sfx.shrineTick();
       return HEAL_SHRINE.healPerTick;
     }
     return 0;

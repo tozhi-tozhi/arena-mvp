@@ -172,6 +172,7 @@ export class Minion {
       this.sprite.setVelocity(this.lungeDirX * MINION.lungeSpeed, this.lungeDirY * MINION.lungeSpeed);
       this.timer = MINION.lungeMs;
       this.hitDone = false;
+      sfx.minionLunge();
       this.state = 'lunge';
     }
   }
@@ -221,7 +222,7 @@ export class Minion {
   takeHit(damage: number) {
     if (this.dead) return;
     this.hp = Math.max(0, this.hp - damage);
-    this.sprite.setTint(0xffffff);
+    this.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
     this.scene.time.delayedCall(80, () => {
       if (!this.dead) this.sprite.clearTint();
     });
@@ -235,7 +236,7 @@ export class Minion {
     this.scene.tweens.killTweensOf(this.sprite);
     burst(this.scene, this.sprite.x, this.sprite.y, MINION.color, 12, 60, 5);
     ringEffect(this.scene, this.sprite.x, this.sprite.y, 40, 0xe8e0c8, 250);
-    sfx.hit();
+    sfx.minionDie();
     this.gfx.clear();
     this.sprite.destroy();
     this.shadow.destroy();

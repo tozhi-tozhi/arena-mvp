@@ -41,6 +41,8 @@ import type { BossHooks, BossBase } from '../entities/BossBase';
 import { loadBossAssets, initBossTextures } from '../systems/BossLoader';
 
 const DETECT_RADIUS = 500;
+const STEP_DIST = 46;      // เดินกี่ px ต่อ 1 ก้าว (เสียงเท้า)
+const LOW_HP_RATIO = 0.34; // เลือดต่ำกว่าสัดส่วนนี้ = หัวใจเต้น
 const HINT_REFRESH_MS = 1000; // ใบ้อัปเดตทุก 1 วิ (เดิม 2 — ตัวเลขเมตรต้องทันตา)
 
 export class WorldScene extends Phaser.Scene {
@@ -79,6 +81,8 @@ export class WorldScene extends Phaser.Scene {
   private lastHintAt = 0;
   private lastHintLabel = '';
   private lastGlintAt = { value: 0 };
+  private stepAcc = 0;
+  private heartTimer = 0;
   private minigame: SealMinigame | null = null;
 
   private gateNavigator!: Phaser.GameObjects.Text;
@@ -114,6 +118,8 @@ export class WorldScene extends Phaser.Scene {
     this.lastHintAt = 0;
     this.lastHintLabel = '';
     this.lastGlintAt = { value: 0 };
+    this.stepAcc = 0;
+    this.heartTimer = 0;
     if (!data?.continueTrip) {
       pouch.startTrip();
       huntSession.clearTripHP(); // ทริปใหม่ = เลือดเต็ม
@@ -162,7 +168,7 @@ export class WorldScene extends Phaser.Scene {
         const a = (i / GROUND_LOOT_PER_SPOT) * Math.PI * 2 + Math.random() * 0.6;
         const ix = spot.x + Math.cos(a) * 32;
         const iy = spot.y + Math.sin(a) * 32;
-        this.items.push(new DroppedItem(this, ix, iy, rollGroundLoot(Math.random, this.scaling.rareBonus)));
+        this.items.push(new DroppedItem(this, ix, iy, rollGroundLoot(Math.random, this.scaling.rareBonus), 'ground'));
       }
     }
 
@@ -284,8 +290,10 @@ export class WorldScene extends Phaser.Scene {
     }
 
     this.sys.game.canvas.addEventListener('click', this.focusCanvas);
+    sfx.startAmbient();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.sys.game.canvas.removeEventListener('click', this.focusCanvas);
+      sfx.stopAmbient();
     });
   }
 
@@ -297,6 +305,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     this.actor.update(delta);
+    this.updateAudio(delta);
     for (const s of this.areaBosses) {
       if (s.boss.isAlive) s.boss.update(delta);
     }
@@ -313,7 +322,7 @@ export class WorldScene extends Phaser.Scene {
     }
     if (tickQuest(this, this.quest, ctx)) {
       showDamage(this, this.actor.x, this.actor.y - 60, 'เควสสำเร็จ!', '#7dff9b', 1800);
-      sfx.pickup();
+      sfx.questDone();
       this.unlockNextGate();
     }
 
@@ -327,10 +336,8 @@ export class WorldScene extends Phaser.Scene {
       this.refreshQuestHud(ctx);
     }
 
-    if (this.minigame) {
-      this.minigame.update(delta);
-      if (this.minigame.isFinished) this.minigame = null;
-    }
+    // ไม่เคลียร์ตรงนี้ — callback ตอนมินิเกมจบเป็นคนตั้ง null (กันเปิดซ้อนในช่วง 450ms)
+    if (this.minigame) this.minigame.update(delta);
 
     this.updatePouchHud();
     this.pouchPanel.refresh();
@@ -347,7 +354,7 @@ export class WorldScene extends Phaser.Scene {
     this.returnGate.checkPlayerDistance(px, py);
     this.exitGate.checkPlayerDistance(px, py);
 
-    if (Phaser.Input.Keyboard.JustDown(this.keyInteract) && !this.tripEnded) {
+    if (Phaser.Input.Keyboard.JustDown(this.keyInteract) && !this.tripEnded && !this.isTransitioning) {
       if (this.minigame) {
         this.minigame.press();
         return;
@@ -391,6 +398,7 @@ export class WorldScene extends Phaser.Scene {
       shrine.stopChannel();
       this.activeShrine = null;
       showDamage(this, this.actor.x, this.actor.y - 50, 'การพักถูกขัด!', '#ff8a7a', 900);
+      sfx.shrineBreak();
       return;
     }
     const gained = shrine.updateChannel(delta, this.actor.x, this.actor.y);
@@ -421,11 +429,18 @@ export class WorldScene extends Phaser.Scene {
     this.questTitleText.setText(title).setColor(this.quest.done ? '#7dff9b' : '#ffd166');
     const hint = this.quest.done
       ? 'ประตูไปต่อเปิดแล้ว — ตามลูกศรทอง'
-      : questDirectionHint(this.quest, this.actor.x, this.actor.y, this.layout);
+      : questDirectionHint(this.quest, this.actor.x, this.actor.y, this.layout, this.groundItemSpots());
     if (hint !== this.lastHintLabel) {
       this.lastHintLabel = hint;
       this.questHintText.setText(hint);
     }
+  }
+
+  /** ตำแหน่งของพื้นที่ยังไม่ถูกเก็บ — ใบ้เควสเก็บของชี้เฉพาะจุดที่ยังมีของ */
+  private groundItemSpots(): { x: number; y: number }[] {
+    return this.items
+      .filter((it) => !it.isCollected && it.source === 'ground')
+      .map((it) => ({ x: it.sprite.x, y: it.sprite.y }));
   }
 
   private openSealMinigame() {
@@ -436,21 +451,22 @@ export class WorldScene extends Phaser.Scene {
       if (this.tripEnded || this.actor.isDead) return;
       if (success) {
         cache.crackOpen();
-        sfx.bossDie();
+        sfx.sealBreak();
         for (let i = 0; i < SEAL.rewardCount; i++) {
           const base = LOOT_TABLE[Math.floor(Math.random() * LOOT_TABLE.length)];
           const highPool = RARITY_IDS.filter((r) => RARITY[r].order >= SEAL.rewardMinOrder);
           const rarity = Math.random() < 0.12 * this.scaling.rareBonus ? 'legendary' : highPool[0];
           const a = (i / SEAL.rewardCount) * Math.PI * 2 + Math.random() * 0.5;
-          this.items.push(new DroppedItem(this, cache.x + Math.cos(a) * 44, cache.y + Math.sin(a) * 44, { ...base, rarity }));
+          this.items.push(new DroppedItem(this, cache.x + Math.cos(a) * 44, cache.y + Math.sin(a) * 44, { ...base, rarity }, 'seal'));
         }
         showRarityBanner(this, cache.x, cache.y - 70, 'epic', 'ผนึกแตก — ของมีค่าคายออกมา');
       } else {
         cache.breakSeal();
         this.actor.takeDamage(SEAL.trapDamage, cache.x, cache.y);
         const a = Math.random() * Math.PI * 2;
-        this.items.push(new DroppedItem(this, cache.x + Math.cos(a) * 40, cache.y + Math.sin(a) * 40, rollGroundLoot(Math.random, this.scaling.rareBonus)));
+        this.items.push(new DroppedItem(this, cache.x + Math.cos(a) * 40, cache.y + Math.sin(a) * 40, rollGroundLoot(Math.random, this.scaling.rareBonus), 'seal'));
         showDamage(this, cache.x, cache.y - 50, 'ผนึกสะท้อน!', '#ff8a7a', 1200);
+        sfx.sealBackfire();
       }
     });
   }
@@ -466,7 +482,7 @@ export class WorldScene extends Phaser.Scene {
         if (d <= DETECT_RADIUS) {
           s.boss.setSleeping(false);
           showDamage(this, s.boss.sprite.x, s.boss.sprite.y - 80, 'ต่อสู้!', '#ff5555', 1500);
-          sfx.open();
+          sfx.bossWake();
         }
       }
     }
@@ -477,6 +493,7 @@ export class WorldScene extends Phaser.Scene {
     }
     if (!this.inCombat) {
       this.inCombat = true;
+      sfx.setTension(true);
       this.cameras.main.zoomTo(0.75, 800, 'Sine.easeInOut');
     }
     if (!this.currentCombatBoss || !this.currentCombatBoss.boss.isAlive || this.currentCombatBoss.boss.isSleeping) {
@@ -489,6 +506,7 @@ export class WorldScene extends Phaser.Scene {
 
   private endCombat() {
     this.inCombat = false;
+    sfx.setTension(false);
     this.currentCombatBoss = null;
     this.activeBossHud?.destroy();
     this.activeBossHud = null;
@@ -507,7 +525,7 @@ export class WorldScene extends Phaser.Scene {
         const dist = 40 + Math.random() * 20;
         const ix = boss.sprite.x + Math.cos(angle) * dist;
         const iy = boss.sprite.y + Math.sin(angle) * dist;
-        this.items.push(new DroppedItem(this, ix, iy, drops[i]));
+        this.items.push(new DroppedItem(this, ix, iy, drops[i], 'boss'));
       }
     }
   }
@@ -520,7 +538,39 @@ export class WorldScene extends Phaser.Scene {
     }
     if (Math.random() < MINION.dropChance) {
       const loot = rollGroundLoot(Math.random, this.scaling.rareBonus);
-      this.items.push(new DroppedItem(this, minion.sprite.x, minion.sprite.y, loot));
+      this.items.push(new DroppedItem(this, minion.sprite.x, minion.sprite.y, loot, 'minion'));
+    }
+  }
+
+  /** เสียงเท้าตามชนิดพื้น + หัวใจเต้นตอนเลือดต่ำ */
+  private updateAudio(delta: number) {
+    if (this.tripEnded || this.actor.isDead || this.actor.isVictory) return;
+    const body: any = this.actor.sprite.body;
+    if (!body) return;
+    const speed = Math.hypot(body.velocity.x, body.velocity.y);
+    if (speed > 25 && speed < 260) {
+      this.stepAcc += (speed * delta) / 1000;
+      if (this.stepAcc >= STEP_DIST) {
+        this.stepAcc = 0;
+        const L = this.layout;
+        const col = Phaser.Math.Clamp(Math.floor(this.actor.x / TILE_SIZE), 0, L.cols - 1);
+        const row = Phaser.Math.Clamp(Math.floor(this.actor.y / TILE_SIZE), 0, L.rows - 1);
+        sfx.step(L.tiles[row * L.cols + col]);
+      }
+    } else if (speed <= 25) {
+      this.stepAcc = STEP_DIST * 0.6; // หยุดแล้วเดินใหม่ ก้าวแรกมาไว
+    }
+
+    const ratio = this.actor.hp / this.actor.character.maxHP;
+    if (ratio <= LOW_HP_RATIO) {
+      this.heartTimer -= delta;
+      if (this.heartTimer <= 0) {
+        const danger = 1 - ratio / LOW_HP_RATIO; // 0..1 ยิ่งเลือดน้อยยิ่งถี่/ดัง
+        sfx.heartbeat(0.45 + danger * 0.55);
+        this.heartTimer = 1150 - danger * 600;
+      }
+    } else {
+      this.heartTimer = 0;
     }
   }
 
@@ -561,9 +611,12 @@ export class WorldScene extends Phaser.Scene {
         break;
       }
       this.items = this.items.filter((d) => d !== it);
-      this.quest.collected++;
+      if (it.source === 'ground' && this.quest.def.kind === 'collect') {
+        this.quest.collected++;
+        this.lastHintAt = 0; // ให้ HUD เควสอัปเดตทันที ไม่รอรอบ 1 วิ
+      }
       it.collect(() => {
-        sfx.pickup();
+        sfx.pickupRarity(loot.rarity);
         showDamage(this, this.actor.x, this.actor.y - 40, `+ ${loot.name}`, RARITY[loot.rarity].color, 1300);
       });
     }
@@ -585,7 +638,8 @@ export class WorldScene extends Phaser.Scene {
     this.pouchPanel.close();
     this.minigame?.destroy();
     this.minigame = null;
-    sfx.pickup();
+    sfx.stopAmbient();
+    sfx.homeward();
     this.actor.setVictory();
     huntSession.clearTripHP(); // ถึงฐานแล้ว = ทริปหน้าเลือดเต็ม
     const moved = pouch.depositAll();
@@ -608,6 +662,8 @@ export class WorldScene extends Phaser.Scene {
     this.pouchPanel.close();
     this.minigame?.destroy();
     this.minigame = null;
+    sfx.stopAmbient();
+    sfx.death();
     huntSession.clearTripHP(); // ตาย = ทริปหน้าเลือดเต็ม
     const { kept, lost } = pouch.resolveDeath();
     saveGame();
@@ -624,10 +680,11 @@ export class WorldScene extends Phaser.Scene {
     this.isTransitioning = true;
     // ฝากเลือดไว้ให้แมพถัดไป — ข้ามแมพไม่ฟื้นตามกติกาใหม่
     huntSession.setTripHP(this.actor.hp);
+    sfx.whoosh();
     transitionToNextArea(
       this,
-      () => this.cleanupForRestart(),
-      () => this.scene.restart({ continueTrip: true, areaIndex: this.areaIndex + 1 }),
+      () => { if (!this.tripEnded) this.cleanupForRestart(); },
+      () => { if (!this.tripEnded) this.scene.restart({ continueTrip: true, areaIndex: this.areaIndex + 1 }); },
       this.areaIndex + 1
     );
   }
@@ -649,6 +706,7 @@ export class WorldScene extends Phaser.Scene {
     if (this.nextGateUnlocked) return;
     this.nextGateUnlocked = true;
     this.exitGate.setLocked(false);
+    sfx.gateUnlock();
     showDamage(this, this.exitGate.x, this.exitGate.y - 60, 'ประตูเปิดแล้ว!', '#ffd166', 2000);
   }
 }

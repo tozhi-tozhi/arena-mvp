@@ -705,7 +705,7 @@ heal(n: number): number {
       if (!this.isDead) player.setVelocity(0);
     });
 
-    player.setTintFill(0xff3333);
+    player.setTint(0xff3333).setTintMode(Phaser.TintModes.FILL);
     this.time.delayedCall(100, () => this.applyBaseTint());
     this.cam.shake(200, 0.015);
     this.cam.flash(120, 255, 0, 0);
@@ -749,6 +749,7 @@ heal(n: number): number {
       this.playClip('knock', 130, false);
       this.time.delayedCall(KNOCK_HOLD_MS, show);
     } else {
+      this.sprite.clearTint(); // รีเซ็ตโหมดฟิลล์ ไม่งั้นสไปรต์เป็นแผ่นเทาทึบ
       this.sprite.setTint(0x555555);
       show();
     }
@@ -758,6 +759,7 @@ heal(n: number): number {
   // ท่าและภาพ (ย้ายจาก GameScene ตามเดิม)
   // ---------------------------------------------------------------
   private applyBaseTint() {
+    if (this.isDead) return; // ตายแล้วห้ามทับสีเทาท่าตาย
     this.sprite.clearTint();
     if (!this.useAkk) this.sprite.setTint(this.character.tint);
   }
@@ -1358,7 +1360,7 @@ private getAimDir(): Phaser.Math.Vector2 {
     sfx.hurt();
     showDamage(this.scene, this.sprite.x, this.sprite.y, '-' + n, '#ff9a3a');
     burst(this.scene, this.sprite.x, this.sprite.y, 0xff8a3a, 6, 30, 4);
-    this.sprite.setTintFill(0xff8a3a);
+    this.sprite.setTint(0xff8a3a).setTintMode(Phaser.TintModes.FILL);
     this.time.delayedCall(80, () => this.applyBaseTint());
     this.cam.shake(80, 0.004);
 
