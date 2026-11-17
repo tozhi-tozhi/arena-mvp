@@ -27,6 +27,11 @@ maya: { id: 'maya', name: 'มายา', hp: 70, color: 0xb07aff, displayWidth:
 export function pickRandomBossId(): BossId {
 return BOSS_IDS[Math.floor(Math.random() * BOSS_IDS.length)];
 }
+// ตัวคูณดาเมจที่บอสตีผู้เล่น — ปัดเศษที่ใกล้ที่สุด ขั้นต่ำ 1
+// เขตตื้น mult 0.6: ท่าตี 1 ยังเหลือ 1 แต่ท่าแรง 2 (มายาตุ้ม) ลดเหลือ 1
+export function scaleBossDamage(base: number, mult: number): number {
+  return Math.max(1, Math.round(base * mult));
+}
 // ---------- ระบบไฟไหม้ (ผู้เล่น) ----------
 export const BURN = {
 maxLevel: 5,

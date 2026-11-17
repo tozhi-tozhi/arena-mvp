@@ -10,6 +10,7 @@ import { PlayerHUD } from '../ui/PlayerHUD';
 import { PlayerShot } from '../entities/PlayerShot';
 import { CHARACTERS, AKKHANI, LUMA, type CharacterDef } from '../data/characters';
 import { loadout } from '../systems/Loadout';
+import { huntSession } from '../systems/HuntSession';
 import { Perks } from '../systems/Perks';
 import { charStarEffectNow, type CharStarEffect } from '../systems/Upgrades';
 import { BURN } from '../data/bosses';
@@ -171,8 +172,11 @@ export class PlayerActor {
     if (this.useAkk) this.useClay = true;
     this.baseScale = this.useAkk ? AKK_SCALE : this.useClay ? CLAY_SCALE : SPRITE_SCALE;
 
-    this.maxPlayerHP = this.character.maxHP;
-    this.playerHP = this.maxPlayerHP;
+this.maxPlayerHP = this.character.maxHP;
+// เลือดข้ามแอเรีย: มีค่าค้างจากแมพก่อน → ใช้ค่านั้น (The World เท่านั้นที่ฝากค่าไว้)
+// ห้องฝึก/ทริปแรกไม่ได้ฝาก → เต็มตามปกติ
+const carriedHP = huntSession.getTripHP();
+this.playerHP = carriedHP !== null ? Phaser.Math.Clamp(carriedHP, 1, this.maxPlayerHP) : this.maxPlayerHP;
     this.facing.set(1, 0);
 
     const startTexture = this.useAkk ? akkKey('idle', 1) : this.useClay ? 'hero_clay_idle' : 'hero';
@@ -214,14 +218,16 @@ export class PlayerActor {
     this.keyS = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
     this.keyD = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
 
-    this.onPointerDown = (p: Phaser.Input.Pointer) => {
-      if (p.button === 2) {
-        this.skillPressed = true;
-      } else if (p.button === 0) {
-        this.attackHeld = true;
-        this.attackPressed = true;
-      }
-    };
+this.onPointerDown = (p: Phaser.Input.Pointer) => {
+  // คลิกโดนปุ่ม/แผงที่ interactive อยู่ (เช่น แผงถุงพกพา) → ไม่ถือเป็นการโจมตี
+  if (this.scene.input.hitTestPointer(p).length > 0) return;
+  if (p.button === 2) {
+    this.skillPressed = true;
+  } else if (p.button === 0) {
+    this.attackHeld = true;
+    this.attackPressed = true;
+  }
+};
     this.onPointerUp = (p: Phaser.Input.Pointer) => {
       if (p.button === 0 && this.attackHeld) {
         this.attackHeld = false;
@@ -295,11 +301,29 @@ export class PlayerActor {
   }
 
   /** ผู้เล่นเดินเข้าประตู/จบด่านสำเร็จ — หยุดการควบคุม */
-  setVictory() {
-    this._isVictory = true;
-    this.sprite.setVelocity(0);
-    this.sprite.setAlpha(1);
+setVictory() {
+  this._isVictory = true;
+  this.sprite.setVelocity(0);
+  this.sprite.setAlpha(1);
+}
+
+/** เลือดปัจจุบัน — ฉากใช้ฝากข้ามแอเรีย */
+get hp(): number {
+  return this.playerHP;
+}
+
+/** ฟื้นเลือดจากภายนอก (จุดฟื้นเลือดในแมพ) — คืนจำนวนที่ฟื้นจริง */
+heal(n: number): number {
+  if (this.isDead || this.isVictory) return 0;
+  const before = this.playerHP;
+  this.playerHP = Math.min(this.maxPlayerHP, this.playerHP + n);
+  const gained = this.playerHP - before;
+  if (gained > 0) {
+    this.hud.update(this.playerHP);
+    showDamage(this.scene, this.sprite.x, this.sprite.y - 20, '+' + gained, '#66ff88');
   }
+  return gained;
+}
 
   /** บอสตัวที่ผูกกับการสู้ตายแล้ว — ล้างท่าที่ค้างอยู่ (ห้องฝึกเรียกตอนบอสตาย) */
   endEncounter() {
@@ -817,15 +841,22 @@ export class PlayerActor {
     burst(this.scene, mx, my, color, 4, 22, 3);
   }
 
-  private getAimDir(): Phaser.Math.Vector2 {
-    const p = this.scene.input.activePointer;
-    const cam = this.cam;
-    const dx = p.x + cam.scrollX - this.sprite.x;
-    const dy = p.y + cam.scrollY - this.sprite.y;
-    const len = Math.hypot(dx, dy);
-    if (len < 6) return this.facing.clone();
-    return new Phaser.Math.Vector2(dx / len, dy / len);
-  }
+private getAimDir(): Phaser.Math.Vector2 {
+  const p = this.scene.input.activePointer;
+  const cam = this.cam;
+  // แปลงจุดเมาส์เป็นพิกัดโลกผ่านกล้อง — คิดระยะซูมด้วย (เดิมบวก scroll ตรง ๆ = เล็งเอียงตอนซูม 0.75)
+  const world = (cam as any).getWorldPoint
+    ? (cam as any).getWorldPoint(p.x, p.y)
+    : {
+        x: cam.scrollX + (p.x - cam.width / 2) / cam.zoom + cam.width / 2,
+        y: cam.scrollY + (p.y - cam.height / 2) / cam.zoom + cam.height / 2
+      };
+  const dx = world.x - this.sprite.x;
+  const dy = world.y - this.sprite.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 6) return this.facing.clone();
+  return new Phaser.Math.Vector2(dx / len, dy / len);
+}
 
   private getAttackDir(_assistRange: number, _assistAngle: number): Phaser.Math.Vector2 {
     return this.getAimDir();

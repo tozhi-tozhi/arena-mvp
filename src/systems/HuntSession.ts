@@ -25,6 +25,24 @@ function migrateItemId(oldId: string): string {
 }
 
 class HuntSessionStore {
+    // ---------- เลือดผู้เล่นข้ามแอเรีย (ความจำร่วมของทริป — ไม่เซฟลงเครื่อง) ----------
+  // null = ยังไม่มีค่า (เข้า The World ครั้งแรกของทริป → ใช้เลือดเต็มจากตัวละคร)
+  private tripHP: number | null = null;
+
+  /** ฉากเรียกตอนสร้างผู้เล่น — ได้เลือดค้างจากแมพก่อน หรือ null ถ้าเป็นแมพแรก */
+  getTripHP(): number | null {
+    return this.tripHP;
+  }
+
+  /** ผู้เล่นเลือดเปลี่ยน/จะออกจากแมพ — ฝากค่าไว้ให้แมพถัดไป */
+  setTripHP(hp: number): void {
+    this.tripHP = Math.max(0, Math.floor(hp));
+  }
+
+  /** จบทริป (กลับฐาน/ตาย) — ล้าง เพื่อให้ทริปหน้าเริ่มเลือดเต็ม */
+  clearTripHP(): void {
+    this.tripHP = null;
+  }
   private bag: Map<string, BagEntry> = new Map();
 
   // เพิ่มไอเทม — แยกตาม rarity
