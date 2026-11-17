@@ -41,7 +41,13 @@ import type { BossHooks, BossBase } from '../entities/BossBase';
 import { loadBossAssets, initBossTextures } from '../systems/BossLoader';
 import { AmbientDust } from '../systems/AmbientDust';
 
+import { HuntMinimap, type MinimapSources } from '../systems/HuntMinimap';
+
 const DETECT_RADIUS = 500;
+// ความรู้สึกซูมกล้อง (ภาพล้วน — ไม่แตะการต่อสู้)
+const ZOOM_COMBAT = 0.75;
+const ZOOM_NORMAL = 1;
+const ZOOM_DAMP_MS = 260;
 const STEP_DIST = 46;      // เดินกี่ px ต่อ 1 ก้าว (เสียงเท้า)
 const LOW_HP_RATIO = 0.34; // เลือดต่ำกว่าสัดส่วนนี้ = หัวใจเต้น
 const HINT_REFRESH_MS = 1000; // ใบ้อัปเดตทุก 1 วิ (เดิม 2 — ตัวเลขเมตรต้องทันตา)
@@ -88,6 +94,8 @@ export class WorldScene extends Phaser.Scene {
   private dust!: AmbientDust;
 
   private gateNavigator!: Phaser.GameObjects.Text;
+  private minimap: HuntMinimap | null = null;
+  private targetZoom = ZOOM_NORMAL;
   private keyRestart: any;
   private keyInteract: any;
   private keyMute: any;
@@ -314,15 +322,34 @@ if (this.areaIndex <= 2) {
       });
     }
 
+    // ---------- แผนที่กระดาษ (3F): หมอกสำรวจ + ร่องรอยรัง ----------
+    this.cameras.main.setZoom(ZOOM_NORMAL);
+    this.targetZoom = ZOOM_NORMAL;
+    const mapSources: MinimapSources = {
+      player: () => {
+        const b: any = this.actor.sprite.body;
+        return {
+          x: this.actor.x, y: this.actor.y,
+          vx: b ? b.velocity.x : 0, vy: b ? b.velocity.y : 0
+        };
+      },
+      items: () => this.items,
+      bosses: () => this.areaBosses,
+      shrines: () => this.healShrines,
+      quest: () => this.quest,
+      exitUnlocked: () => this.nextGateUnlocked
+    };
+    this.minimap = new HuntMinimap(this, this.layout, mapSources);
+    kb.on('keydown-Q', () => this.minimap?.cycleMode());
+
     this.sys.game.canvas.addEventListener('click', this.focusCanvas);
-    
     // P3c: ฝุ่นกระดาษลอย
     this.dust = new AmbientDust(this, 35);
-
     sfx.startAmbient();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.sys.game.canvas.removeEventListener('click', this.focusCanvas);
       sfx.stopAmbient();
+      if (this.minimap) { this.minimap.destroy(); this.minimap = null; }
     });
   }
 
@@ -372,6 +399,8 @@ if (this.areaIndex <= 2) {
     this.updatePouchHud();
     this.pouchPanel.refresh();
     this.updateGateNavigator();
+    this.updateCameraZoom(delta);
+    if (this.minimap) this.minimap.update(delta, this.time.now);
 
     if (this.actor.isDead || this.actor.isVictory) {
       if (Phaser.Input.Keyboard.JustDown(this.keyRestart)) this.scene.start('BaseScene');
@@ -529,7 +558,7 @@ if (this.areaIndex <= 2) {
     if (!this.inCombat) {
       this.inCombat = true;
       sfx.setTension(true);
-      this.cameras.main.zoomTo(0.75, 800, 'Sine.easeInOut');
+      this.targetZoom = ZOOM_COMBAT;
     }
     if (!this.currentCombatBoss || !this.currentCombatBoss.boss.isAlive || this.currentCombatBoss.boss.isSleeping) {
       this.currentCombatBoss = awake[0];
@@ -545,11 +574,24 @@ if (this.areaIndex <= 2) {
     this.currentCombatBoss = null;
     this.activeBossHud?.destroy();
     this.activeBossHud = null;
-    this.cameras.main.zoomTo(1.0, 800, 'Sine.easeInOut');
+    this.targetZoom = ZOOM_NORMAL;
+  }
+
+  /** ซูมต่อเนื่องแบบหน่วง — ไม่มี tween ชนกันเวลาสลับบอส หรือตายกลางซูม */
+  private updateCameraZoom(delta: number) {
+    if (this.tripEnded || this.actor.isDead) this.targetZoom = ZOOM_NORMAL;
+    const cam = this.cameras.main;
+    const diff = this.targetZoom - cam.zoom;
+    if (Math.abs(diff) < 0.0006) {
+      if (cam.zoom !== this.targetZoom) cam.setZoom(this.targetZoom);
+      return;
+    }
+    cam.setZoom(cam.zoom + diff * (1 - Math.exp(-delta / ZOOM_DAMP_MS)));
   }
 
   private onBossDeath(boss: BossBase) {
     showDamage(this, this.actor.x, this.actor.y - 80, 'บอสตายแล้ว!', '#ffd166', 2000);
+    huntSession.addBossKill(); // สถิติในสมุดบันทึกที่ฐาน
     const spawned = this.areaBosses.find((s) => s.boss === boss);
     if (spawned) {
       try { spawned.collider?.destroy(); } catch { /* กันทำลายซ้ำ */ }
@@ -678,8 +720,17 @@ if (this.areaIndex <= 2) {
     this.actor.setVictory();
     huntSession.clearTripHP(); // ถึงฐานแล้ว = ทริปหน้าเลือดเต็ม
     const moved = pouch.depositAll();
-    saveGame();
     const took = Date.now() - pouch.startedAt;
+    huntSession.logTrip({
+      outcome: 'return',
+      area: this.areaIndex,
+      kept: moved.length,
+      lost: 0,
+      hp: this.actor.hp,
+      maxHp: this.actor.character.maxHP,
+      ms: took
+    });
+    saveGame();
     this.time.delayedCall(300, () => {
       showHuntSummary(this, {
         timeTakenMs: took,
@@ -701,6 +752,15 @@ if (this.areaIndex <= 2) {
     sfx.death();
     huntSession.clearTripHP(); // ตาย = ทริปหน้าเลือดเต็ม
     const { kept, lost } = pouch.resolveDeath();
+    huntSession.logTrip({
+      outcome: 'death',
+      area: this.areaIndex,
+      kept: kept.length,
+      lost: lost.length,
+      hp: 0,
+      maxHp: this.actor.character.maxHP,
+      ms: Date.now() - pouch.startedAt
+    });
     saveGame();
     showEndScreen(this, 'GAME OVER', '#ff4444', `เสียของ ${lost.length} ชิ้น · เก็บได้ ${kept.length} ชิ้น · กด R กลับฐาน`);
   }

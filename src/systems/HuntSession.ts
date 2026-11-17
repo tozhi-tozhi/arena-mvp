@@ -24,6 +24,38 @@ function migrateItemId(oldId: string): string {
   return LEGACY_ITEM_MAP[oldId] ?? oldId;
 }
 
+// ---------- สมุดบันทึกการล่า ----------
+const LOG_MAX = 8; // เก็บย้อนหลัง 8 ทริป (สถิติรวมไม่หาย)
+
+export interface TripLogEntry {
+  at: number;                        // เวลาจบทริป (ms)
+  outcome: 'return' | 'death';
+  area: number;                      // แอเรียลึกสุดที่ไปถึง
+  kept: number;                      // ของที่ฝากเข้ากระเป๋า
+  lost: number;                      // ของที่เสีย (ตาย)
+  hp: number;
+  maxHp: number;
+  ms: number;                        // เวลาที่ใช้ในทริป
+}
+
+export interface TripStats {
+  trips: number;
+  returns: number;
+  deaths: number;
+  bestArea: number;
+  bosses: number;
+  loot: number;
+}
+
+function emptyStats(): TripStats {
+  return { trips: 0, returns: 0, deaths: 0, bestArea: 0, bosses: 0, loot: 0 };
+}
+
+function num(v: any, min = 0): number {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) ? Math.max(min, n) : min;
+}
+
 class HuntSessionStore {
     // ---------- เลือดผู้เล่นข้ามแอเรีย (ความจำร่วมของทริป — ไม่เซฟลงเครื่อง) ----------
   // null = ยังไม่มีค่า (เข้า The World ครั้งแรกของทริป → ใช้เลือดเต็มจากตัวละคร)
@@ -42,6 +74,112 @@ class HuntSessionStore {
   /** จบทริป (กลับฐาน/ตาย) — ล้าง เพื่อให้ทริปหน้าเริ่มเลือดเต็ม */
   clearTripHP(): void {
     this.tripHP = null;
+  }
+  
+  // ---------- ตำแหน่งยืนในฐาน (ความจำชั่วคราว — ไม่เซฟลงเครื่อง) ----------
+  // null = ยังไม่เคยยืนในฐาน → ใช้จุดกลางฐานตามเดิม
+  private basePos: { x: number; y: number } | null = null;
+  /** กลับจากห้องแต่งตัว/โรงตีเหล็ก/กระเป๋า → ยืนจุดเดิม */
+  getBasePos(): { x: number; y: number } | null {
+    return this.basePos;
+  }
+  setBasePos(x: number, y: number): void {
+    this.basePos = { x, y };
+  }
+  clearBasePos(): void {
+    this.basePos = null;
+  }
+
+  // ---------- ธงบอกว่ากลับมาจากห้องแต่งตัว (ฉากฐานใช้ข้ามการล้างตำแหน่ง) ----------
+  private fromDressing = false;
+  markFromDressing(): void {
+    this.fromDressing = true;
+  }
+  /** อ่านแล้วล้างทันที — ใช้ได้ครั้งเดียว */
+  consumeFromDressing(): boolean {
+    const v = this.fromDressing;
+    this.fromDressing = false;
+    return v;
+  }
+  
+  // ---------- สมุดบันทึกการล่า (เซฟลงเครื่องผ่าน SaveGame) ----------
+  private log: TripLogEntry[] = [];
+  private stats: TripStats = emptyStats();
+
+  /** จบทริป 1 ครั้ง — ฉากโลกเรียกทั้งตอนกลับฐานและตอนตาย */
+  logTrip(e: Omit<TripLogEntry, 'at'>): void {
+    const entry: TripLogEntry = {
+      at: Date.now(),
+      outcome: e.outcome === 'death' ? 'death' : 'return',
+      area: num(e.area, 1),
+      kept: num(e.kept),
+      lost: num(e.lost),
+      hp: num(e.hp),
+      maxHp: num(e.maxHp, 1),
+      ms: num(e.ms)
+    };
+    this.log.unshift(entry);
+    if (this.log.length > LOG_MAX) this.log.length = LOG_MAX;
+    this.stats.trips++;
+    if (entry.outcome === 'death') this.stats.deaths++;
+    else this.stats.returns++;
+    this.stats.bestArea = Math.max(this.stats.bestArea, entry.area);
+    this.stats.loot += entry.kept;
+  }
+
+  /** บอสตาย 1 ตัวใน The World (ห้องฝึกไม่นับ) */
+  addBossKill(): void {
+    this.stats.bosses++;
+  }
+
+  getLog(): TripLogEntry[] {
+    return this.log.map((e) => ({ ...e }));
+  }
+
+  getStats(): TripStats {
+    return { ...this.stats };
+  }
+
+  exportLog(): { entries: TripLogEntry[]; stats: TripStats } {
+    return { entries: this.getLog(), stats: this.getStats() };
+  }
+
+  /** เซฟเก่าไม่มีบล็อกนี้ → เริ่มว่าง เกมไม่พัง */
+  importLog(raw: any): void {
+    this.clearLog();
+    if (!raw || typeof raw !== 'object') return;
+    if (Array.isArray(raw.entries)) {
+      for (const e of raw.entries) {
+        if (!e || typeof e !== 'object') continue;
+        this.log.push({
+          at: num(e.at),
+          outcome: e.outcome === 'death' ? 'death' : 'return',
+          area: num(e.area, 1),
+          kept: num(e.kept),
+          lost: num(e.lost),
+          hp: num(e.hp),
+          maxHp: num(e.maxHp, 1),
+          ms: num(e.ms)
+        });
+      }
+      if (this.log.length > LOG_MAX) this.log.length = LOG_MAX;
+    }
+    const s = raw.stats;
+    if (s && typeof s === 'object') {
+      this.stats = {
+        trips: num(s.trips),
+        returns: num(s.returns),
+        deaths: num(s.deaths),
+        bestArea: num(s.bestArea),
+        bosses: num(s.bosses),
+        loot: num(s.loot)
+      };
+    }
+  }
+
+  clearLog(): void {
+    this.log = [];
+    this.stats = emptyStats();
   }
   private bag: Map<string, BagEntry> = new Map();
 
@@ -141,6 +279,7 @@ class HuntSessionStore {
 
   clear(): void {
     this.bag.clear();
+    this.clearLog(); // ล้างเซฟ = ล้างสมุดบันทึกด้วย
   }
 }
 

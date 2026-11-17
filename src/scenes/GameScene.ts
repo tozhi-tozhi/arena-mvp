@@ -54,6 +54,7 @@ export class GameScene extends Phaser.Scene {
   private huntLoot: DroppedLoot[] = [];
   private huntStartTime: number = 0;
   private currentBossId: BossId = 'phasama';
+  private focusCanvas = () => this.sys.game.canvas.focus();
 
   constructor() {
     super({ key: 'GameScene' });
@@ -165,8 +166,9 @@ export class GameScene extends Phaser.Scene {
     camera.startFollow(this.actor.sprite, true, 0.08, 0.08);
     camera.setDeadzone(440, 340);
 
-    this.sys.game.canvas.addEventListener('click', () => {
-      this.sys.game.canvas.focus();
+    this.sys.game.canvas.addEventListener('click', this.focusCanvas);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.sys.game.canvas.removeEventListener('click', this.focusCanvas);
     });
   }
 

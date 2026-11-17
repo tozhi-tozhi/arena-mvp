@@ -10,7 +10,8 @@ export function saveGame() {
     const data = {
       bag: huntSession.exportBag(),
       loadout: loadout.export(),
-      upgrades: upgrades.export() // 🆕 เพิ่มการเซฟเลเวล
+      upgrades: upgrades.export(),
+      log: huntSession.exportLog()
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   } catch (e) {}
@@ -23,7 +24,8 @@ export function loadGame() {
     const data = JSON.parse(raw);
     huntSession.importBag(data.bag || []);
     loadout.import(data.loadout || {});
-    upgrades.import(data.upgrades || {}); // 🆕 โหลดเลเวล
+    upgrades.import(data.upgrades || {});
+    huntSession.importLog(data.log);
   } catch (e) {}
 }
 

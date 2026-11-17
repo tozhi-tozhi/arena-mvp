@@ -4,6 +4,7 @@ import { GAME_WIDTH, GAME_HEIGHT } from './config';
 import { BaseScene } from './scenes/BaseScene';
 import { BagScene } from './scenes/BagScene';
 import { UpgradeScene } from './scenes/UpgradeScene';
+import { LoadoutScene } from './scenes/LoadoutScene';
 import { GameScene } from './scenes/GameScene';
 import { WorldScene } from './scenes/WorldScene';
 
@@ -20,7 +21,7 @@ const config = {
     arcade: { gravity: { y: 0 } as any, debug: false }
   },
   // ลำดับสำคัญ: ตัวแรกใน array = ฉากที่ Phaser สตาร์ทอัตโนมัติ
-  scene: [BaseScene, BagScene, UpgradeScene, GameScene, WorldScene]
+  scene: [BaseScene, BagScene, UpgradeScene, LoadoutScene, GameScene, WorldScene]
 };
 
 new Phaser.Game(config);
