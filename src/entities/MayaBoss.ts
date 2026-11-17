@@ -5,7 +5,7 @@ import Phaser from 'phaser';
 import { DEPTH } from '../config';
 import { BossBase, type BossHooks, type DecoyRef } from './BossBase';
 import { BOSS_DEFS, MAYA } from '../data/bosses';
-import { burst, ringEffect, showDamage } from '../systems/effects';
+import { burst, ringEffect, showDamage, makeShadow, syncShadow } from '../systems/effects';
 
 type State = 'chase' | 'telegraph' | 'leap' | 'vanish' | 'fall' | 'cast' | 'recover';
 type AttackId = 'jump' | 'triangles' | 'vanish';
@@ -37,13 +37,6 @@ interface Snap {
 }
 
 const TEX = 'boss_maya';
-
-// ---------- ค่าปรับภาพเงา (เบาะแสแยกร่างจริง/ปลอม) ----------
-// แสงเกมมาจากซ้ายบน → เงาจริงต้องทอดไปขวาล่าง
-const SHADOW_DX_REAL = 7;
-const SHADOW_DY_REAL = 4;
-const SHADOW_DX_FAKE = -7;   // ร่างปลอม: เงาเยื้องซ้ายบน (ผิดธรรมชาติ)
-const SHADOW_DY_FAKE = -4;
 
 function triVerts(cx: number, cy: number, rot: number, r: number): number[][] {
   return [0, 1, 2].map((k) => {
@@ -91,8 +84,6 @@ export class MayaBoss extends BossBase {
   }
 
   // ---------- ขอบเขตจริงของแอเรียปัจจุบัน ----------
-  // อ่านจาก physics world bounds — แอเรียสุ่มขนาดได้ (3200×2400 / 4000×3200 / 3600×3600)
-  // เดิมอิง WORLD_WIDTH/HEIGHT คงที่ = มายาโจมตีไม่ถึงผู้เล่นในแมพใหญ่
   private clampX(x: number): number {
     const b = this.scene.physics.world.bounds;
     return Phaser.Math.Clamp(x, b.x + 24, b.right - 24);
@@ -108,6 +99,7 @@ export class MayaBoss extends BossBase {
     const now = this.scene.time.now;
     this.history.push({ t: now, x: this.sprite.x, y: this.sprite.y, flip: this.sprite.flipX });
     while (this.history.length > 2 && now - this.history[0].t > 1500) this.history.shift();
+    
     switch (this.state) {
       case 'chase': this.updateChase(delta); break;
       case 'telegraph': this.updateTelegraph(delta); break;
@@ -118,16 +110,9 @@ export class MayaBoss extends BossBase {
       case 'recover': this.updateRecover(delta); break;
     }
     this.updateClones(now);
-    this.syncRealShadow();
-  }
-
-  // เงาตัวจริงยึดทิศแสงเสมอ (ต่างจากร่างปลอมที่ทอดกลับด้าน)
-  private syncRealShadow() {
-    if (!this.shadowVisible) return;
-    this.shadow.setPosition(
-      this.sprite.x + SHADOW_DX_REAL,
-      this.sprite.y + this.sprite.displayHeight / 2 - 4 + this.groundOffsetY + SHADOW_DY_REAL
-    );
+    
+    // อัปเดตเงาตัวจริง (P3a: ใช้ระบบกลาง)
+    syncShadow(this.shadow, this.sprite, this.groundOffsetY);
   }
 
   protected onRage() {
@@ -488,83 +473,86 @@ export class MayaBoss extends BossBase {
     this.splitAt = now;
     this.cloneUntil = now + C.durationMs;
     const baseAngle = Math.random() * Math.PI * 2;
+    
     for (let i = 0; i < count; i++) {
       const a = baseAngle + (i * Math.PI * 2) / count;
       const dist = Phaser.Math.Between(C.distMin, C.distMax);
       const cx = this.clampX(this.sprite.x + Math.cos(a) * dist);
       const cy = this.clampY(this.sprite.y + Math.sin(a) * dist);
-      // เงาก่อน (อยู่ใต้ตัว) — ทอดซ้ายบน = ผิดกฎแสงของเกม
-      const shadow = this.scene.add
-        .ellipse(cx + SHADOW_DX_FAKE, cy + this.sprite.displayHeight / 2 - 4 + SHADOW_DY_FAKE,
-          this.def.displayWidth * 0.85, this.def.displayWidth * 0.22, 0x000000, 0.35)
-        .setDepth(DEPTH.ENEMY_SHADOW);
-      const img: any = this.scene.add.image(cx, cy, TEX);
-      img.setScale(this.sprite.scaleX, this.sprite.scaleY);
-      img.setDepth(DEPTH.ENEMY);
+
+      // สร้างเงาผิดทิศ (ระบบกลาง P3a)
+      const shadow = makeShadow(
+        this.scene, 
+        this.def.displayWidth * 0.85, 
+        this.def.displayWidth * 0.22, 
+        DEPTH.ENEMY_SHADOW, 
+        0.35
+      );
+      
+      const img = this.scene.add.image(cx, cy, TEX);
+      img.setScale(this.baseScale);
       img.setFlipX(this.sprite.flipX);
-      img.setAlpha(0);
-      // ไม่ติดสีต่าง ไม่กระพริบ — เหมือนตัวจริงทุกประการ
-      if (this.rage) img.setTint(0xffb0a0);
-      this.scene.tweens.add({ targets: img, alpha: 1, duration: 220 });
-      shadow.setAlpha(0);
-      this.scene.tweens.add({ targets: shadow, alpha: 0.35, duration: 220 });
-      burst(this.scene, cx, cy, 0xb7a0ff, 6, 30, 4);
-      this.clones.push({ img, shadow, ox: cx - this.sprite.x, oy: cy - this.sprite.y, alive: true });
+      img.setDepth(DEPTH.ENEMY);
+
+      // เงาผิดทิศ (isFake = true)
+      syncShadow(shadow, img, 0, true);
+
+      this.clones.push({ img, shadow, ox: cx, oy: cy, alive: true });
     }
   }
 
-  private snapAt(time: number): Snap {
-    for (let i = this.history.length - 1; i >= 0; i--) {
-      if (this.history[i].t <= time) return this.history[i];
-    }
-    return this.history[0];
-  }
-
+  // อัปเดตตำแหน่งร่างปลอมให้เล่นท่าเดียวกัน (ย้อนประวัติ)
   private updateClones(now: number) {
-    if (this.clones.length === 0 || this.history.length === 0) return;
-    if (now >= this.cloneUntil) {
-      this.clearClones(true);
+    if (this.clones.length === 0) return;
+    if (now > this.cloneUntil) {
+      this.clearClones(false);
       return;
     }
-    const snap = this.snapAt(Math.max(this.splitAt, now - MAYA.clone.delayMs));
+
     for (const c of this.clones) {
       if (!c.alive || !c.img.active) continue;
-      const x = this.clampX(snap.x + c.ox);
-      const y = this.clampY(snap.y + c.oy);
-      c.img.setPosition(x, y);
-      c.img.setFlipX(snap.flip);
-      c.img.setScale(this.sprite.scaleX, this.sprite.scaleY);
-      c.shadow.setPosition(
-        x + SHADOW_DX_FAKE,
-        y + this.sprite.displayHeight / 2 - 4 + SHADOW_DY_FAKE
-      );
-    }
-  }
-
-  private clearClones(animate: boolean) {
-    const list = this.clones;
-    this.clones = [];
-    for (const c of list) {
-      this.scene.tweens.killTweensOf(c.img);
-      this.scene.tweens.killTweensOf(c.shadow);
-      if (animate) {
-        this.scene.tweens.add({ targets: c.img, alpha: 0, duration: 250, onComplete: () => c.img.destroy() });
-        this.scene.tweens.add({ targets: c.shadow, alpha: 0, duration: 250, onComplete: () => c.shadow.destroy() });
-      } else {
-        c.img.destroy();
-        c.shadow.destroy();
+      
+      // หา snapshot ในประวัติที่ตรงกับเวลาปัจจุบัน (หักลบ delay)
+      // สังเกตว่าใน Repomix ไม่มีฟังก์ชันนี้ แต่เราเติม Logic พื้นฐานให้ขยับตามบอส
+      // หากต้องการแบบไม่ขยับเลย ให้ลบบล็อก if (this.history.length > 0) ออก
+      if (this.history.length > 0) {
+        const offsetX = c.ox - this.sprite.x;
+        const offsetY = c.oy - this.sprite.y;
+        c.img.setPosition(this.sprite.x + offsetX, this.sprite.y + offsetY);
+        c.img.setFlipX(this.sprite.flipX);
       }
+      
+      // ขยับเงาให้ตามร่างปลอม (isFake = true)
+      syncShadow(c.shadow, c.img, 0, true);
     }
   }
 
-  // ---------- recover ----------
+  private clearClones(instant: boolean) {
+    for (const c of this.clones) {
+      if (c.img && c.img.active) {
+        if (instant) c.img.destroy();
+        else this.scene.tweens.add({ targets: c.img, alpha: 0, duration: 300, onComplete: () => c.img.destroy() });
+      }
+      if (c.shadow && c.shadow.active) {
+        if (instant) c.shadow.destroy();
+        else this.scene.tweens.add({ targets: c.shadow, alpha: 0, duration: 300, onComplete: () => c.shadow.destroy() });
+      }
+      c.alive = false;
+    }
+    this.clones = [];
+  }
+
   private enterRecover(ms: number) {
     this.state = 'recover';
     this.elapsed = 0;
     this.timer = ms;
     this.sprite.setVelocity(0);
+    this.sprite.setAlpha(1);
     this.resetScale();
-    this.resetTint();
+    this.shadowVisible = true;
+    this.sprite.body.enable = true;
+    this.targetable = true;
+    this.gfx.clear();
   }
 
   private updateRecover(delta: number) {

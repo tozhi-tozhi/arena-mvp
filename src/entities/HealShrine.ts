@@ -3,7 +3,7 @@
 import Phaser from 'phaser';
 import { DEPTH } from '../config';
 import { HEAL_SHRINE } from '../data/healing';
-import { burst, ringEffect } from '../systems/effects';
+import { burst, ringEffect, makeShadow, syncShadow, makeGlow, destroyGlow } from '../systems/effects';
 import { sfx } from '../systems/sfx';
 
 const TEX = 'heal_shrine';
@@ -55,7 +55,9 @@ export class HealShrine {
   readonly y: number;
   private scene: Phaser.Scene;
   private sprite: Phaser.GameObjects.Image;
-  private glow: Phaser.GameObjects.Arc;
+  private shadow: Phaser.GameObjects.Ellipse;
+  private aura: Phaser.GameObjects.Arc;
+  private glow: any;
   private prompt: Phaser.GameObjects.Text;
   private channelGfx: Phaser.GameObjects.Graphics;
   private channeling = false;
@@ -67,19 +69,22 @@ export class HealShrine {
     this.y = y;
     ensureTexture(scene);
 
-    // เงาขวาล่างตามแสงเกม
-    const shadow = scene.add.ellipse(x + 6, y + 28, 40, 12, 0x000000, 0.3);
-    shadow.setDepth(DEPTH.ENEMY_SHADOW);
-
     // ออร่าเขียวจางใต้เสา — บอกว่าเป็นจุดปลอดภัย desde ไกล
-    this.glow = scene.add.circle(x, y + 20, 46, HEAL_SHRINE.color, 0.08);
-    this.glow.setStrokeStyle(2, HEAL_SHRINE.color, 0.35);
-    this.glow.setDepth(DEPTH.TELEGRAPH);
-    scene.tweens.add({ targets: this.glow, scale: 1.12, alpha: 0.16, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.aura = scene.add.circle(x, y + 20, 46, HEAL_SHRINE.color, 0.08);
+    this.aura.setStrokeStyle(2, HEAL_SHRINE.color, 0.35);
+    this.aura.setDepth(DEPTH.TELEGRAPH);
+    scene.tweens.add({ targets: this.aura, scale: 1.12, alpha: 0.16, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     this.sprite = scene.add.image(x, y, TEX);
     this.sprite.setDisplaySize(HEAL_SHRINE.displayWidth, HEAL_SHRINE.displayWidth * (60 / 56));
     this.sprite.setDepth(DEPTH.ENEMY);
+
+    // เงาขวาล่างตามแสงเกม (ใช้ระบบกลาง P3a)
+    this.shadow = makeShadow(scene, 40, 12, DEPTH.ENEMY_SHADOW, 0.3);
+    syncShadow(this.shadow, this.sprite);
+
+    // แสงอำพันสีเขียว (P3b)
+    this.glow = makeGlow(scene, x, y + 10, 50, 0x7dff9b, true);
 
     this.prompt = scene.add.text(x, y - 48, '[E] พักฟื้น', {
       fontFamily: '"Noto Sans Thai", monospace', fontSize: '14px', fontStyle: 'bold',
@@ -153,7 +158,11 @@ export class HealShrine {
   }
 
   destroy() {
-    this.channelGfx.destroy();
-    this.prompt.destroy();
+    if (this.channelGfx.active) this.channelGfx.destroy();
+    if (this.prompt.active) this.prompt.destroy();
+    if (this.aura.active) this.aura.destroy();
+    if (this.sprite.active) this.sprite.destroy();
+    if (this.shadow) this.shadow.destroy();
+    if (this.glow) destroyGlow(this.glow);
   }
 }

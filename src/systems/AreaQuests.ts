@@ -10,12 +10,13 @@ import {
 } from '../data/quests';
 import { SealedCache } from '../entities/SealedCache';
 import { GROUND_LOOT_PER_SPOT } from '../data/world';
-import { showDamage, burst, ringEffect } from './effects';
+import { showDamage, burst, ringEffect, makeGlow, destroyGlow } from './effects';
 import { sfx } from './sfx';
 
 export interface SiteVisual {
   ring: Phaser.GameObjects.Arc;
   pole: Phaser.GameObjects.Rectangle;
+  glow: any;
 }
 
 export interface ActiveQuest {
@@ -48,10 +49,14 @@ export function setupAreaQuest(
   bossCount: number
 ): ActiveQuest {
   const rng = makeRng(seed ^ 0x9e3779b9);
-  const pool = QUEST_POOL.filter((q) => q.kind !== 'hunt' || bossCount > 0);  const pool = QUEST_POOL.filter((q) =>
+  
+  // แก้บั๊ก const pool ซ้ำ และกรองเควสที่ทำไม่ได้ออก
+  const pool = QUEST_POOL.filter((q) =>
     (q.kind !== 'hunt' || bossCount > 0) &&
     (q.kind !== 'collect' || layout.lootSpots.length > 0)
-  );  const def = pool[Math.floor(rng() * pool.length)];
+  );
+  
+  const def = pool[Math.floor(rng() * pool.length)];
 
   const quest: ActiveQuest = {
     def, sites: [], visited: [], visuals: [], cache: null, done: false, collected: 0,
@@ -101,11 +106,17 @@ function makeSiteMark(scene: Phaser.Scene, site: Point): SiteVisual {
   const ring = scene.add.circle(site.x, site.y, EXPLORE_RADIUS, 0xd8cfb8, 0.06);
   ring.setStrokeStyle(2, 0xd8cfb8, 0.35);
   ring.setDepth(DEPTH.TELEGRAPH);
+  
   const pole = scene.add.rectangle(site.x, site.y - 14, 8, 34, 0xe8e0c8);
   pole.setStrokeStyle(2, 0x8a6a2a);
   pole.setDepth(DEPTH.ENEMY);
+  
   scene.tweens.add({ targets: pole, angle: 4, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-  return { ring, pole };
+
+  // แสงอำพันสีทอง (P3b)
+  const glow = makeGlow(scene, site.x, site.y, 35, 0xffd166, true);
+
+  return { ring, pole, glow };
 }
 
 /** เหยียบจุดสำเร็จ — เปลี่ยนเครื่องหมายเป็นเขียว + เอฟเฟกต์ยืนยัน */
@@ -117,18 +128,21 @@ function markSiteVisited(scene: Phaser.Scene, quest: ActiveQuest, index: number)
     v.ring.setFillStyle(0x7dff9b, 0.1).setStrokeStyle(3, 0x7dff9b, 0.8);
     scene.tweens.killTweensOf(v.pole);
     v.pole.setAngle(0).setFillStyle(0x7dff9b);
+    destroyGlow(v.glow); // ดับแสงเมื่อสำเร็จ
   }
   burst(scene, site.x, site.y, 0x7dff9b, 10, 60, 4);
   ringEffect(scene, site.x, site.y, EXPLORE_RADIUS, 0x7dff9b, 400);
-    // เสาแสงพุ่งฟ้า ณ จุดที่พบ — เห็นแต่ไกลว่าจุดไหนเคลียร์แล้ว
+  
+  // เสาแสงพุ่งฟ้า ณ จุดที่พบ — เห็นแต่ไกลว่าจุดไหนเคลียร์แล้ว
   const beam = scene.add.rectangle(site.x, site.y - 120, 10, 240, 0x7dff9b, 0.55);
   beam.setDepth(DEPTH.BURST);
   scene.tweens.add({
     targets: beam, alpha: 0, scaleY: 1.4, duration: 1200,
     onComplete: () => beam.destroy()
   });
+  
   sfx.pickup();
-    const found = quest.visited.filter(Boolean).length;
+  const found = quest.visited.filter(Boolean).length;
   showDamage(scene, site.x, site.y - 50, `พบจุดสำรวจ (${found}/${quest.sites.length})`, '#7dff9b', 1400);
 }
 
@@ -234,6 +248,7 @@ export function questDirectionHint(
     }
     if (!target) return 'ครบทุกจุดแล้ว';
   } else if (quest.def.kind === 'seal') {
+    if (quest.cache?.isBroken) return 'ผนึกพังแล้ว — หาประตูกลับฐาน';
     target = quest.sites[0] ?? null;
   } else if (quest.def.kind === 'collect') {
     let bestD = Infinity;

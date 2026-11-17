@@ -1,7 +1,7 @@
 // โครงบอสร่วมกัน — บอสแต่ละตัวสืบทอดแล้วเขียนพฤติกรรมของตัวเอง
 import Phaser from 'phaser';
 import { DEPTH } from '../config';
-import { burst, showDamage, ringEffect } from '../systems/effects';
+import { burst, showDamage, ringEffect, makeShadow, syncShadow } from '../systems/effects';
 
 export interface BossHooks {
   getTargets: () => any[];
@@ -56,9 +56,8 @@ export abstract class BossBase {
     this.sprite.setScale(this.def.displayWidth / this.sprite.width);
     this.sprite.body.setImmovable(true);
     this.syncBodyShape();
-    this.shadow = scene.add
-      .ellipse(x, y, this.def.displayWidth * 0.85, this.def.displayWidth * 0.22, 0x000000, 0.35)
-      .setDepth(DEPTH.ENEMY_SHADOW);
+    this.shadow = makeShadow(scene, this.def.displayWidth * 0.85, this.def.displayWidth * 0.22, DEPTH.ENEMY_SHADOW, 0.35);
+    syncShadow(this.shadow, this.sprite);
     this.gfx = scene.add.graphics();
     this.gfx.setDepth(DEPTH.TELEGRAPH);
   }
@@ -112,10 +111,7 @@ export abstract class BossBase {
 
   update(delta: number) {
     if (this.dead) return;
-    this.shadow.setPosition(
-      this.sprite.x,
-      this.sprite.y + this.sprite.displayHeight / 2 - 4 + this.groundOffsetY
-    );
+    syncShadow(this.shadow, this.sprite, this.groundOffsetY);
     this.shadow.setVisible(this.shadowVisible);
     if (this.sleeping) {
       this.sprite.setVelocity(0); // หยุดเดิน

@@ -39,6 +39,7 @@ import type { HealShrine } from '../entities/HealShrine';
 import type { MinionHooks, Minion } from '../entities/Minion';
 import type { BossHooks, BossBase } from '../entities/BossBase';
 import { loadBossAssets, initBossTextures } from '../systems/BossLoader';
+import { AmbientDust } from '../systems/AmbientDust';
 
 const DETECT_RADIUS = 500;
 const STEP_DIST = 46;      // เดินกี่ px ต่อ 1 ก้าว (เสียงเท้า)
@@ -84,6 +85,7 @@ export class WorldScene extends Phaser.Scene {
   private stepAcc = 0;
   private heartTimer = 0;
   private minigame: SealMinigame | null = null;
+  private dust!: AmbientDust;
 
   private gateNavigator!: Phaser.GameObjects.Text;
   private keyRestart: any;
@@ -132,6 +134,30 @@ export class WorldScene extends Phaser.Scene {
 
   create() {
     this.uiCam = new UiCamera(this);
+
+// P3d: โทนสีตามเขต (Depth Tint) — ใช้ Camera ColorMatrix (Phaser 4)
+const cam = this.cameras.main;
+if (this.areaIndex <= 2) {
+  // เขตตื้น: อบอุ่น (เพิ่มแดง/เขียว ลดน้ำเงินเล็กน้อย)
+  const cm = cam.filters.internal.addColorMatrix();
+  cm.colorMatrix.set([
+    1.04, 0, 0, 0, 0,
+    0, 1.02, 0, 0, 0,
+    0, 0, 0.96, 0, 0,
+    0, 0, 0, 1, 0
+  ]);
+} else if (this.areaIndex >= 6) {
+  // เขตลึก: เย็น (ลดแดง เพิ่มน้ำเงิน)
+  const cm = cam.filters.internal.addColorMatrix();
+  cm.colorMatrix.set([
+    0.94, 0, 0, 0, 0,
+    0, 0.98, 0, 0, 0,
+    0, 0, 1.06, 0, 0,
+    0, 0, 0, 1, 0
+  ]);
+}
+// เขตกลาง (3–5): ปล่อยปกติ ไม่ต้องทำอะไร
+
     bakeAreaTextures(this);
     initBossTextures(this);
 
@@ -238,7 +264,6 @@ export class WorldScene extends Phaser.Scene {
       if (!this.tripEnded && !this.minigame) this.pouchPanel.toggle();
     });
 
-    const cam = this.cameras.main;
     cam.setBounds(0, 0, W, H);
     cam.startFollow(this.actor.sprite, true, 0.08, 0.08);
     cam.setDeadzone(440, 340);
@@ -290,6 +315,10 @@ export class WorldScene extends Phaser.Scene {
     }
 
     this.sys.game.canvas.addEventListener('click', this.focusCanvas);
+    
+    // P3c: ฝุ่นกระดาษลอย
+    this.dust = new AmbientDust(this, 35);
+
     sfx.startAmbient();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.sys.game.canvas.removeEventListener('click', this.focusCanvas);
@@ -305,6 +334,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     this.actor.update(delta);
+    this.dust.update(delta);
     this.updateAudio(delta);
     for (const s of this.areaBosses) {
       if (s.boss.isAlive) s.boss.update(delta);
@@ -359,8 +389,17 @@ export class WorldScene extends Phaser.Scene {
         this.minigame.press();
         return;
       }
+      
+      // 1. กล่องผนึก (สำคัญสุด - ต้องมาก่อนเก็บของ เพื่อไม่ให้ของบอสบัง)
+      if (this.quest.cache && !this.quest.cache.isResolved && this.quest.cache.isNear(px, py)) {
+        this.openSealMinigame();
+        return;
+      }
+
+      // 2. เก็บของตกพื้น
       if (this.tryPickup(px, py)) return;
-      // จุดฟื้นเลือด — เริ่มยืนฟื้น (ถ้ายังฟื้นอยู่ E ไม่มีผล ปล่อยยืนต่อ)
+
+      // 3. จุดฟื้นเลือด
       const shrine = this.healShrines.find((s) => s.isNear(px, py));
       if (shrine && !shrine.isChanneling) {
         if (shrine.startChannel(hpFull)) {
@@ -369,10 +408,6 @@ export class WorldScene extends Phaser.Scene {
         } else {
           showDamage(this, px, py - 50, 'เลือดเต็มแล้ว', '#7dff9b', 800);
         }
-        return;
-      }
-      if (this.quest.cache && !this.quest.cache.isResolved && this.quest.cache.isNear(px, py)) {
-        this.openSealMinigame();
         return;
       }
       if (this.returnGate.isNear(px, py)) {
@@ -690,6 +725,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private cleanupForRestart(): void {
+    if (this.dust) this.dust.destroy();
     try { this.time.removeAllEvents(); } catch { /* noop */ }
     try { this.tweens.killAll(); } catch { /* noop */ }
     this.stopAllChannels();

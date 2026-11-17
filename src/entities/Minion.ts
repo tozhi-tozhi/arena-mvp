@@ -4,7 +4,7 @@
 import Phaser from 'phaser';
 import { DEPTH } from '../config';
 import { MINION } from '../data/minions';
-import { burst, ringEffect, showDamage } from '../systems/effects';
+import { burst, ringEffect, showDamage, makeShadow, syncShadow } from '../systems/effects';
 import { sfx } from '../systems/sfx';
 import { ensureMinionTexture, MINION_TEX } from '../systems/minionTextures';
 
@@ -55,10 +55,9 @@ export class Minion {
       (this.sprite.height - diameter) / 2
     );
 
-    // เงาทอดขวาล่างตามแสงเกม
-    this.shadow = scene.add
-      .ellipse(x + 5, y + this.sprite.displayHeight / 2, MINION.displayWidth * 0.8, MINION.displayWidth * 0.22, 0x000000, 0.3)
-      .setDepth(DEPTH.ENEMY_SHADOW);
+    // เงาทอดขวาล่างตามแสงเกม (ใช้ระบบกลาง P3a)
+    this.shadow = makeShadow(scene, MINION.displayWidth * 0.8, MINION.displayWidth * 0.22, DEPTH.ENEMY_SHADOW, 0.3);
+    syncShadow(this.shadow, this.sprite);
 
     this.gfx = scene.add.graphics().setDepth(DEPTH.TELEGRAPH);
     this.hpBar = scene.add.graphics().setDepth(DEPTH.ENEMY_HP_BAR);
@@ -83,7 +82,7 @@ export class Minion {
 
   update(delta: number) {
     if (this.dead) return;
-    this.shadow.setPosition(this.sprite.x + 5, this.sprite.y + this.sprite.displayHeight / 2);
+    syncShadow(this.shadow, this.sprite);
     this.drawHpBar();
 
     const p = this.hooks.playerPos();

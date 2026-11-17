@@ -1,6 +1,6 @@
 // เอฟเฟกต์ภาพทั้งหมด — แต่ละฟังก์ชันรับ scene เข้ามา แล้ววาดเอฟเฟกต์ลงไป
 import Phaser from 'phaser';
-import { DEPTH, GAME_WIDTH, GAME_HEIGHT } from '../config';
+import { DEPTH, GAME_WIDTH, GAME_HEIGHT, LIGHT } from '../config';
 import { RARITY, type Rarity } from '../data/rarity';
 
 // ตัวเลขดาเมจลอยขึ้นแล้วจาง
@@ -109,7 +109,8 @@ export function spawnThrust(
 
 // ภาพซ้อนสีฟ้าตามหลังตอน dash
 export function spawnAfterimage(scene: Phaser.Scene, sprite: any) {
-  const ghost = scene.add.image(sprite.x, sprite.y, 'hero');
+  // ใช้ texture เดียวกับ sprite จริง — ผู้เล่นอัคนี/ลูมิจะได้ afterimage ของตัวเอง ไม่ใช่ 'hero'
+  const ghost = scene.add.image(sprite.x, sprite.y, sprite.texture.key);
   ghost.setScale(sprite.scaleX);
   ghost.setFlipX(sprite.flipX);
   ghost.setTint(0x66ccff);
@@ -138,6 +139,79 @@ export function makeVignette(scene: Phaser.Scene) {
     tex.refresh();
   }
   scene.add.image(0, 0, 'vignette').setOrigin(0).setDepth(DEPTH.VIGNETTE).setScrollFactor(0);
+}
+
+// --- ระบบเงารวมศูนย์ (Paper Cutout P3a) ---
+export function makeShadow(
+  scene: Phaser.Scene,
+  width: number,
+  height: number,
+  depth: number = DEPTH.ENEMY_SHADOW,
+  alpha: number = 0.35
+): Phaser.GameObjects.Ellipse {
+  return scene.add.ellipse(0, 0, width, height, 0x000000, alpha).setDepth(depth);
+}
+
+export function syncShadow(
+  shadow: Phaser.GameObjects.Ellipse,
+  sprite: any,
+  groundOffsetY: number = 0,
+  isFake: boolean = false,
+  customOffsetY: number | null = null
+) {
+  if (!shadow || !shadow.active) return;
+  // กลับทิศทางถ้าเป็นเงาปลอม (ร่างลวงของมายา)
+  const dirX = isFake ? -LIGHT.DIR_X : LIGHT.DIR_X;
+  const dirY = isFake ? -LIGHT.DIR_Y : LIGHT.DIR_Y;
+
+  const baseY = customOffsetY !== null ? sprite.y + customOffsetY : sprite.y + sprite.displayHeight / 2 - 4;
+
+  shadow.setPosition(
+    sprite.x + LIGHT.OFFSET_X * dirX,
+    baseY + groundOffsetY + LIGHT.OFFSET_Y * dirY
+  );
+}
+
+// --- ระบบแสงอำพันกลาง (P3b) ---
+export function makeGlow(
+  scene: Phaser.Scene, 
+  x: number, 
+  y: number, 
+  radius: number, 
+  color: number,
+  pulse: boolean = true
+): Phaser.GameObjects.Container {
+  // สร้างวงกลมโปร่งแสงซ้อนกัน 2 ชั้นเพื่อให้ดูเป็น Glow นุ่มๆ
+  const outer = scene.add.circle(0, 0, radius, color, 0.15);
+  const inner = scene.add.circle(0, 0, radius * 0.6, color, 0.25);
+  
+  // ใช้ Blend Mode ADD เพื่อให้แสงสว่างซ้อนทับฉากหลัง
+  outer.setBlendMode(Phaser.BlendModes.ADD);
+  inner.setBlendMode(Phaser.BlendModes.ADD);
+  
+  // รวมร่างเป็น Container เพื่อให้ขยับ/ลบทีเดียว
+  const container = scene.add.container(x, y, [outer, inner]);
+  container.setDepth(DEPTH.TELEGRAPH - 1); // อยู่ใต้ Telegraph แต่เหนือพื้น
+
+  if (pulse) {
+    scene.tweens.add({
+      targets: container,
+      scale: 1.1,
+      alpha: 0.6,
+      duration: 1200,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+  }
+  return container;
+}
+
+export function destroyGlow(glow: Phaser.GameObjects.Container | any) {
+  if (!glow) return;
+  if (glow.active) {
+    glow.destroy();
+  }
 }
 
 // วงแหวนขยายออกแล้วจางหาย (ใช้ตอนบอสกระแทกพื้น / เปลี่ยนเฟส)

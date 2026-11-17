@@ -3,7 +3,7 @@
 // ไม่รู้จักบอสโดยตรง — คุยกับเป้าหมายผ่าน CombatTarget ที่ฉากส่งให้ผ่าน host.getTargets()
 import Phaser from 'phaser';
 import { SPRITE_SCALE, DEPTH } from '../config';
-import { showDamage, burst, spawnThrustDir, ringEffect } from '../systems/effects';
+import { showDamage, burst, spawnThrustDir, ringEffect, makeShadow, syncShadow } from '../systems/effects';
 import { spawnArcSlash } from '../systems/combatFx';
 import { sfx } from '../systems/sfx';
 import { PlayerHUD } from '../ui/PlayerHUD';
@@ -200,9 +200,9 @@ this.playerHP = carriedHP !== null ? Phaser.Math.Clamp(carriedHP, 1, this.maxPla
     const shadowOffset = this.useClay ? this.sprite.displayHeight / 2 - 6 : 14;
     const shadowWidth = Math.max(26, this.sprite.displayWidth * 0.38);
     const shadowHeight = Math.max(10, this.sprite.displayWidth * 0.14);
-    this.playerShadow = scene.add
-      .ellipse(x, y + shadowOffset, shadowWidth, shadowHeight, 0x000000, 0.35)
-      .setDepth(DEPTH.PLAYER_SHADOW);
+    // ระบบเงากลาง P3a
+    this.playerShadow = makeShadow(scene, shadowWidth, shadowHeight, DEPTH.PLAYER_SHADOW, 0.35);
+    syncShadow(this.playerShadow, this.sprite, 0, false, shadowOffset);
 
     this.chargeGfx = scene.add.graphics();
     this.chargeGfx.setDepth(DEPTH.PLAYER + 1);
@@ -242,6 +242,7 @@ this.onPointerDown = (p: Phaser.Input.Pointer) => {
 
     // ---------- HUD ผู้เล่น ----------
     this.hud = new PlayerHUD(scene, this.maxPlayerHP);
+    this.hud.update(this.playerHP); // อัปเดตหลอดเลือดให้ตรงกับค่าที่รับมาข้ามแมพ
     const textStyle = {
       fontFamily: '"Noto Sans Thai", monospace',
       fontSize: '14px',
@@ -476,7 +477,7 @@ heal(n: number): number {
     this.shots = this.shots.filter((s) => s.isAlive());
 
     const shadowOffset = this.useClay ? this.sprite.displayHeight / 2 - 6 : 14;
-    this.playerShadow.setPosition(this.sprite.x, this.sprite.y + shadowOffset);
+    syncShadow(this.playerShadow, this.sprite, 0, false, this.useClay ? this.sprite.displayHeight / 2 - 6 : 14);
     this.shieldRing.setPosition(this.sprite.x, this.sprite.y);
     this.shieldRing.setVisible(this.shield);
     this.updateHudTexts(now);

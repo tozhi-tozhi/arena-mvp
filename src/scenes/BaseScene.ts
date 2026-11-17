@@ -1,7 +1,8 @@
-// หน้า "ฐานนักล่า" — เลือกตัวละคร / เครื่องราง / สัตว์เลี้ยง / บอส แล้วออกไปล่า
-// กระเป๋าแยกไปหน้า BagScene แล้ว หน้านี้จึงโปร่งขึ้นมาก
+// src/scenes/BaseScene.ts — ฐานนักล่าแบบเดินได้ (Walkable Hub MVP)
+// ใช้ PlayerActor ตัวเดียวกับใน WorldScene เพื่อความสม่ำเสมอ
+// เดินด้วย WASD · กด E ที่จุด Interactive เพื่อใช้งาน · T = The World · ENTER = ห้องฝึก
 import Phaser from 'phaser';
-import { GAME_WIDTH, DEV_TOOLS } from '../config';
+import { GAME_WIDTH, GAME_HEIGHT, DEPTH, DEV_TOOLS } from '../config';
 import { CHARACTERS, CHARACTER_IDS, type CharacterId } from '../data/characters';
 import { CHARMS, CHARM_IDS, type CharmId } from '../data/charms';
 import { PETS, PET_IDS, type PetId } from '../data/pets';
@@ -13,54 +14,93 @@ import { loadout } from '../systems/Loadout';
 import { loadGame, saveGame, resetSave } from '../systems/SaveGame';
 import { ensureItemIcons } from '../systems/itemIcons';
 import { levelOf, starsOf, MAX_STARS } from '../systems/Upgrades';
-
-// ---------- ตำแหน่งบนจอ (แก้เลย์เอาต์ที่นี่ที่เดียว) ----------
-const L = {
-  titleY: 30,
-  hintY: 56,
-  cardY: 172,
-  cardH: 200,
-  rowCharmY: 316,
-  rowPetY: 376,
-  rowBossY: 436,
-  buttonY: 540
-};
+import { PlayerActor } from '../actors/PlayerActor';
+import { makeGlow } from '../systems/effects';
+import { sfx } from '../systems/sfx';
 
 let saveLoaded = false; // โหลดเซฟแค่ครั้งแรกที่เปิดเกม
 
+interface Interactable {
+  x: number;
+  y: number;
+  radius: number;
+  label: string;
+  color: number;
+  onInteract: () => void;
+}
+
 export class BaseScene extends Phaser.Scene {
-  private objs: Phaser.GameObjects.GameObject[] = [];
+  private actor!: PlayerActor;
+  private interactables: Interactable[] = [];
+  private promptText!: Phaser.GameObjects.Text;
+  private activeInteractable: Interactable | null = null;
+  private uiTexts: Phaser.GameObjects.Text[] = [];
   private starting: boolean = false;
 
   constructor() { super({ key: 'BaseScene' }); }
 
-  preload() { this.load.image('hero', 'assets/hero.png'); }
+  preload() {
+    PlayerActor.preloadAssets(this);
+  }
 
   create() {
     ensureItemIcons(this);
     if (!saveLoaded) { loadGame(); saveLoaded = true; }
     this.starting = false;
-    this.objs = [];
+    this.uiTexts = [];
+    this.interactables = [];
+    this.activeInteractable = null;
     this.cameras.main.setBackgroundColor('#120f09');
 
+    const W = 1600;
+    const H = 1200;
+    this.physics.world.setBounds(0, 0, W, H);
+
+    // ---------- วาดพื้นหลัง ----------
+    for (let x = 0; x < W; x += 64) {
+      for (let y = 0; y < H; y += 64) {
+        const color = (x / 64 + y / 64) % 2 === 0 ? 0x2a2210 : 0x1b1810;
+        this.add.rectangle(x + 32, y + 32, 64, 64, color).setDepth(DEPTH.FLOOR);
+      }
+    }
+
+    // ---------- สร้างจุด Interactive ----------
+    this.createInteractable(W / 2 - 400, H / 2 - 250, 'โรงตีเหล็ก (F)', 0xffd166, () => this.openForge());
+    this.createInteractable(W / 2 + 400, H / 2 - 250, 'กระเป๋า (B)', 0x9de7ff, () => this.openBag());
+    this.createInteractable(W / 2 - 400, H / 2 + 250, 'ห้องฝึกซ้อม (ENTER)', 0xff5a3a, () => this.startHunt());
+    this.createInteractable(W / 2 + 400, H / 2 + 250, 'ประตูสู่โลกกว้าง (T)', 0x7dff9b, () => this.startWorld());
+
+    // ---------- สร้างผู้เล่น ----------
+    this.actor = new PlayerActor(this, W / 2, H / 2, {
+      getTargets: () => [], // ไม่มีศัตรูในฐาน
+      onDeathShown: () => {} // ไม่มีทางตายในฐาน
+    });
+
+    // ---------- กล้อง ----------
+    const cam = this.cameras.main;
+    cam.setBounds(0, 0, W, H);
+    cam.startFollow(this.actor.sprite, true, 0.08, 0.08);
+    cam.setDeadzone(440, 340);
+
+    // ---------- ตั้งค่าปุ่มลัด ----------
     const kb = this.input.keyboard as any;
-    kb.on('keydown-ONE', () => this.chooseCharacter(CHARACTER_IDS[0]));
-    kb.on('keydown-TWO', () => this.chooseCharacter(CHARACTER_IDS[1]));
+    // เปลี่ยน W เป็น T เพื่อไม่ให้ชนกับ WASD
+    kb.on('keydown-T', () => this.startWorld());
+    kb.on('keydown-ENTER', () => this.startHunt());
+    kb.on('keydown-F', () => this.openForge());
+    kb.on('keydown-B', () => this.openBag());
     kb.on('keydown-C', () => this.cycleCharm());
     kb.on('keydown-P', () => this.cyclePet());
-    kb.on('keydown-B', () => this.openBag());
-    kb.on('keydown-F', () => this.openForge());
-    kb.on('keydown-ENTER', () => this.startHunt());
-    kb.on('keydown-W', () => this.startWorld());
+    kb.on('keydown-ONE', () => this.chooseCharacter(CHARACTER_IDS[0]));
+    kb.on('keydown-TWO', () => this.chooseCharacter(CHARACTER_IDS[1]));
 
     if (DEV_TOOLS) {
-      // แจกของครบทุกระดับ เพื่อทดสอบหน้ากระเป๋า/หลอม/อัปเกรดได้ทันที
       kb.on('keydown-F2', () => {
         const grant: { rarity: Rarity; n: number }[] = [
           { rarity: 'common', n: 12 },
-          { rarity: 'rare', n: 6 },     // พอสำหรับดาว ★1 (ต้องการ 5)
-          { rarity: 'epic', n: 3 },     // พอสำหรับดาว ★2
-          { rarity: 'legendary', n: 1 } // พอสำหรับดาว ★3
+          { rarity: 'rare', n: 6 },
+          { rarity: 'epic', n: 3 },
+          { rarity: 'legendary', n: 1 }
         ];
         LOOT_TABLE.forEach((loot) => {
           grant.forEach((g) => {
@@ -68,52 +108,99 @@ export class BaseScene extends Phaser.Scene {
           });
         });
         saveGame();
-        this.render();
+        this.showToast('แจกของทดสอบเรียบร้อย');
+        this.renderHUD(); // อัปเดตตัวเลขกระเป๋า
       });
-      kb.on('keydown-F9', () => { resetSave(); this.render(); });
+      kb.on('keydown-F9', () => { resetSave(); this.renderHUD(); });
     }
 
+    // ปุ่มโต้ตอบ E (ใช้เปิดจุด Interactive)
+    this.keyE = kb.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => kb.removeAllListeners());
-    this.render();
+
+    // ---------- HUD ----------
+    this.promptText = this.add.text(0, 0, '', {
+      fontFamily: '"Noto Sans Thai", monospace', fontSize: '16px', fontStyle: 'bold',
+      color: '#ffffff', stroke: '#000000', strokeThickness: 4, backgroundColor: 'rgba(0,0,0,0.6)', padding: { x: 8, y: 4 }
+    }).setOrigin(0.5).setDepth(DEPTH.HUD).setScrollFactor(0).setVisible(false);
+
+    this.renderHUD();
   }
 
-  // ---------- ตัวช่วยวาด ----------
-  private text(x: number, y: number, str: string, size: number, color: string, originX = 0.5, bold = false) {
-    const t = this.add.text(x, y, str, {
-      fontFamily: '"Noto Sans Thai", monospace',
-      fontSize: `${size}px`,
-      fontStyle: bold ? 'bold' : 'normal',
-      color,
-      stroke: '#000000',
-      strokeThickness: 3
-    }).setOrigin(originX, 0.5);
-    this.objs.push(t);
-    return t;
+  private keyE!: Phaser.Input.Keyboard.Key;
+
+  update(_time: number, delta: number) {
+    if (!this.actor) return;
+    this.actor.update(delta);
+
+    // หา Interactable ที่ใกล้ที่สุด
+    let bestDist = Infinity;
+    let best: Interactable | null = null;
+    const px = this.actor.x;
+    const py = this.actor.y;
+
+    for (const i of this.interactables) {
+      const d = Phaser.Math.Distance.Between(px, py, i.x, i.y);
+      if (d <= i.radius && d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+
+    this.activeInteractable = best;
+
+    if (best) {
+      this.promptText.setPosition(GAME_WIDTH / 2, GAME_HEIGHT - 80).setVisible(true).setText(`[E] ${best.label}`);
+      
+      if (Phaser.Input.Keyboard.JustDown(this.keyE) && !this.starting) {
+        sfx.pickup();
+        best.onInteract();
+      }
+    } else {
+      this.promptText.setVisible(false);
+    }
   }
 
-  private rect(x: number, y: number, w: number, h: number, fill: number, alpha = 1, stroke?: number) {
-    const r = this.add.rectangle(x, y, w, h, fill, alpha);
-    if (stroke !== undefined) r.setStrokeStyle(2, stroke);
-    this.objs.push(r);
-    return r;
+  // ---------- ตัวช่วยสร้างจุด Interactive ----------
+  private createInteractable(x: number, y: number, label: string, color: number, onInteract: () => void) {
+    this.interactables.push({ x, y, radius: 100, label, color, onInteract });
+
+    // วาดฐาน (Pedestal)
+    const base = this.add.circle(x, y, 30, 0x333333);
+    base.setStrokeStyle(3, color);
+    base.setDepth(DEPTH.FLOOR + 1);
+
+    // แสงอำพัน (P3b)
+    makeGlow(this, x, y, 60, color, true);
+
+    // ป้ายชื่อ
+    this.add.text(x, y - 50, label, {
+      fontFamily: '"Noto Sans Thai", monospace', fontSize: '14px', fontStyle: 'bold',
+      color: '#ffffff', stroke: '#000000', strokeThickness: 3, align: 'center'
+    }).setOrigin(0.5).setDepth(DEPTH.HUD);
   }
 
-  // ---------- การเลือก ----------
+  // ---------- การทำงานของปุ่ม ----------
   private chooseCharacter(id: CharacterId) {
     if (loadout.characterId === id) return;
-    loadout.characterId = id; saveGame(); this.render();
+    loadout.characterId = id; saveGame();
+    this.scene.restart(); // รีสตาร์ทเพื่อโหลดโมเดลใหม่
   }
-  private setCharm(id: CharmId | null) { loadout.charmId = id; saveGame(); this.render(); }
-  private setPet(id: PetId | null) { loadout.petId = id; saveGame(); this.render(); }
+  private setCharm(id: CharmId | null) { loadout.charmId = id; saveGame(); this.renderHUD(); }
+  private setPet(id: PetId | null) { loadout.petId = id; saveGame(); this.renderHUD(); }
   private cycleCharm() {
     const list: (CharmId | null)[] = [null, ...CHARM_IDS];
     this.setCharm(list[(list.indexOf(loadout.charmId) + 1) % list.length]);
+    this.showToast(`เครื่องราง: ${loadout.charmId ? CHARMS[loadout.charmId].name : 'ไม่ใส่'}`);
   }
   private cyclePet() {
     const list: (PetId | null)[] = [null, ...PET_IDS];
     this.setPet(list[(list.indexOf(loadout.petId) + 1) % list.length]);
+    this.showToast(`สัตว์เลี้ยง: ${loadout.petId ? PETS[loadout.petId].name : 'ไม่ใส่'}`);
   }
-  private setBoss(id: BossId | null) { loadout.bossChoice = id ?? 'random'; saveGame(); this.render(); }
+  private setBoss(id: BossId | null) { loadout.bossChoice = id ?? 'random'; saveGame(); this.showToast(`บอสเป้าหมาย: ${id ? BOSSES[id].name : 'สุ่ม'}`); }
+
   private openBag() {
     if (this.starting) return;
     saveGame();
@@ -126,7 +213,6 @@ export class BaseScene extends Phaser.Scene {
     if (!this.game.scene.getScene('UpgradeScene')) return;
     this.scene.start('UpgradeScene');
   }
-    // เข้า The World (Phase 3) — ทดสอบ
   private startWorld() {
     if (this.starting) return;
     this.starting = true;
@@ -140,104 +226,47 @@ export class BaseScene extends Phaser.Scene {
     this.scene.start('GameScene');
   }
 
-  // ---------- แถวตัวเลือก ----------
-  private optionRow<T extends string>(
-    y: number, label: string, options: (T | null)[], current: T | null,
-    nameOf: (id: T | null) => string, descOf: (id: T | null) => string,
-    onPick: (id: T | null) => void
-  ) {
-    this.text(30, y, label, 14, '#ffd54a', 0, true);
+  // ---------- HUD (มุมจอ) ----------
+  private renderHUD() {
+    this.uiTexts.forEach(t => t.destroy());
+    this.uiTexts = [];
 
-    const btnW = 168, gap = 14;
-    const totalW = options.length * btnW + (options.length - 1) * gap;
-    const startX = 440 - totalW / 2 + btnW / 2;
+    const bagCount = huntSession.getTotalCount();
+    const st = starsOf(loadout.characterId);
+    const starStr = '★'.repeat(st) + '☆'.repeat(MAX_STARS - st);
 
-    options.forEach((opt, i) => {
-      const x = startX + i * (btnW + gap);
-      const selected = opt === current;
-      const btn = this.rect(x, y, btnW, 32, selected ? 0x2a2210 : 0x1b1810, 1, selected ? 0xffd54a : 0x4a4130);
-      btn.setInteractive({ useHandCursor: true });
-      btn.on('pointerdown', () => this.time.delayedCall(0, () => onPick(opt)));
-      this.text(x, y, nameOf(opt), 13, selected ? '#ffd54a' : '#e8e8e8', 0.5, selected);
-    });
+    const textStyle = {
+      fontFamily: '"Noto Sans Thai", monospace', fontSize: '14px',
+      color: '#ffffff', stroke: '#000000', strokeThickness: 3
+    };
 
-    this.text(440, y + 24, descOf(current), 11, '#a89f8c');
+    // ข้อมูลด้านซ้ายบน
+    this.uiTexts.push(this.add.text(20, 20, 
+      `นักล่า: ${CHARACTERS[loadout.characterId].name} ${starStr}\n` +
+      `เครื่องราง: ${loadout.charmId ? CHARMS[loadout.charmId].name + ` Lv.${levelOf('charm', loadout.charmId)}` : 'ไม่ใส่'}\n` +
+      `สัตว์เลี้ยง: ${loadout.petId ? PETS[loadout.petId].name + ` Lv.${levelOf('pet', loadout.petId)}` : 'ไม่ใส่'}\n` +
+      `กระเป๋า: ${bagCount} ชิ้น`,
+      textStyle
+    ).setDepth(DEPTH.HUD).setScrollFactor(0));
+
+    // คำใบ้ปุ่มลัดด้านล่าง
+    this.uiTexts.push(this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 20, 
+      'WASD เดิน · 1/2 เปลี่ยนตัวละคร · C/P เปลี่ยนเครื่องราง/สัตว์เลี้ยง · F/B โรงตีเหล็ก/กระเป๋า', 
+      { fontFamily: '"Noto Sans Thai", monospace', fontSize: '11px', color: '#a89f8c', stroke: '#000000', strokeThickness: 2 }
+    ).setOrigin(0.5, 1).setDepth(DEPTH.HUD).setScrollFactor(0));
   }
 
-  // ---------- วาดหน้าจอ ----------
-  private render() {
-    this.objs.forEach((o) => o.destroy());
-    this.objs = [];
-    const cx = GAME_WIDTH / 2;
+  // ---------- Toast ข้อความแจ้งเตือน ----------
+  private showToast(msg: string) {
+    const toast = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 140, msg, {
+      fontFamily: '"Noto Sans Thai", monospace', fontSize: '16px', fontStyle: 'bold',
+      color: '#7dff9b', stroke: '#000000', strokeThickness: 4,
+      backgroundColor: 'rgba(0,0,0,0.7)', padding: { x: 12, y: 6 }
+    }).setOrigin(0.5).setDepth(DEPTH.OVERLAY).setScrollFactor(0);
 
-    this.text(cx, L.titleY, 'ฐานนักล่า', 26, '#ffd54a', 0.5, true);
-    this.text(cx, L.hintY, 'ENTER ออกล่า · W เดอะเวิลด์ · F โรงตีเหล็ก · P สัตว์เลี้ยง', 11, '#a89f8c');
-
-    // การ์ดตัวละคร
-    CHARACTER_IDS.forEach((id, i) => {
-      const def = CHARACTERS[id];
-      const x = cx + (i === 0 ? -172 : 172);
-      const y = L.cardY;
-      const selected = loadout.characterId === id;
-
-      const card = this.rect(x, y, 330, L.cardH, selected ? 0x2a2210 : 0x1b1810, 1, selected ? 0xffd54a : 0x4a4130);
-      card.setInteractive({ useHandCursor: true });
-      card.on('pointerdown', () => this.time.delayedCall(0, () => this.chooseCharacter(id)));
-
-      this.text(x, y - 78, `${i + 1}  ${def.name}`, 20, selected ? '#ffd54a' : '#ffffff', 0.5, true);
-      this.text(x, y - 56, def.tagline, 11, '#a89f8c');
-
-      if (this.textures.exists('hero')) {
-        const img = this.add.image(x - 128, y + 16, 'hero').setScale(1.6).setTint(def.tint);
-        this.objs.push(img);
-      }
-
-      def.lines.forEach((line, k) => {
-        this.text(x - 92, y - 24 + k * 22, line, 11, '#e8e8e8', 0);
-      });
-      this.text(x - 40, y + 80, `HP ${def.maxHP}`, 13, '#ff8a80', 0.5, true);
-      // ดาวที่ปลดล็อกแล้ว — เห็นจากหน้าฐานเลยว่าตัวไหนเก่งขึ้นแค่ไหน
-      const st = starsOf(id);
-      const starStr = '★'.repeat(st) + '☆'.repeat(MAX_STARS - st);
-      this.text(x + 55, y + 80, starStr, 15, st > 0 ? '#ffd54a' : '#4a4438', 0.5, true);
+    this.tweens.add({
+      targets: toast, alpha: 0, y: toast.y - 20, delay: 1500, duration: 500,
+      onComplete: () => toast.destroy()
     });
-
-    // แถวตัวเลือก — โชว์เลเวลที่อัปเกรดไว้ด้วย
-    this.optionRow<CharmId>(L.rowCharmY, 'เครื่องราง', [null, ...CHARM_IDS], loadout.charmId,
-      (id) => (id ? `${CHARMS[id].name} Lv.${levelOf('charm', id)}` : 'ไม่ใส่'),
-      (id) => (id ? CHARMS[id].desc : 'ไม่ใส่เครื่องราง'),
-      (id) => this.setCharm(id));
-
-    this.optionRow<PetId>(L.rowPetY, 'สัตว์เลี้ยง', [null, ...PET_IDS], loadout.petId,
-      (id) => (id ? `${PETS[id].name} Lv.${levelOf('pet', id)}` : 'ไม่ใส่'),
-      (id) => (id ? PETS[id].desc : 'ไม่ใส่สัตว์เลี้ยง'),
-      (id) => this.setPet(id));
-
-    this.optionRow<BossId>(L.rowBossY, 'บอสที่จะล่า', [null, ...BOSS_IDS],
-      loadout.bossChoice === 'random' ? null : loadout.bossChoice,
-      (id) => (id ? BOSSES[id].name : 'สุ่ม'),
-      (id) => (id ? BOSSES[id].desc : 'สุ่มบอสหนึ่งในสองตัว'),
-      (id) => this.setBoss(id));
-
-    // ปุ่มล่างสุด 3 ปุ่ม: กระเป๋า / โรงตีเหล็ก / ออกล่า
-    const bagCount = huntSession.getTotalCount();
-    const bag = this.rect(cx - 250, L.buttonY, 200, 40, 0x241d10, 1, 0x8d8677);
-    bag.setInteractive({ useHandCursor: true });
-    bag.on('pointerdown', () => this.time.delayedCall(0, () => this.openBag()));
-    this.text(cx - 250, L.buttonY, `กระเป๋า (B) · ${bagCount} ชิ้น`, 14, '#e8e8e8', 0.5, true);
-
-    const forge = this.rect(cx, L.buttonY, 200, 40, 0x3a2a08, 1, 0xffd54a);
-    forge.setInteractive({ useHandCursor: true });
-    forge.on('pointerdown', () => this.time.delayedCall(0, () => this.openForge()));
-    this.text(cx, L.buttonY, 'โรงตีเหล็ก (F)', 15, '#ffd54a', 0.5, true);
-
-    const hunt = this.rect(cx + 250, L.buttonY, 200, 40, 0x3a2a08, 1, 0xffd54a);
-    hunt.setInteractive({ useHandCursor: true });
-    hunt.on('pointerdown', () => this.time.delayedCall(0, () => this.startHunt()));
-    this.text(cx + 250, L.buttonY, 'ออกล่า (ENTER)', 15, '#ffd54a', 0.5, true);
-
-    if (DEV_TOOLS) {
-      this.text(GAME_WIDTH - 18, 584, 'F2 แจกของทดสอบ · F9 ล้างเซฟ', 9, '#6f6858', 1);
-    }
   }
 }
