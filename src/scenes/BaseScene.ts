@@ -21,6 +21,7 @@ import { AmbientDust } from '../systems/AmbientDust';
 import { bakeBaseTextures, BASE_TEX } from '../systems/baseTextures';
 import { LogbookPanel } from '../ui/LogbookPanel';
 import { sfx } from '../systems/sfx';
+import { controls, pressed, CONTROL_LABEL } from '../systems/Controls';
 
 let saveLoaded = false; // โหลดเซฟแค่ครั้งแรกที่เปิดเกม
 
@@ -47,6 +48,7 @@ export class BaseScene extends Phaser.Scene {
   private keyE!: Phaser.Input.Keyboard.Key;
   private keyM!: Phaser.Input.Keyboard.Key;
   private keyEsc!: Phaser.Input.Keyboard.Key;
+  private controlLabel!: Phaser.GameObjects.Text;
 
   constructor() { super({ key: 'BaseScene' }); }
 
@@ -83,7 +85,8 @@ export class BaseScene extends Phaser.Scene {
 
     this.actor = new PlayerActor(this, px, py, {
       getTargets: () => [],   // ไม่มีศัตรูในฐาน
-      onDeathShown: () => {}  // ไม่มีทางตายในฐาน
+      onDeathShown: () => {}, // ไม่มีทางตายในฐาน
+      suppressKeyCombat: true // ฐานไม่มีการต่อสู้ — ปุ่ม J/K ของโหมดคีย์บอร์ดจะได้ไม่ชนปุ่มลัด (J = สมุดบันทึก)
     });
 
     const cam = this.cameras.main;
@@ -95,6 +98,7 @@ export class BaseScene extends Phaser.Scene {
     makeVignette(this);
     this.buildHudFrame();
     this.bindKeys();
+    this.buildControlLabel();
 
     // ---------- บรรยากาศ ----------
     this.dust = new AmbientDust(this, BASE.dust);
@@ -303,6 +307,7 @@ export class BaseScene extends Phaser.Scene {
     kb.on('keydown-J', () => this.openLogbook());
     kb.on('keydown-ONE', () => this.chooseCharacter(CHARACTER_IDS[0]));
     kb.on('keydown-TWO', () => this.chooseCharacter(CHARACTER_IDS[1]));
+    kb.on('keydown-V', () => this.cycleControls());
     if (DEV_TOOLS) {
       kb.on('keydown-ENTER', () => this.startHunt());
       kb.on('keydown-F2', () => {
@@ -340,14 +345,14 @@ export class BaseScene extends Phaser.Scene {
     if (!this.actor) return;
     if (this.dust) this.dust.update(delta);
 
-    if (Phaser.Input.Keyboard.JustDown(this.keyM)) {
+    if (pressed(this.keyM, 'M')) {
       const off = sfx.toggleMute();
       this.showToast(off ? 'ปิดเสียง' : 'เปิดเสียง');
     }
 
     // เปิดสมุดบันทึกอยู่ = หยุดเดิน อ่านได้สบายใจ
     if (this.logbook) {
-      if (Phaser.Input.Keyboard.JustDown(this.keyE) || Phaser.Input.Keyboard.JustDown(this.keyEsc)) {
+      if (pressed(this.keyE, 'E') || Phaser.Input.Keyboard.JustDown(this.keyEsc)) {
         this.logbook.close();
       }
       return;
@@ -378,7 +383,7 @@ export class BaseScene extends Phaser.Scene {
       this.prompt.setPosition(GAME_WIDTH / 2, GAME_HEIGHT - 80).setVisible(true)
         .setText(`[E] ${best.def.name}`)
         .setColor(Phaser.Display.Color.IntegerToColor(best.def.color).rgba);
-      if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
+      if (pressed(this.keyE, 'E')) {
         burst(this, best.x, best.y, best.def.color, 10, 52, 4);
         ringEffect(this, best.x, best.y, 70, best.def.color, 300);
         sfx.pickup();
@@ -501,7 +506,31 @@ export class BaseScene extends Phaser.Scene {
     });
   }
 
+  /** ป้ายมุมซ้ายล่าง: โหมดควบคุมปัจจุบัน — กด V หรือแตะเพื่อสลับ */
+  private buildControlLabel() {
+    this.controlLabel = this.add.text(12, GAME_HEIGHT - 10, '', {
+      fontFamily: '"Noto Sans Thai", monospace', fontSize: '12px', fontStyle: 'bold',
+      color: '#a89f8c', stroke: '#000000', strokeThickness: 3
+    }).setOrigin(0, 1).setDepth(DEPTH.HUD).setScrollFactor(0);
+    this.controlLabel.setInteractive({ useHandCursor: true });
+    this.controlLabel.on('pointerdown', () => this.cycleControls());
+    this.refreshControlLabel();
+  }
+
+  private refreshControlLabel() {
+    this.controlLabel.setText(`ควบคุม: ${CONTROL_LABEL[controls.mode]}  ([V] หรือแตะเพื่อสลับ)`);
+  }
+
+  private cycleControls() {
+    if (this.starting || this.logbook) return;
+    controls.cycle();
+    this.refreshControlLabel();
+    sfx.open();
+    this.showToast('ควบคุม: ' + CONTROL_LABEL[controls.mode]);
+  }
+
   private showToast(msg: string) {
+
     const toast = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 140, msg, {
       fontFamily: '"Noto Sans Thai", monospace', fontSize: '16px', fontStyle: 'bold',
       color: '#7dff9b', stroke: '#000000', strokeThickness: 4,

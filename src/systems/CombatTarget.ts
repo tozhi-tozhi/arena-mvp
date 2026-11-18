@@ -4,6 +4,8 @@ import type { BossBase, DecoyRef } from '../entities/BossBase';
 import type { Minion } from '../entities/Minion';
 
 export interface CombatTarget {
+  /** ชนิดเป้า — เล็งอัตโนมัติบนมือถือเลือกบอสก่อนตัวแทะ */
+  readonly kind: 'boss' | 'minion';
   readonly x: number;
   readonly y: number;
   readonly radius: number;
@@ -18,6 +20,7 @@ export interface CombatTarget {
 /** ห่อบอสให้เป็น CombatTarget — ไม่แตะโค้ดบอสเดิมเลย */
 export function bossAsTarget(boss: BossBase): CombatTarget {
   return {
+    kind: 'boss',
     get x() { return boss.sprite.x; },
     get y() { return boss.sprite.y; },
     get radius() { return boss.def.displayWidth * 0.4; },
@@ -33,6 +36,7 @@ export function bossAsTarget(boss: BossBase): CombatTarget {
 /** ห่อตัวแทะกระดาษ — ไม่มีร่างปลอม ไม่มีสถานะอมตะ */
 export function minionAsTarget(minion: Minion): CombatTarget {
   return {
+    kind: 'minion',
     get x() { return minion.sprite.x; },
     get y() { return minion.sprite.y; },
     get radius() { return minion.radius; },

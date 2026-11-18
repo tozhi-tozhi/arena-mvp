@@ -16,6 +16,7 @@ import { charStarEffectNow, type CharStarEffect } from '../systems/Upgrades';
 import { BURN } from '../data/bosses';
 import { spawnPixelFx } from '../systems/pixelFx';
 import type { CombatTarget } from '../systems/CombatTarget';
+import { controls, touch, skillKeyLabel } from '../systems/Controls';
 
 const CLAY_SCALE = 0.68;
 const WALK_FRAME_MS = 150;
@@ -26,6 +27,11 @@ const akkKey = (clip: string, i: number) => `akk_${clip}_${String(i).padStart(2,
 const KNOCK_HOLD_MS = 1600;
 const SKILL_SHIELD_FROM = 3;
 const SKILL_SLASH_AT = 5;
+
+// เล็งอัตโนมัติ (โหมดสัมผัส)
+const AUTO_MINION_RANGE = 380; // ไม่มีบอสให้เล็ง → เล็งตัวแทะที่อยู่ในระยะนี้
+const AUTO_LOCK_TOL = 90; // เป้าที่ล็อกไว้ขยับไม่เกินนี้ต่อเฟรม = ตัวเดิม
+const AUTO_SWITCH_RATIO = 1.25; // เป้าใหม่ต้องใกล้กว่าเดิมเกิน 25% ถึงจะสลับ (กันเป้ากระตุก)
 
 // ท่าฟันกวาด — โดนเป้าละ 1 ครั้งต่อท่า (handled เก็บเป้าที่ตรวจไปแล้ว)
 interface Sweep {
@@ -55,6 +61,8 @@ export interface PlayerActorHost {
   onTargetDamaged?(target: CombatTarget): void;
   /** ผู้เล่นตาย และเล่นท่า knock จบแล้ว — ฉากเป็นคนโชว์หน้าจอจบ */
   onDeathShown(): void;
+  /** ฉากที่ไม่มีการต่อสู้ (ฐาน) ตั้ง true — ปุ่ม J/K ของโหมดคีย์บอร์ดจะไม่ออกท่า (กันชนปุ่มลัด) */
+  suppressKeyCombat?: boolean;
 }
 
 export class PlayerActor {
@@ -69,6 +77,11 @@ export class PlayerActor {
   private keyA: any;
   private keyS: any;
   private keyD: any;
+  private keyJ: any;
+  private keyK: any;
+  private arrows: any;
+  private lastMode: string = '';
+  private autoLock: { x: number; y: number } | null = null;
   private attackHeld: boolean = false;
   private attackPressed: boolean = false;
   private attackReleased: boolean = false;
@@ -217,9 +230,13 @@ this.playerHP = carriedHP !== null ? Phaser.Math.Clamp(carriedHP, 1, this.maxPla
     this.keyA = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
     this.keyS = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
     this.keyD = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+    this.keyJ = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.J);
+    this.keyK = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.K);
+    this.arrows = keyboard.createCursorKeys();
 
 this.onPointerDown = (p: Phaser.Input.Pointer) => {
   // คลิกโดนปุ่ม/แผงที่ interactive อยู่ (เช่น แผงถุงพกพา) → ไม่ถือเป็นการโจมตี
+  if (controls.mode !== 'mouse') return; // โหมดคีย์บอร์ด/สัมผัสไม่ใช้เมาส์ตี
   if (this.scene.input.hitTestPointer(p).length > 0) return;
   if (p.button === 2) {
     this.skillPressed = true;
@@ -229,7 +246,7 @@ this.onPointerDown = (p: Phaser.Input.Pointer) => {
   }
 };
     this.onPointerUp = (p: Phaser.Input.Pointer) => {
-      if (p.button === 0 && this.attackHeld) {
+      if (controls.mode === 'mouse' && p.button === 0 && this.attackHeld) {
         this.attackHeld = false;
         this.attackReleased = true;
       }
@@ -361,6 +378,7 @@ heal(n: number): number {
   // เรียกทุกเฟรมจากฉาก
   // ---------------------------------------------------------------
   update(delta: number) {
+    this.pollNonMouseInput();
     const attackPressed = this.attackPressed;
     const attackReleased = this.attackReleased;
     const skillPressed = this.skillPressed;
@@ -381,16 +399,9 @@ heal(n: number): number {
     let vy = 0;
 
     if (canMove) {
-      if (this.keyA.isDown) vx -= 1;
-      if (this.keyD.isDown) vx += 1;
-      if (this.keyW.isDown) vy -= 1;
-      if (this.keyS.isDown) vy += 1;
-
-      if (vx !== 0 || vy !== 0) {
-        const len = Math.hypot(vx, vy);
-        vx /= len;
-        vy /= len;
-      }
+      const mv = this.getMoveInput();
+      vx = mv.x;
+      vy = mv.y;
       this.sprite.setVelocity(vx * speed, vy * speed);
     } else if (isHitStopped) {
       this.sprite.setVelocity(0);
@@ -845,6 +856,8 @@ heal(n: number): number {
   }
 
 private getAimDir(): Phaser.Math.Vector2 {
+  if (controls.mode === 'touch') return this.getAutoAimDir();
+  if (controls.mode === 'keys') return this.getFacingDir();
   const p = this.scene.input.activePointer;
   const cam = this.cam;
   // แปลงจุดเมาส์เป็นพิกัดโลกผ่านกล้อง — คิดระยะซูมด้วย (เดิมบวก scroll ตรง ๆ = เล็งเอียงตอนซูม 0.75)
@@ -861,9 +874,162 @@ private getAimDir(): Phaser.Math.Vector2 {
   return new Phaser.Math.Vector2(dx / len, dy / len);
 }
 
-  private getAttackDir(_assistRange: number, _assistAngle: number): Phaser.Math.Vector2 {
-    return this.getAimDir();
+  // ทิศตี: เมาส์ = ตามเคอร์เซอร์ · สัมผัส = เล็งอัตโนมัติ · คีย์บอร์ด = ทิศที่หัน + กรวยช่วยเล็ง
+  private getAttackDir(assistRange: number, assistAngle: number): Phaser.Math.Vector2 {
+    const base = this.getAimDir();
+    if (controls.mode === 'keys') return this.assistSnap(base, assistRange, assistAngle);
+    return base;
   }
+
+  /** ทิศที่บังคับอยู่ (WASD / ลูกศร / จอย) — ทำเป็นเวกเตอร์หน่วยแล้ว · 0,0 = ไม่ได้บังคับ */
+  private getMoveInput(): { x: number; y: number } {
+    // จอสัมผัส: ใช้จอยถ้ากำลังแตะอยู่ ไม่งั้นตกไปอ่านคีย์บอร์ด (เครื่องที่มีทั้งจอสัมผัสและคีย์บอร์ดก็เล่นได้)
+    if (controls.mode === 'touch' && (touch.moveX !== 0 || touch.moveY !== 0)) return { x: touch.moveX, y: touch.moveY };
+    const arr = controls.mode === 'keys' ? this.arrows : null;
+    let x = 0;
+    let y = 0;
+    if (this.keyA.isDown || (arr && arr.left.isDown)) x -= 1;
+    if (this.keyD.isDown || (arr && arr.right.isDown)) x += 1;
+    if (this.keyW.isDown || (arr && arr.up.isDown)) y -= 1;
+    if (this.keyS.isDown || (arr && arr.down.isDown)) y += 1;
+    if (x !== 0 || y !== 0) {
+      const len = Math.hypot(x, y);
+      x /= len;
+      y /= len;
+    }
+    return { x, y };
+  }
+
+  /** โหมดคีย์บอร์ด: หันไปทางที่เดินล่าสุด */
+  private getFacingDir(): Phaser.Math.Vector2 {
+    const mv = this.getMoveInput();
+    if (mv.x !== 0 || mv.y !== 0) return new Phaser.Math.Vector2(mv.x, mv.y);
+    return this.facing.clone();
+  }
+
+  /** โหมดสัมผัส: หันหาบอสที่ใกล้สุด · ไม่มีเป้า = ทางที่เดิน · ไม่เดิน = ทางเดิม */
+  private getAutoAimDir(): Phaser.Math.Vector2 {
+    const t = this.pickAutoTarget();
+    if (t) {
+      const dx = t.x - this.sprite.x;
+      const dy = t.y - this.sprite.y;
+      const len = Math.hypot(dx, dy);
+      if (len >= 6) return new Phaser.Math.Vector2(dx / len, dy / len);
+    }
+    return this.getFacingDir();
+  }
+
+  /**
+   * เลือกเป้าเล็งอัตโนมัติ: บอสที่ตื่นอยู่ใกล้สุดก่อน (นับร่างปลอมของมายาด้วย — เลือกตามระยะ ไม่เลือกตามจริง/ปลอม)
+   * ไม่มีบอส → ตัวแทะในระยะ AUTO_MINION_RANGE · ล็อกเป้าเดิมไว้จนกว่าตัวอื่นจะใกล้กว่าชัดเจน
+   */
+  private pickAutoTarget(): { x: number; y: number } | null {
+    const px = this.sprite.x;
+    const py = this.sprite.y;
+    const bosses: Array<{ x: number; y: number }> = [];
+    const minions: Array<{ x: number; y: number }> = [];
+    for (const t of this.host.getTargets()) {
+      if (!t.isHittable()) continue;
+      const list = t.kind === 'boss' ? bosses : minions;
+      list.push({ x: t.x, y: t.y });
+      for (const d of t.getDecoys()) list.push({ x: d.x, y: d.y });
+    }
+    let pool = bosses;
+    if (pool.length === 0) {
+      pool = minions.filter((m) => Phaser.Math.Distance.Between(px, py, m.x, m.y) <= AUTO_MINION_RANGE);
+    }
+    if (pool.length === 0) {
+      this.autoLock = null;
+      return null;
+    }
+    let best = pool[0];
+    let bestD = Infinity;
+    for (const c of pool) {
+      const d = Phaser.Math.Distance.Between(px, py, c.x, c.y);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    if (this.autoLock) {
+      let prev: { x: number; y: number } | null = null;
+      let prevGap = AUTO_LOCK_TOL;
+      for (const c of pool) {
+        const gap = Phaser.Math.Distance.Between(c.x, c.y, this.autoLock.x, this.autoLock.y);
+        if (gap < prevGap) {
+          prevGap = gap;
+          prev = c;
+        }
+      }
+      if (prev && Phaser.Math.Distance.Between(px, py, prev.x, prev.y) <= bestD * AUTO_SWITCH_RATIO) best = prev;
+    }
+    this.autoLock = { x: best.x, y: best.y };
+    return best;
+  }
+
+  /** โหมดคีย์บอร์ด: มีเป้าอยู่ในกรวยหน้าตัวละคร (ค่า assist ของแต่ละท่าใน characters.ts) → ปรับทิศเข้าหาเป้า */
+  private assistSnap(base: Phaser.Math.Vector2, range: number, halfAngleDeg: number): Phaser.Math.Vector2 {
+    const px = this.sprite.x;
+    const py = this.sprite.y;
+    const maxRad = Phaser.Math.DegToRad(halfAngleDeg);
+    let best = null as Phaser.Math.Vector2 | null;
+    let bestAng = Infinity;
+    const consider = (x: number, y: number, r: number) => {
+      const dx = x - px;
+      const dy = y - py;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1 || dist - r > range) return;
+      const ang = Math.acos(Phaser.Math.Clamp((dx * base.x + dy * base.y) / dist, -1, 1));
+      if (ang <= maxRad && ang < bestAng) {
+        bestAng = ang;
+        best = new Phaser.Math.Vector2(dx / dist, dy / dist);
+      }
+    };
+    for (const t of this.host.getTargets()) {
+      if (!t.isHittable()) continue;
+      consider(t.x, t.y, t.radius);
+      for (const d of t.getDecoys()) consider(d.x, d.y, d.r);
+    }
+    return best ?? base;
+  }
+
+  /** โหมดคีย์บอร์ด (J ตี / K สกิล) และสัมผัส (ปุ่มบนจอ) — แปลงเป็นค่าชุดเดียวกับที่เมาส์เคยตั้งให้ */
+  private pollNonMouseInput() {
+    const mode = controls.mode;
+    if (mode !== this.lastMode) {
+      // สลับโหมดกลางเกม — ล้างสถานะปุ่มค้างของโหมดเก่า
+      this.lastMode = mode;
+      this.attackHeld = false;
+      this.attackPressed = false;
+      this.attackReleased = false;
+      this.skillPressed = false;
+      this.autoLock = null;
+    }
+    if (mode === 'keys') {
+      const jDown = Phaser.Input.Keyboard.JustDown(this.keyJ);
+      const jUp = Phaser.Input.Keyboard.JustUp(this.keyJ);
+      const kDown = Phaser.Input.Keyboard.JustDown(this.keyK);
+      if (this.host.suppressKeyCombat) {
+        this.attackHeld = false;
+        return;
+      }
+      if (jDown) {
+        this.attackPressed = true;
+        this.attackHeld = true;
+      }
+      if (jUp) {
+        this.attackReleased = true;
+        this.attackHeld = false;
+      }
+      if (kDown) this.skillPressed = true;
+    } else if (mode === 'touch') {
+      this.attackHeld = touch.attackDown;
+      if (touch.takeAttackPressed()) this.attackPressed = true;
+      if (touch.takeAttackReleased()) this.attackReleased = true;
+      if (touch.takeSkillPressed()) this.skillPressed = true;
+    }
+  }
+
 
   private chargeNeeded(): number {
     return this.character.id === 'akkhani' ? AKKHANI.charged.holdMs : LUMA.charged.holdMs;
@@ -922,10 +1088,10 @@ private getAimDir(): Phaser.Math.Vector2 {
   private updateHudTexts(now: number) {
     const remain = Math.max(0, this.skillReadyAt - now);
     if (remain <= 0) {
-      this.skillText.setText(`คลิกขวา · ${this.character.skillName} · พร้อม`).setColor('#7dff9a');
+      this.skillText.setText(`${skillKeyLabel()} · ${this.character.skillName} · พร้อม`).setColor('#7dff9a');
     } else {
       this.skillText
-        .setText(`คลิกขวา · ${this.character.skillName} · ${(remain / 1000).toFixed(1)}s`)
+        .setText(`${skillKeyLabel()} · ${this.character.skillName} · ${(remain / 1000).toFixed(1)}s`)
         .setColor('#bbbbbb');
     }
 
@@ -1086,10 +1252,20 @@ private getAimDir(): Phaser.Math.Vector2 {
         handled: new Set<CombatTarget>(),
         actionId
       };
+      // โหมดคีย์บอร์ด/สัมผัส: พุ่งไปทางที่บังคับอยู่ตอนเริ่มพุ่ง (ไม่ได้บังคับ = ทางเดียวกับที่ฟัน) · โหมดเมาส์เหมือนเดิม
+      let tdir = dir;
+      if (controls.mode !== 'mouse') {
+        const mv = this.getMoveInput();
+        if (mv.x !== 0 || mv.y !== 0) {
+          tdir = new Phaser.Math.Vector2(mv.x, mv.y);
+          this.facing.copy(tdir);
+          if (Math.abs(tdir.x) > 0.3) this.sprite.setFlipX(tdir.x < 0);
+        }
+      }
       const thrustSpeed = C.thrustSpeed * this.starFx.thrustSpeedMult;
-      this.sprite.setVelocity(dir.x * thrustSpeed, dir.y * thrustSpeed);
+      this.sprite.setVelocity(tdir.x * thrustSpeed, tdir.y * thrustSpeed);
       sfx.dash();
-      spawnThrustDir(this.scene, this.sprite.x, this.sprite.y, dir.x, dir.y, 150, 3);
+      spawnThrustDir(this.scene, this.sprite.x, this.sprite.y, tdir.x, tdir.y, 150, 3);
       this.cam.shake(120, 0.005);
       this.time.addEvent({ delay: 40, repeat: 4, callback: () => this.spawnAfterimage(0xff8a5a) });
     });
@@ -1253,8 +1429,9 @@ private getAimDir(): Phaser.Math.Vector2 {
     this.isDashing = true;
     sfx.dash();
 
-    let dx = (this.keyD.isDown ? 1 : 0) - (this.keyA.isDown ? 1 : 0);
-    let dy = (this.keyS.isDown ? 1 : 0) - (this.keyW.isDown ? 1 : 0);
+    const mv = this.getMoveInput();
+    let dx = mv.x;
+    let dy = mv.y;
     if (dx === 0 && dy === 0) {
       dx = this.facing.x;
       dy = this.facing.y;

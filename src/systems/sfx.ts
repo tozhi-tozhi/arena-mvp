@@ -336,6 +336,9 @@ const bossDie = () => { tone(220, 40, 700, 'sawtooth', 0.22); noise(500, 0.28); 
 export const sfx = {
   swing, hit, hurt, dash, open, pickup, warn, bossDie,
 
+  /** ปลุก AudioContext ตอนแตะจอครั้งแรก (มือถือ/iOS ต้องมีท่าทางผู้ใช้ก่อนถึงจะมีเสียง) */
+  unlock: () => { getCtx(); },
+
   // ----- P1: ใหม่ -----
   step,
   startAmbient,

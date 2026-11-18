@@ -8,6 +8,7 @@ import { generateArea, type AreaLayout } from '../systems/AreaGenerator';
 import { bakeAreaTextures, tileKey, propKey } from '../systems/areaTextures';
 import { UiCamera } from '../systems/UiCamera';
 import { PlayerActor } from '../actors/PlayerActor';
+import { controls, pressed } from '../systems/Controls';
 import { AreaGate } from '../entities/AreaGate';
 import { makeVignette, showDamage, showRarityBanner } from '../systems/effects';
 import { showEndScreen } from '../ui/GameOverScreen';
@@ -318,6 +319,7 @@ if (this.areaIndex <= 2) {
         }
       });
       kb.on('keydown-K', () => {
+        if (controls.mode === 'keys') return; // K = สกิลในโหมดคีย์บอร์ด
         if (!this.tripEnded && !this.actor.isDead) this.actor.takeDamage(999, this.actor.x - 10, this.actor.y);
       });
     }
@@ -355,7 +357,7 @@ if (this.areaIndex <= 2) {
 
   update(_time: number, delta: number) {
     if (!this.actor) return;
-    if (Phaser.Input.Keyboard.JustDown(this.keyMute)) {
+    if (pressed(this.keyMute, 'M')) {
       const nowMuted = sfx.toggleMute();
       showDamage(this, this.actor.x, this.actor.y - 40, nowMuted ? 'ปิดเสียง' : 'เปิดเสียง', '#ffffff', 900);
     }
@@ -403,7 +405,7 @@ if (this.areaIndex <= 2) {
     if (this.minimap) this.minimap.update(delta, this.time.now);
 
     if (this.actor.isDead || this.actor.isVictory) {
-      if (Phaser.Input.Keyboard.JustDown(this.keyRestart)) this.scene.start('BaseScene');
+      if (pressed(this.keyRestart, 'R')) this.scene.start('BaseScene');
       return;
     }
 
@@ -413,7 +415,7 @@ if (this.areaIndex <= 2) {
     this.returnGate.checkPlayerDistance(px, py);
     this.exitGate.checkPlayerDistance(px, py);
 
-    if (Phaser.Input.Keyboard.JustDown(this.keyInteract) && !this.tripEnded && !this.isTransitioning) {
+    if (pressed(this.keyInteract, 'E') && !this.tripEnded && !this.isTransitioning) {
       if (this.minigame) {
         this.minigame.press();
         return;
