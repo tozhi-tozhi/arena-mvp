@@ -21,6 +21,12 @@ import type { CombatTarget } from '../systems/CombatTarget';
 import { controls, touch, skillKeyLabel } from '../systems/Controls';
 
 const CLAY_SCALE = 0.68;
+
+// แรงสั่นจอตอนตีโดน — ห้ามคูณตามดาเมจตรง ๆ (บทเรียนเดียวกับ	hit-stop)
+// เดิม: 0.006 + damage * 0.002 → ดาเมจ 200 = 0.406 จอสะบัดแรงกว่าตอนโดนตีหลายเท่า
+const SHAKE_BASE = 0.004;     // พื้นฐานทุกฮิต
+const SHAKE_PER_100 = 0.002;  // เพิ่มทุก 100 ดาเมจ
+const SHAKE_MAX = 0.012;      // เพดาน — เท่าท่าไม้ตาย ไม่เกินตอนโดนตี (0.015)
 const WALK_FRAME_MS = 150;
 const AKK_SCALE = 0.43;
 const AKK_FRAMES = { idle: 1, walk: 4, attack: 5, charge: 7, thrust: 8, skill: 8, knock: 8 };
@@ -610,7 +616,8 @@ heal(n: number): number {
     sfx.hit();
     target.takeHit(damage);
     this.host.onTargetDamaged?.(target);
-    this.cam.shake(120, 0.006 + damage * 0.002);
+    const shake = Math.min(SHAKE_MAX, SHAKE_BASE + (damage / 100) * SHAKE_PER_100);
+    this.cam.shake(120, shake);
     const weight = Math.min(HIT_STOP_MAX_MS, HIT_STOP_BASE_MS + (damage / 100) * HIT_STOP_PER_100);
     this.hitStop(weight);
     if (actionId >= 0) this.countAttackHit(actionId);

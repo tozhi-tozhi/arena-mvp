@@ -1,13 +1,13 @@
-// เครื่องราง + สัตว์เลี้ยง — แยกออกจาก GameScene เพื่อให้แก้ง่าย
+// src/systems/Perks.ts — เครื่องราง + ตัวกลางเรียกพฤติกรรมสัตว์เลี้ยง
+// สัตว์เลี้ยงทำอะไรได้ ย้ายไปอยู่ที่ petBehaviors.ts แล้ว — ไฟล์นี้ไม่รู้จักชื่อสัตว์อีก
 // ผลของเลเวลอ่านจาก Upgrades.ts ที่เดียวกับโรงตีเหล็กแสดง
-import Phaser from 'phaser';
-import { DEPTH } from '../config';
 import { loadout } from './Loadout';
-import { showDamage, ringEffect, burst } from './effects';
+import { showDamage } from './effects';
 import { type CharmId } from '../data/charms';
-import { PETS, PET_MORTAR, type PetId } from '../data/pets';
+import { PETS, type PetId } from '../data/pets';
 import { Pet } from '../entities/Pet';
 import { charmEffectNow, petEffectNow } from './Upgrades';
+import { behaviorOf, type PetBehavior, type PetCtx } from './petBehaviors';
 
 export interface PerkContext {
   scene: Phaser.Scene;
@@ -24,18 +24,22 @@ export class Perks {
   private ctx: PerkContext;
   private charmId: CharmId | null;
   private petId: PetId | null;
+
   // สัตว์เลี้ยง
   private pet: Pet | null = null;
+  private behavior: PetBehavior | null = null;
   private petInterval: number = 0;
   private petNextAt: number = 0;
   private speedBuffUntil: number = 0;
   private lastBuffImageAt: number = 0;
+
   // เครื่องราง
   private healsLeft: number = 0;
   private streakCount: number = 0;
   private streakReady: boolean = false;
   private doubleActionId: number = -1;
   private lastHitAction: number = -1;
+
   // ผลตามเลเวลที่อัปเกรดไว้
   private charmFx = charmEffectNow('');
   private petFx = petEffectNow('');
@@ -47,36 +51,42 @@ export class Perks {
     this.charmFx = charmEffectNow(this.charmId ?? '');
     this.petFx = petEffectNow(this.petId ?? '');
     this.healsLeft = this.charmFx.healMaxPerHunt;
-    if (this.petId) {
+
+    this.behavior = behaviorOf(this.petId);
+    if (this.petId && this.behavior) {
       const now = ctx.scene.time.now;
       const p = ctx.getPlayer();
-      this.petInterval = this.petId === 'swift' ? this.petFx.swiftIntervalMs : this.petFx.mortarIntervalMs;
+      this.petInterval = Math.max(500, this.behavior.intervalMs(this.petFx));
       this.petNextAt = now + this.petInterval;
-      this.pet = new Pet(ctx.scene, this.petId, PETS[this.petId].color, p.x - 30, p.y - 30);
+      this.pet = new Pet(ctx.scene, PETS[this.petId], p.x - 30, p.y - 30);
     }
+  }
+
+  /** กล่องเครื่องมือที่ส่งให้พฤติกรรมสัตว์ใช้ */
+  private petCtx(): PetCtx {
+    return {
+      scene: this.ctx.scene,
+      getPlayer: this.ctx.getPlayer,
+      getTarget: this.ctx.getBoss,
+      damage: this.ctx.damageBoss,
+      setSpeedBuff: (until) => { this.speedBuffUntil = until; },
+      pet: this.pet
+    };
   }
 
   // ---------- เรียกทุกเฟรม ----------
   update(now: number, delta: number) {
     const p = this.ctx.getPlayer();
-    if (this.pet) {
+    if (this.pet && this.behavior) {
       const remain = Math.max(0, this.petNextAt - now);
       this.pet.update(delta, p.x, p.y, 1 - remain / this.petInterval);
       if (now >= this.petNextAt) {
-        if (this.petId === 'swift') {
-          this.petNextAt = now + this.petInterval;
-          this.fireSpeedBuff(now);
-        } else {
-          const boss = this.ctx.getBoss();
-          if (!boss) {
-            this.petNextAt = now + 500; // ยังไม่มีบอสให้ยิง — ลองใหม่เร็วๆ
-          } else {
-            this.petNextAt = now + this.petInterval;
-            this.fireMortar(boss);
-          }
-        }
+        const fired = this.behavior.fire(this.petCtx(), this.petFx, now);
+        // ออกฤทธิ์ไม่ได้ (ไม่มีเป้า) → ลองใหม่ในครึ่งวินาที ไม่เสียรอบเต็ม
+        this.petNextAt = now + (fired ? this.petInterval : 500);
       }
     }
+
     // เอฟเฟกต์เงาตามตัวตอนบัฟความเร็วทำงาน
     if (now < this.speedBuffUntil && now - this.lastBuffImageAt > 110) {
       this.lastBuffImageAt = now;
@@ -88,73 +98,11 @@ export class Perks {
     return now < this.speedBuffUntil ? 1 + this.petFx.swiftBonusPct / 100 : 1;
   }
 
-  // ---------- สัตว์เลี้ยง: บัฟความเร็ว ----------
-  private fireSpeedBuff(now: number) {
-    this.speedBuffUntil = now + this.petFx.swiftDurationMs;
-    const p = this.ctx.getPlayer();
-    this.pet?.pulse();
-    ringEffect(this.ctx.scene, p.x, p.y, 40, 0xfff27a, 300);
-    showDamage(this.ctx.scene, p.x, p.y - 45, `เร็วขึ้น +${this.petFx.swiftBonusPct}%!`, '#fff27a', 800);
-  }
-
-  // ---------- สัตว์เลี้ยง: ปืนใหญ่ครก ----------
-  private fireMortar(boss: { x: number; y: number; r: number }) {
-    const scene = this.ctx.scene;
-    // ดาเมจตามเลเวล แต่คงขนาดวง/เวลาบินเดิม (ภาพกับ hitbox ตรงกัน)
-    const M = { ...PET_MORTAR, damage: this.petFx.mortarDamage };
-    const tx = boss.x;
-    const ty = boss.y;
-    const from = this.pet ? this.pet.pos() : this.ctx.getPlayer();
-    this.pet?.pulse();
-    // วงเตือนที่พื้น (วงในขยายจนเต็ม = ตก)
-    const marker = scene.add.circle(tx, ty, M.radius, 0xff5a3a, 0.1);
-    marker.setStrokeStyle(2, 0xff5a3a, 0.9);
-    marker.setDepth(DEPTH.PLAYER_SHADOW);
-    const fill = scene.add.circle(tx, ty, M.radius, 0xff5a3a, 0.28);
-    fill.setDepth(DEPTH.PLAYER_SHADOW);
-    fill.setScale(0.05);
-    scene.tweens.add({ targets: fill, scale: 1, duration: M.flightMs });
-    // กระสุนพุ่งขึ้นฟ้า
-    const shell = scene.add.circle(from.x, from.y, 5, 0xffe08a);
-    shell.setStrokeStyle(2, 0xff8a3a);
-    shell.setDepth(DEPTH.PLAYER + 3);
-    scene.tweens.add({
-      targets: shell,
-      y: from.y - 320,
-      alpha: 0.2,
-      duration: 350,
-      onComplete: () => shell.setVisible(false)
-    });
-    // ตกลงมาที่เป้าหมาย
-    scene.time.delayedCall(M.flightMs - 350, () => {
-      shell.setPosition(tx, ty - 320);
-      shell.setAlpha(1);
-      shell.setVisible(true);
-      scene.tweens.add({
-        targets: shell,
-        y: ty,
-        duration: 350,
-        onComplete: () => {
-          marker.destroy();
-          fill.destroy();
-          shell.destroy();
-          ringEffect(scene, tx, ty, M.radius, 0xff8a3a, 350);
-          burst(scene, tx, ty, 0xffb04a, 14, M.radius, 6);
-          scene.cameras.main.shake(140, 0.007);
-          const b = this.ctx.getBoss();
-          if (b && Phaser.Math.Distance.Between(tx, ty, b.x, b.y) <= M.radius + b.r * 0.5) {
-            this.ctx.damageBoss(M.damage, -1); // -1 = ไม่ใช่การโจมตีของผู้เล่น (ไม่นับพาสซีฟ/เครื่องราง)
-          }
-        }
-      });
-    });
-  }
-
   // ---------- เครื่องราง ----------
-  // เรียกทุกครั้งที่ผู้เล่นสร้างดาเมจให้บอส คืนค่าดาเมจ (อาจถูกคูณ)
+  /** เรียกทุกครั้งที่ผู้เล่นสร้างดาเมจให้เป้า คืนค่าดาเมจ (อาจถูกคูณ) */
   onPlayerHit(damage: number, actionId: number): number {
     if (actionId < 0 || !this.charmId) return damage;
-    // "การโจมตี 1 ครั้งที่โดน" = actionId เดียวกันนับแค่ครั้งแรก (กระสุนพัดหลายนัดนับเป็น 1)
+    // "การโจมตี 1 ครั้งที่โดน" = รหัสแอ็กชันเดียวนับแค่ครั้งแรก (กระสุนพัดหลายนัดนับเป็น 1)
     if (actionId !== this.lastHitAction) {
       this.lastHitAction = actionId;
       this.onFirstHit(actionId);
@@ -190,13 +138,13 @@ export class Perks {
     }
   }
 
-  // ถูกตีจนเลือดลดจริง (โล่กันได้ไม่นับ)
+  /** ถูกตีจนเลือดลดจริง (โล่กันได้ไม่นับ) */
   onPlayerHurt() {
     this.streakCount = 0;
     this.streakReady = false;
   }
 
-  // ข้อความสถานะเครื่องรางบน HUD
+  /** ข้อความสถานะเครื่องรางบน HUD */
   charmHud(): { text: string; color: string } | null {
     if (this.charmId === 'heal') {
       return { text: `ตราต่อชีวิต: ฟื้นได้อีก ${this.healsLeft}`, color: '#a8e6a3' };
