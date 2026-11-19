@@ -12,6 +12,7 @@ import { CHARACTERS, AKKHANI, LUMA, type CharacterDef } from '../data/characters
 import { loadout } from '../systems/Loadout';
 import { COMBO3_SPIN, COMBO3_FAN, skillId, findSkill, ultimateCooldownOf } from '../data/skills';
 import { ComboTracker } from '../systems/ComboTracker';
+import { ClipSet } from '../systems/ClipSet';
 import { huntSession } from '../systems/HuntSession';
 import { Perks } from '../systems/Perks';
 import { charStarEffectNow, type CharStarEffect } from '../systems/Upgrades';
@@ -28,10 +29,7 @@ const SHAKE_BASE = 0.004;     // พื้นฐานทุกฮิต
 const SHAKE_PER_100 = 0.002;  // เพิ่มทุก 100 ดาเมจ
 const SHAKE_MAX = 0.012;      // เพดาน — เท่าท่าไม้ตาย ไม่เกินตอนโดนตี (0.015)
 const WALK_FRAME_MS = 150;
-const AKK_SCALE = 0.43;
-const AKK_FRAMES = { idle: 1, walk: 4, attack: 5, charge: 7, thrust: 8, skill: 8, knock: 8 };
-type AkkClip = keyof typeof AKK_FRAMES;
-const akkKey = (clip: string, i: number) => `akk_${clip}_${String(i).padStart(2, '0')}`;
+// รายการคลิป/จำนวนเฟรม/สเกล ย้ายไป data/characterArt.ts แล้ว — ตัวเล่นอยู่ที่ systems/ClipSet.ts
 const KNOCK_HOLD_MS = 1600;
 const SKILL_SHIELD_FROM = 3;
 const SKILL_SLASH_AT = 5;
@@ -162,11 +160,7 @@ export class PlayerActor {
   private walkFrameTimer: number = 0;
   private walkFrameIndex: number = 0;
   private currentTexture: string = 'hero';
-  private useAkk: boolean = false;
-  private akkClip: string = '';
-  private akkClipStart: number = 0;
-  private akkDur: number[] = [];
-  private akkClipLoop: boolean = false;
+  private clips!: ClipSet;
 
   // ---------------------------------------------------------------
   // โหลดภาพของผู้เล่น — ฉากเรียกใน preload() (โหลดซ้ำได้ Phaser ข้ามให้เอง)
@@ -177,12 +171,7 @@ export class PlayerActor {
     scene.load.image('hero_clay_walk2', 'assets/hero_clay_walk2.png');
     scene.load.image('hero_clay_attack', 'assets/hero_clay_attack.png');
     scene.load.image('hero', 'assets/hero.png');
-    for (const [clip, n] of Object.entries(AKK_FRAMES)) {
-      for (let i = 1; i <= n; i++) {
-        const nn = String(i).padStart(2, '0');
-        scene.load.image(akkKey(clip, i), `assets/characters/akkhani/char_akkhani_${clip}_${nn}.png`);
-      }
-    }
+    ClipSet.loadAll(scene);
   }
 
   constructor(scene: Phaser.Scene, x: number, y: number, host: PlayerActorHost) {
@@ -196,13 +185,11 @@ export class PlayerActor {
       scene.textures.exists('hero_clay_walk1') &&
       scene.textures.exists('hero_clay_walk2') &&
       scene.textures.exists('hero_clay_attack');
-    this.useAkk =
-      this.character.id === 'akkhani' &&
-      Object.entries(AKK_FRAMES).every(([clip, n]) =>
-        Array.from({ length: n }, (_, i) => scene.textures.exists(akkKey(clip, i + 1))).every(Boolean)
-      );
-    if (this.useAkk) this.useClay = true;
-    this.baseScale = this.useAkk ? AKK_SCALE : this.useClay ? CLAY_SCALE : SPRITE_SCALE;
+    this.clips = new ClipSet(scene, this.character.id);
+const legacyUseAkk =
+    this.clips = new ClipSet(scene, this.character.id);
+if (this.clips.ready) this.useClay = true;
+    this.baseScale = this.clips.ready ? this.clips.scale : this.useClay ? CLAY_SCALE : SPRITE_SCALE;
 
 this.maxPlayerHP = this.character.maxHP;
 // เลือดข้ามแอเรีย: มีค่าค้างจากแมพก่อน → ใช้ค่านั้น (The World เท่านั้นที่ฝากค่าไว้)
@@ -211,7 +198,7 @@ const carriedHP = huntSession.getTripHP();
 this.playerHP = carriedHP !== null ? Phaser.Math.Clamp(carriedHP, 1, this.maxPlayerHP) : this.maxPlayerHP;
     this.facing.set(1, 0);
 
-    const startTexture = this.useAkk ? akkKey('idle', 1) : this.useClay ? 'hero_clay_idle' : 'hero';
+    const startTexture = this.clips.ready ? this.clips.keyOf('idle', 1) : this.useClay ? 'hero_clay_idle' : 'hero';
     this.sprite = scene.physics.add.sprite(x, y, startTexture) as any;
     this.sprite.setCollideWorldBounds(true);
     this.sprite.setDepth(DEPTH.PLAYER);
@@ -407,7 +394,7 @@ heal(n: number): number {
     this.attackReleased = false;
     this.skillPressed = false;
 
-    if (this.isDead && this.useAkk) this.updateClip(this.time.now);
+    if (this.isDead && this.clips.ready) this.updateClip(this.time.now);
     if (this.isDead || this.isVictory) return;
 
     const now = this.time.now;
@@ -436,7 +423,7 @@ heal(n: number): number {
       if (Math.abs(aim.x) > 0.15) this.sprite.setFlipX(aim.x < 0);
     }
 
-    if (this.useAkk) {
+    if (this.clips.ready) {
       this.updateAkkVisual(now, vx !== 0 || vy !== 0);
     } else if (!this.isAttacking) {
       if (vx !== 0 || vy !== 0 || this.isDashing) {
@@ -781,7 +768,7 @@ heal(n: number): number {
     this.shieldRing.setVisible(false);
     burst(this.scene, this.sprite.x, this.sprite.y, 0xff3333, 16, 70, 7);
     const show = () => this.host.onDeathShown();
-    if (this.useAkk) {
+    if (this.clips.ready) {
       this.sprite.setVelocity(0);
       this.playClip('knock', 130, false);
       this.time.delayedCall(KNOCK_HOLD_MS, show);
@@ -798,13 +785,13 @@ heal(n: number): number {
   private applyBaseTint() {
     if (this.isDead) return; // ตายแล้วห้ามทับสีเทาท่าตาย
     this.sprite.clearTint();
-    if (!this.useAkk) this.sprite.setTint(this.character.tint);
+    if (!this.clips.ready) this.sprite.setTint(this.character.tint);
   }
 
   private setPlayerTexture(key: string) {
     if (!this.useClay) return;
     // บล็อกรูป clay เฉพาะตอนเล่นอัคนีที่มีเฟรมจริงเท่านั้น (ลูมิต้องเปลี่ยนรูปได้)
-    if (this.useAkk && this.character.id === 'akkhani' && key.startsWith('hero_clay')) return;
+    if (this.clips.ready && this.character.id === 'akkhani' && key.startsWith('hero_clay')) return;
     if (this.currentTexture === key) return;
     if (!this.scene.textures.exists(key)) return;
     this.sprite.setTexture(key);
@@ -812,52 +799,38 @@ heal(n: number): number {
     this.sprite.setScale(this.baseScale * this.character.scale);
   }
 
-  private playClip(clip: AkkClip, frameMs: number | number[], loop: boolean) {
-    this.akkClip = clip;
-    this.akkClipStart = this.time.now;
-    this.akkClipLoop = loop;
-    this.akkDur = Array.isArray(frameMs) ? frameMs : Array(AKK_FRAMES[clip]).fill(frameMs);
-  }
-
-  private playAttackClip(frameMs: number) {
-    if (this.useAkk) this.playClip('attack', frameMs, false);
-    else this.setPlayerTexture('hero_clay_attack');
-  }
-
-  private updateClip(now: number) {
-    if (!this.useAkk || !this.akkClip) return;
-    const n = AKK_FRAMES[this.akkClip as AkkClip];
-    let t = now - this.akkClipStart;
-    if (this.akkClipLoop) {
-      const total = this.akkDur.reduce((a, b) => a + b, 0);
-      if (total > 0) t = t % total;
-    }
-    let i = 0;
-    while (i < n - 1 && t >= (this.akkDur[i] ?? 100)) {
-      t -= this.akkDur[i] ?? 100;
-      i++;
-    }
-    this.setPlayerTexture(akkKey(this.akkClip, i + 1));
-  }
-
-  private updateAkkVisual(now: number, moving: boolean) {
-    let want = '';
-    if (!this.isAttacking) {
-      if (this.isCharging && now - this.chargeStartAt >= 120) want = 'charge';
-      else want = moving ? 'walk' : 'idle';
-    }
-    if (want && want !== this.akkClip) {
-      if (want === 'walk') this.playClip('walk', 120, true);
-      else if (want === 'charge') {
-        const ms = Math.max(30, (this.chargeNeeded() - 120) / (AKK_FRAMES.charge - 1));
-        this.playClip('charge', ms, false);
-      } else this.playClip('idle', 1000, true);
-    }
-    this.updateClip(now);
+ private playClip(clip: string, frameMs: number | number[], _loop: boolean) {
+this.clips.play(clip, frameMs, this.time.now);
+}
+private playAttackClip(frameMs: number) {
+if (this.clips.can('attack')) this.playClip('attack', frameMs, false);
+else this.setPlayerTexture('hero_clay_attack');
+}
+private updateClip(now: number) {
+const key = this.clips.frameKeyAt(now);
+if (key) this.setPlayerTexture(key);
+}
+private updateAkkVisual(now: number, moving: boolean) {
+let want = '';
+if (!this.isAttacking) {
+if (this.isCharging && now - this.chargeStartAt >= 120) want = 'charge';
+else want = moving ? 'walk' : 'idle';
+}
+if (want && want !== this.clips.current) {
+if (want === 'walk') this.playClip('walk', 120, true);
+else if (want === 'charge') {
+const n = this.clips.frames.charge ?? 7;
+const ms = Math.max(30, (this.chargeNeeded() - 120) / Math.max(1, n - 1));
+this.playClip('charge', ms, false);
+} else this.playClip('idle', 1000, true);
+}
+this.updateClip(now);
+}
+private legacyPlayClipRemoved(clip: string, frameMs: number | number[], loop: boolean) {
   }
 
   private feetY(): number {
-    return this.useAkk
+    return this.clips.ready
       ? this.sprite.y + this.sprite.displayHeight * 0.45
       : this.sprite.y + this.sprite.displayHeight / 2;
   }
@@ -1215,7 +1188,7 @@ private getAimDir(): Phaser.Math.Vector2 {
     this.isAttacking = true;
     this.isActionLocked = true; // หมุนอยู่กับที่
     this.sprite.setVelocity(0);
-    if (this.useAkk) this.playClip('skill', S.durationMs / AKK_FRAMES.skill, false);
+    if (this.clips.ready) this.playClip('skill', S.durationMs / (this.clips.frames.skill ?? 8), false);
     else this.setPlayerTexture('hero_clay_attack');
     sfx.swing();
     spawnArcSlash(
@@ -1329,7 +1302,7 @@ private getAimDir(): Phaser.Math.Vector2 {
     this.facing.copy(dir);
 
     this.isAttacking = true;
-    this.playAttackClip(A.durationMs / AKK_FRAMES.attack);
+    this.playAttackClip(A.durationMs / (this.clips.frames.attack ?? 5));
     sfx.swing();
     spawnArcSlash(
       this.scene,
@@ -1380,7 +1353,7 @@ private getAimDir(): Phaser.Math.Vector2 {
 
     this.isAttacking = true;
     this.isActionLocked = true;
-    this.playAttackClip(C.thrustDelayMs / AKK_FRAMES.attack);
+    this.playAttackClip(C.thrustDelayMs / (this.clips.frames.attack ?? 5));
     this.sprite.setVelocity(0);
 
     sfx.swing();
@@ -1409,7 +1382,7 @@ private getAimDir(): Phaser.Math.Vector2 {
 
     this.time.delayedCall(C.thrustDelayMs, () => {
       if (token !== this.actionToken) return;
-      if (this.useAkk) this.playClip('thrust', C.thrustMs / AKK_FRAMES.thrust, false);
+      if (this.clips.ready) this.playClip('thrust', C.thrustMs / (this.clips.frames.thrust ?? 8), false);
       this.isLunging = true;
       this.thrust = {
         until: this.time.now + C.thrustMs,
@@ -1459,8 +1432,8 @@ private getAimDir(): Phaser.Math.Vector2 {
     this.sprite.setVelocity(0);
 
     const nPre = SKILL_SLASH_AT - 1;
-    const nPost = AKK_FRAMES.skill - nPre;
-    if (this.useAkk) {
+    const nPost = (this.clips.frames.skill ?? 8) - nPre;
+    if (this.clips.ready) {
       const dur = [...Array(nPre).fill(S.windupMs / nPre), ...Array(nPost).fill(S.activeMs / nPost)];
       this.playClip('skill', dur, false);
     } else {
