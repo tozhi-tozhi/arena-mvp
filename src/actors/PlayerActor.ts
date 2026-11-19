@@ -186,8 +186,7 @@ export class PlayerActor {
       scene.textures.exists('hero_clay_walk2') &&
       scene.textures.exists('hero_clay_attack');
     this.clips = new ClipSet(scene, this.character.id);
-const legacyUseAkk =
-    this.clips = new ClipSet(scene, this.character.id);
+
 if (this.clips.ready) this.useClay = true;
     this.baseScale = this.clips.ready ? this.clips.scale : this.useClay ? CLAY_SCALE : SPRITE_SCALE;
 
@@ -826,8 +825,6 @@ this.playClip('charge', ms, false);
 }
 this.updateClip(now);
 }
-private legacyPlayClipRemoved(clip: string, frameMs: number | number[], loop: boolean) {
-  }
 
   private feetY(): number {
     return this.clips.ready

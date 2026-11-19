@@ -67,7 +67,6 @@ export class ClipSet {
   }
 
   private resolved: Record<string, string> = {};
-  private own = new Set<string>();
 
   /** คลิปนี้มีไฟล์ของตัวเองจริงไหม (ไม่ใช่ยืมคลิปสำรอง) */
   private hasOwn(name: string): boolean {
@@ -126,7 +125,8 @@ export class ClipSet {
     for (const char of ART_CHARACTERS) {
       const art = artOf(char);
       for (const name of Object.keys(art.clips)) {
-        const n = art.clips[name].frames;
+        if (art.clips[name].planned) continue; // ยังไม่มีไฟล์ — ไม่ต้องขอโหลด
+const n = art.clips[name].frames;
         for (let i = 1; i <= n; i++) {
           scene.load.image(clipTextureKey(char, name, i), clipFilePath(char, name, i));
         }

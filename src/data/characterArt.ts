@@ -13,6 +13,8 @@ export interface ClipDef {
   frameMs?: number;
   /** คลิปที่ใช้แทนตอนไฟล์ยังไม่ครบ — ต้องเป็นคลิปที่มีอยู่แล้วเท่านั้น */
   fallback?: string;
+  /** true = ยังไม่มีไฟล์ภาพ ข้ามการโหลด (กัน 404 ซ้ำทุกฉาก) — พอมีไฟล์ครบให้ลบธงนี้ออก */
+  planned?: boolean;
 }
 
 export interface CharacterArt {
@@ -40,20 +42,20 @@ export const CHARACTER_ART: Record<CharacterId, CharacterArt> = {
       knock:  { frames: 8, frameMs: 130 },
 
       // ---------- ท่าใหม่ตามเอกสารออกแบบ (ยังไม่มีไฟล์ — ใส่ไว้ให้พร้อม) ----------
-      // พอผลิตภาพครบตามจำนวนเฟรม แล้วแก้เลข frames ให้ตรง เกมหยิบไปใช้เองทันที
-      combo1:         { frames: 5, frameMs: 60, fallback: 'attack' },
-      combo2:         { frames: 5, frameMs: 60, fallback: 'attack' },
-      combo3_spin:    { frames: 6, frameMs: 70, fallback: 'skill' },
-      combo3_wave:    { frames: 6, frameMs: 70, fallback: 'attack' },
-      combo3_triangle:{ frames: 8, frameMs: 60, fallback: 'thrust' },
-      barrage:        { frames: 8, frameMs: 50, fallback: 'attack' },
-      charge_hold:    { frames: 4, loop: true, frameMs: 90, fallback: 'charge' },
-      charge_spin:    { frames: 6, frameMs: 60, fallback: 'skill' },
-      charge_rush:    { frames: 5, frameMs: 50, fallback: 'thrust' },
-      charge_heal:    { frames: 6, frameMs: 60, fallback: 'thrust' },
-      ulti_sweep:     { frames: 8, frameMs: 70, fallback: 'skill' },
-      ulti_slam:      { frames: 8, frameMs: 70, fallback: 'skill' },
-      ulti_star:      { frames: 9, frameMs: 80, fallback: 'skill' }
+      // พอผลิตภาพครบตามจำนวนเฟรม: แก้เลข frames ให้ตรง + ลบ planned: true ออก เกมหยิบไปใช้เองทันที
+      combo1:         { frames: 5, frameMs: 60, fallback: 'attack', planned: true },
+      combo2:         { frames: 5, frameMs: 60, fallback: 'attack', planned: true },
+      combo3_spin:    { frames: 6, frameMs: 70, fallback: 'skill', planned: true },
+      combo3_wave:    { frames: 6, frameMs: 70, fallback: 'attack', planned: true },
+      combo3_triangle:{ frames: 8, frameMs: 60, fallback: 'thrust', planned: true },
+      barrage:        { frames: 8, frameMs: 50, fallback: 'attack', planned: true },
+      charge_hold:    { frames: 4, loop: true, frameMs: 90, fallback: 'charge', planned: true },
+      charge_spin:    { frames: 6, frameMs: 60, fallback: 'skill', planned: true },
+      charge_rush:    { frames: 5, frameMs: 50, fallback: 'thrust', planned: true },
+      charge_heal:    { frames: 6, frameMs: 60, fallback: 'thrust', planned: true },
+      ulti_sweep:     { frames: 8, frameMs: 70, fallback: 'skill', planned: true },
+      ulti_slam:      { frames: 8, frameMs: 70, fallback: 'skill', planned: true },
+      ulti_star:      { frames: 9, frameMs: 80, fallback: 'skill', planned: true }
     }
   },
 
@@ -78,7 +80,7 @@ export function clipFilePath(char: CharacterId, clip: string, i: number): string
   return `assets/${art.folder}/${clipTextureKey(char, clip, i)}.png`;
 }
 
-/** ตัวละครนี้มีภาพจริงพอ chơiไหม (ต้องมีท่ายืนกับท่าเดินครบ) */
+/** ตัวละครนี้มีภาพจริงพอเล่นไหม (ต้องมีท่ายืนกับท่าเดินครบ) */
 export function hasFrameArt(char: CharacterId): boolean {
   const c = CHARACTER_ART[char].clips;
   return !!c.idle && !!c.walk && c.idle.frames > 0 && c.walk.frames > 0;
