@@ -1,14 +1,23 @@
-// src/data/skills.ts — ตารางสกิล 4 ช่อง × 3 ตัวเลือก ต่อตัวละคร (รวม 24 สกิล)
+// src/data/skills.ts — ตารางสกิล 4 ช่อง × 3 ตัวเลือก ต่อตัวละคร
 // ที่มาการออกแบบ: docs/design/char/char_akkhani.md และ docs/design/char/char_luma.md
 // playable = เลือกแล้วเล่นได้จริงในโค้ดตอนนี้ · ที่เหลือคือแบบที่ออกแบบแล้วแต่ยังไม่มีท่าในเกม
 // ตัวเลขทุกค่าเป็นค่าชั่วคราวสำหรับต้นแบบ ปรับหลังเล่นจริง ยังไม่ใช่ค่าสมดุลสุดท้าย
-import type { CharacterId } from './characters';
+// กฎ: ห้ามเขียนชื่อตัวละครฝังในไฟล์นี้ — เพิ่มตัวละครใหม่ต้องไม่ต้องกลับมาแก้ที่นี่
+import { CHARACTER_IDS, type CharacterId } from './characters';
 
 export type SkillSlot = 'passive' | 'combo' | 'charge' | 'ultimate';
 export type SkillOption = 'a' | 'b' | 'c';
 export type SkillId = string;
 
 export const SKILL_SLOTS: SkillSlot[] = ['passive', 'combo', 'charge', 'ultimate'];
+
+/** ชื่อช่องที่แสดงให้ผู้เล่นอ่าน */
+export const SLOT_LABEL: Record<SkillSlot, string> = {
+  passive: 'พาสซีฟ',
+  combo: 'คอมโบฮิต 3',
+  charge: 'ชาร์จ',
+  ultimate: 'ไม้ตาย'
+};
 
 export interface SkillDef {
   id: SkillId;
@@ -20,7 +29,7 @@ export interface SkillDef {
   playable: boolean;
 }
 
-/** ชื่อสกิลหนึ่งตัว = ตัวละคร_ช่อง_ตัวเลือก */
+/** รหัสสกิลหนึ่งตัว = ตัวละคร_ช่อง_ตัวเลือก */
 export function skillId(char: CharacterId, slot: SkillSlot, option: SkillOption): SkillId {
   return `${char}_${slot}_${option}`;
 }
@@ -47,14 +56,13 @@ export const SKILLS: SkillDef[] = [
   def('akkhani', 'charge', 'a', 'หมุนแล้วพุ่ง', 'ค้างแล้วปล่อย ฟันกวาดหนึ่งรอบแล้วพุ่งดาบ'),
   def('akkhani', 'charge', 'b', 'พุ่งทันทีกระตุ้นพาสซีฟ', 'ชาร์จสั้น พุ่งทันทีและกระตุ้นพาสซีฟที่ใส่ไว้'),
   def('akkhani', 'charge', 'c', 'พุ่งฟื้นเลือด', 'พุ่งฟัน ถ้าโดนได้เลือดคืน ถ้าพลาดไม่ได้อะไร'),
-  def('akkhani', 'ultimate', 'a', 'อมตะฟันกวาด', 'อมตะช่วงเตรียม แล้วฟันกวาดกว้าง ฟื้นเลือดเมื่อโดน'),
+  def('akkhani', 'ultimate', 'a', 'อมตะฟันกวาด', 'อมตะช่วงเตรียม แล้วฟันกวาดกว้าง ฟื้นเลือดเมื่อโดน', true),
   def('akkhani', 'ultimate', 'b', 'ฟาดพื้นคลื่นกระแทก', 'ฟาดพื้นเกิดคลื่นรอบตัว พร้อมบัฟความเร็วและดาเมจชั่วคราว'),
   def('akkhani', 'ultimate', 'c', 'ดาบเจ็ดเล่มดาวเจ็ดแฉก', 'ปลดดาบ 7 เล่ม หายตัว แล้วฟันเป็นดาว 7 แฉกพร้อมกัน'),
 
   // ---------- ลูมิ ----------
-  // หมายเหตุ: พาสซีฟตัวเลือก A ตอนนี้รีเซ็ตคูลดาวน์สกิลเดิม (แดช)
-  // เมื่อทำช่องไม้ตายเสร็จ จะย้ายไปลดคูลดาวน์ไม้ตายตามที่ออกแบบไว้
-  def('luma', 'passive', 'a', 'จังหวะภูต', 'โจมตีโดนครบ 8 ครั้ง รีเซ็ตคูลดาวน์สกิลทันที'),
+  // หมายเหตุ: พาสซีฟตัวเลือก A ตอนนี้รีเซ็ตคูลดาวน์ช่องไม้ตาย (เดิมคือแดช)
+  def('luma', 'passive', 'a', 'จังหวะภูต', 'โจมตีโดนครบ 8 ครั้ง รีเซ็ตคูลดาวน์ไม้ตายทันที'),
   def('luma', 'passive', 'b', 'ม่านแสง', 'แดชแล้วได้เกราะแสงกัน 1 ฮิต มีคูลดาวน์ภายใน'),
   def('luma', 'passive', 'c', 'สะสมพลังเมื่อไม่โจมตี', 'เว้นจังหวะโจมตีเพื่อสะสมพลัง แล้วปล่อยเมื่อโจมตีอีกครั้ง'),
   def('luma', 'combo', 'a', 'กระสุนสามลูกกระจายพัด', 'ฮิต 3 ยิงกระสุน 3 ลูกกระจายเป็นพัด', true),
@@ -78,18 +86,27 @@ export function isPlayable(id: SkillId | null | undefined): boolean {
   return !!d && d.playable;
 }
 
-/** ชุดเริ่มต้น = ตัวเลือก A ทุกช่อง (มีให้ตั้งแต่เริ่มเล่น) */
+/** สกิลทั้งหมดของช่องหนึ่งในตัวละครหนึ่ง — หน้าเลือกสกิลใช้รายการนี้ */
+export function skillsOf(char: CharacterId, slot: SkillSlot): SkillDef[] {
+  return SKILLS.filter((s) => s.char === char && s.slot === slot);
+}
+
+/** ชุดเริ่มต้น = ตัวเลือก A ทุกช่อง (มีให้ตั้งแต่เริ่มเล่น) — วนจากรายชื่อตัวละคร ไม่ฝังชื่อ */
 export function defaultSkills(char: CharacterId): Record<SkillSlot, SkillId> {
-  return {
-    passive: skillId(char, 'passive', 'a'),
-    combo: skillId(char, 'combo', 'a'),
-    charge: skillId(char, 'charge', 'a'),
-    ultimate: skillId(char, 'ultimate', 'a')
-  };
+  const out = {} as Record<SkillSlot, SkillId>;
+  for (const slot of SKILL_SLOTS) out[slot] = skillId(char, slot, 'a');
+  return out;
+}
+
+/** ชุดเริ่มต้นของทุกตัวละคร — ข้อมูลผู้เล่นใช้ก้อนนี้ตอนสร้าง/ล้าง */
+export function defaultSkillsAll(): Record<CharacterId, Record<SkillSlot, SkillId>> {
+  const out = {} as Record<CharacterId, Record<SkillSlot, SkillId>>;
+  for (const char of CHARACTER_IDS) out[char] = defaultSkills(char);
+  return out;
 }
 
 // ---------- ค่าชั่วคราวของท่าที่เล่นได้ตอนนี้ ----------
-// อัคนี ฮิต 3 หมุนฟันรอบตัว — halfAngle 180 = โดนทุกทิศ (โค้ดตรวจกรวยเดิมรองรับได้เลย)
+// อัคนี ฮิต 3 หมุนฟันรอบตัว — halfAngle 180 = โดนทุกทิศ
 export const COMBO3_SPIN = {
   damage: 200,
   range: 110,
@@ -110,3 +127,15 @@ export const COMBO3_FAN = {
   color: 0xbff7ff,
   totalMs: 480
 };
+
+// คูลดาวน์ช่องไม้ตาย (วินาทีเป็น ms) — ย้ายมาจาก characters.ts เพื่อให้ตัวเลขสกิลอยู่กองเดียวกัน
+// ค่าเท่าของเดิมทุกประการ ยังไม่ได้จูนใหม่
+export const ULTIMATE_COOLDOWN_MS: Record<CharacterId, number> = {
+  akkhani: 16000,
+  luma: 4500
+};
+
+/** คูลดาวน์ไม้ตายของตัวละคร — ไม่รู้จักตัวละครใหม่ = ใช้ค่ากลาง 12 วินาที (เกมไม่พัง) */
+export function ultimateCooldownOf(char: CharacterId): number {
+  return ULTIMATE_COOLDOWN_MS[char] ?? 12000;
+}

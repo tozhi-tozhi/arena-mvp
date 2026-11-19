@@ -10,7 +10,7 @@ import { PlayerHUD } from '../ui/PlayerHUD';
 import { PlayerShot } from '../entities/PlayerShot';
 import { CHARACTERS, AKKHANI, LUMA, type CharacterDef } from '../data/characters';
 import { loadout } from '../systems/Loadout';
-import { COMBO3_SPIN, COMBO3_FAN, skillId } from '../data/skills';
+import { COMBO3_SPIN, COMBO3_FAN, skillId, findSkill, ultimateCooldownOf } from '../data/skills';
 import { ComboTracker } from '../systems/ComboTracker';
 import { huntSession } from '../systems/HuntSession';
 import { Perks } from '../systems/Perks';
@@ -111,6 +111,8 @@ export class PlayerActor {
   private sweep: Sweep | null = null;
   private thrust: Thrust | null = null;
   private skillReadyAt: number = 0;
+  // คูลดาวน์แยกต่อช่องสกิล — ช่องไม้ตายใช้ก้อนนี้ (ช่องอื่นจะเพิ่มตอนต่อเข้าระบบ)
+  private ultReadyAt: number = 0;
   private shots: PlayerShot[] = [];
 
   private shield: boolean = false;
@@ -453,8 +455,7 @@ heal(n: number): number {
       !isHitStopped
     ) {
       this.cancelCharge();
-      if (this.character.id === 'akkhani') this.akkhaniSkill();
-      else this.lumaDash();
+      this.performUltimate();
     }
 
     const canAct =
@@ -1102,13 +1103,19 @@ private getAimDir(): Phaser.Math.Vector2 {
     this.setPlayerTexture('hero_clay_idle');
   }
 
+  /** ชื่อไม้ตายที่ใส่ไว้จริง — ไม่มีในตารางก็ใช้ชื่อเดิมของตัวละคร */
+  private ultimateName(): string {
+    const d = findSkill(loadout.skillOf('ultimate'));
+    return d ? d.name : this.character.skillName;
+  }
+
   private updateHudTexts(now: number) {
     const remain = Math.max(0, this.skillReadyAt - now);
     if (remain <= 0) {
-      this.skillText.setText(`${skillKeyLabel()} · ${this.character.skillName} · พร้อม`).setColor('#7dff9a');
+      this.skillText.setText(`${skillKeyLabel()} · ${this.ultimateName()} · พร้อม`).setColor('#7dff9a');
     } else {
       this.skillText
-        .setText(`${skillKeyLabel()} · ${this.character.skillName} · ${(remain / 1000).toFixed(1)}s`)
+        .setText(`${skillKeyLabel()} · ${this.ultimateName()} · ${(remain / 1000).toFixed(1)}s`)
         .setColor('#bbbbbb');
     }
 
@@ -1283,6 +1290,24 @@ private getAimDir(): Phaser.Math.Vector2 {
     }
   }
 
+  /** ไม้ตาย = สกิลช่อง Ultimate ที่ใส่ไว้ (ตอนนี้มีเฉพาะตัวเลือก A ของทั้งสองตัวละคร) */
+  private performUltimate() {
+    const id = loadout.skillOf('ultimate');
+    if (this.character.id === 'akkhani') {
+      if (id === skillId('akkhani', 'ultimate', 'a')) {
+        this.akkhaniSkill();
+        return;
+      }
+      this.akkhaniSkill(); // ยังไม่มีท่านี้ในเกม → ใช้ท่าเดิมแทน เกมไม่พัง
+      return;
+    }
+    if (id === skillId('luma', 'ultimate', 'a')) {
+      this.lumaDash(); // ท่าฝนดาวตกยังไม่ทำ — ใช้แดชเดิมเป็นตัวยืนพื้นไปก่อน
+      return;
+    }
+    this.lumaDash();
+  }
+
   private performCharged() {
     if (this.character.id === 'akkhani') this.akkhaniCharged();
     else this.lumaCharged();
@@ -1419,8 +1444,8 @@ private getAimDir(): Phaser.Math.Vector2 {
   private akkhaniSkill() {
     const S = AKKHANI.skill;
     const token = this.beginAction();
-    this.skillReadyAt = this.time.now + this.character.skillCooldownMs;
-
+    this.skillReadyAt = this.time.now + ultimateCooldownOf(this.character.id);
+    this.ultReadyAt = this.skillReadyAt;
     this.isAttacking = true;
     this.isActionLocked = true;
     this.skillInvincible = true;
@@ -1558,8 +1583,9 @@ private getAimDir(): Phaser.Math.Vector2 {
   private lumaDash() {
     const D = LUMA.dash;
     const token = this.beginAction();
-    this.skillReadyAt = this.time.now + this.character.skillCooldownMs;
-    this.isDashing = true;
+this.skillReadyAt = this.time.now + ultimateCooldownOf(this.character.id);
+this.ultReadyAt = this.skillReadyAt;
+this.isDashing = true;
     sfx.dash();
 
     const mv = this.getMoveInput();
