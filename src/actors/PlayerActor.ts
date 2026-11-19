@@ -10,6 +10,8 @@ import { PlayerHUD } from '../ui/PlayerHUD';
 import { PlayerShot } from '../entities/PlayerShot';
 import { CHARACTERS, AKKHANI, LUMA, type CharacterDef } from '../data/characters';
 import { loadout } from '../systems/Loadout';
+import { COMBO3_SPIN, COMBO3_FAN, skillId } from '../data/skills';
+import { ComboTracker } from '../systems/ComboTracker';
 import { huntSession } from '../systems/HuntSession';
 import { Perks } from '../systems/Perks';
 import { charStarEffectNow, type CharStarEffect } from '../systems/Upgrades';
@@ -115,6 +117,9 @@ export class PlayerActor {
   private passiveReadyAt: number = 0;
   private hitCounter: number = 0;
   private lastCountedAction: number = -1;
+  // ตัวนับคอมโบ 3 ฮิต (แยกจากตัวนับพาสซีฟของลูมิที่อยู่ข้างบน)
+  private combo = new ComboTracker();
+  private comboGfx: any;
 
   private facing = new Phaser.Math.Vector2(1, 0);
   private hitStopUntil: number = 0;
@@ -225,6 +230,8 @@ this.playerHP = carriedHP !== null ? Phaser.Math.Clamp(carriedHP, 1, this.maxPla
 
     this.chargeGfx = scene.add.graphics();
     this.chargeGfx.setDepth(DEPTH.PLAYER + 1);
+    this.comboGfx = scene.add.graphics();
+    this.comboGfx.setDepth(DEPTH.PLAYER + 1);
     this.shieldRing = scene.add.circle(x, y, Math.max(28, this.sprite.displayWidth * 0.36));
     this.shieldRing.setStrokeStyle(3, 0x66e0ff);
     this.shieldRing.setDepth(DEPTH.PLAYER + 1);
@@ -497,6 +504,7 @@ heal(n: number): number {
     syncShadow(this.playerShadow, this.sprite, 0, false, this.useClay ? this.sprite.displayHeight / 2 - 6 : 14);
     this.shieldRing.setPosition(this.sprite.x, this.sprite.y);
     this.shieldRing.setVisible(this.shield);
+    this.drawComboPips(now);
     this.updateHudTexts(now);
   }
 
@@ -610,7 +618,7 @@ heal(n: number): number {
   private fireShot(
     dir: Phaser.Math.Vector2,
     cfg: { speed: number; range: number; radius: number; color: number; aoeRadius: number },
-    kind: 'light' | 'charge',
+    kind: 'light' | 'charge' | 'combo',
     actionId: number
   ) {
     const shot = new PlayerShot(
@@ -634,7 +642,7 @@ heal(n: number): number {
   }
 
   private onShotDetonate(
-    kind: 'light' | 'charge',
+    kind: 'light' | 'charge' | 'combo',
     actionId: number,
     x: number,
     y: number,
@@ -679,7 +687,7 @@ heal(n: number): number {
         damage = far ? LUMA.light.farDamage : LUMA.light.nearDamage;
         if (far) showDamage(this.scene, t.x, t.y - t.height / 2 - 24, 'FAR!', '#9de7ff', 500);
       } else {
-        damage = LUMA.charged.damage;
+      damage = kind === 'combo' ? COMBO3_FAN.damage : LUMA.charged.damage;
       }
       this.hitTarget(t, damage, actionId);
     }
@@ -758,6 +766,8 @@ heal(n: number): number {
 
   private die() {
     this._isDead = true;
+    this.combo.reset();
+    this.comboGfx.clear();
     this.cancelCharge();
     this.sprite.setAlpha(1);
     this.shieldRing.setVisible(false);
@@ -1153,8 +1163,124 @@ private getAimDir(): Phaser.Math.Vector2 {
   }
 
   private performLight() {
+    const hit = this.combo.nextHit(this.time.now);
+    if (hit === 3) {
+      this.performComboFinisher();
+      return;
+    }
     if (this.character.id === 'akkhani') this.akkhaniLight();
     else this.lumaLight();
+  }
+
+  /** ฮิต 3 ของคอมโบ — ผลมาจากสกิลช่องคอมโบที่ใส่ไว้ (ตอนนี้มีเฉพาะตัวเลือก A) */
+  private performComboFinisher() {
+    const id = loadout.skillOf('combo');
+    if (this.character.id === 'akkhani') {
+      if (id === skillId('akkhani', 'combo', 'a')) {
+        this.akkhaniComboSpin();
+        return;
+      }
+      this.akkhaniLight(); // ยังไม่มีท่านี้ในเกม → ใช้ฟันธรรมดาแทน เกมไม่พัง
+      return;
+    }
+    if (id === skillId('luma', 'combo', 'a')) {
+      this.lumaComboFan();
+      return;
+    }
+    this.lumaLight();
+  }
+
+  /** อัคนี ฮิต 3 — หมุนฟันรอบตัว โดนทุกทิศ (ภาพชั่วคราว: ใช้คลิป skill เดิม จนกว่าจะมี combo3_spin) */
+  private akkhaniComboSpin() {
+    const S = COMBO3_SPIN;
+    const token = this.beginAction();
+    const now = this.time.now;
+    const dir = this.getAttackDir(AKKHANI.light.assistRange, AKKHANI.light.assistAngle);
+    this.facing.copy(dir);
+    if (Math.abs(dir.x) > 0.3) this.sprite.setFlipX(dir.x < 0);
+    this.isAttacking = true;
+    this.isActionLocked = true; // หมุนอยู่กับที่
+    this.sprite.setVelocity(0);
+    if (this.useAkk) this.playClip('skill', S.durationMs / AKK_FRAMES.skill, false);
+    else this.setPlayerTexture('hero_clay_attack');
+    sfx.swing();
+    spawnArcSlash(
+      this.scene,
+      this.sprite.x,
+      this.sprite.y,
+      Math.atan2(dir.y, dir.x),
+      S.range,
+      S.halfAngle,
+      0xff8a5a,
+      7,
+      240
+    );
+    spawnPixelFx(this.scene, 'spin-slash', {
+      x: this.sprite.x,
+      y: this.feetY(),
+      scale: 2,
+      depth: DEPTH.SLASH + 1
+    });
+    this.cam.shake(110, 0.005);
+    this.sweep = {
+      dir,
+      range: S.range,
+      halfAngle: S.halfAngle,
+      damage: S.damage,
+      until: now + S.activeMs,
+      handled: new Set<CombatTarget>(),
+      actionId: ++this.actionSeq
+    };
+    this.time.delayedCall(S.durationMs, () => {
+      if (token !== this.actionToken) return;
+      this.isAttacking = false;
+      this.isActionLocked = false;
+      this.setPlayerTexture('hero_clay_idle');
+    });
+  }
+
+  /** ลูมิ ฮิต 3 — ยิงกระสุน 3 ลูกกระจายเป็นพัด (นับพาสซีฟเป็น 1 ครั้ง เพราะใช้รหัสแอ็กชันเดียว) */
+  private lumaComboFan() {
+    const F = COMBO3_FAN;
+    const token = this.beginAction();
+    const dir = this.getAttackDir(LUMA.light.assistRange, LUMA.light.assistAngle);
+    if (Math.abs(dir.x) > 0.3) this.sprite.setFlipX(dir.x < 0);
+    this.facing.copy(dir);
+    const actionId = ++this.actionSeq;
+    this.isAttacking = true;
+    this.setPlayerTexture('hero_clay_attack');
+    sfx.swing();
+    this.muzzleFx(dir, F.color);
+    const baseAngle = Math.atan2(dir.y, dir.x);
+    for (let i = 0; i < F.count; i++) {
+      const offset = Phaser.Math.DegToRad((i - (F.count - 1) / 2) * F.spreadDeg);
+      const d = new Phaser.Math.Vector2(Math.cos(baseAngle + offset), Math.sin(baseAngle + offset));
+      this.fireShot(d, F, 'combo', actionId);
+    }
+    this.time.delayedCall(F.totalMs, () => {
+      if (token !== this.actionToken) return;
+      this.isAttacking = false;
+      this.setPlayerTexture('hero_clay_idle');
+    });
+  }
+
+  /** จุด 3 จุดเหนือหัว — บอกว่าตีไปถึงฮิตไหนแล้ว (จุดทอง = ฮิต 3 คือท่าคอมโบ) */
+  private drawComboPips(now: number) {
+    const g = this.comboGfx;
+    g.clear();
+    const done = this.combo.progress(now);
+    if (done <= 0) return;
+    const y = this.sprite.y - this.sprite.displayHeight / 2 - 12;
+    const gap = 9;
+    const x0 = this.sprite.x - gap;
+    for (let i = 0; i < 3; i++) {
+      const filled = i < done;
+      const color = i === 2 ? 0xffd166 : 0xffffff;
+      g.fillStyle(0x000000, 0.5);
+      g.fillCircle(x0 + i * gap, y, 4);
+      g.fillStyle(color, filled ? 0.95 : 0.22);
+      g.fillCircle(x0 + i * gap, y, 2.6);
+    }
   }
 
   private performCharged() {
