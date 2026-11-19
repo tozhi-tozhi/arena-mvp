@@ -2,7 +2,8 @@
 // ฟังก์ชันล้วน (ไม่แตะ Phaser) — seed เดียวกัน ได้แอเรียเดียวกัน ทดสอบง่าย
 import {
   TILE_SIZE,
-  AREA_SIZES,
+  pickAreaSize,
+  placementScale,
   TILE_KIND_IDS,
   TILE_KINDS,
   TILE_CLUSTER_CHANCE,
@@ -80,7 +81,7 @@ function edgePoint(side: Side, inset: number, t: number, w: number, h: number): 
 
 export function generateArea(seed: number): AreaLayout {
   const rng = makeRng(seed);
-  const size = AREA_SIZES[Math.floor(rng() * AREA_SIZES.length)];
+  const size = pickAreaSize(rng);
   const { cols, rows } = size;
   const width = cols * TILE_SIZE;
   const height = rows * TILE_SIZE;
@@ -107,7 +108,7 @@ export function generateArea(seed: number): AreaLayout {
   const spawn = edgePoint(spawnSide, SPAWN_INSET, alongT, width, height);
   const returnGate = edgePoint(spawnSide, GATE_INSET, alongT, width, height);
   const exitGate = edgePoint(OPPOSITE[spawnSide], GATE_INSET, 0.25 + rng() * 0.5, width, height);
-  const arena = { x: width / 2, y: height / 2, r: CENTER_CLEAR_RADIUS };
+  const arena = { x: width / 2, y: height / 2, r: CENTER_CLEAR_RADIUS * placementScale(width, height) };
 
   // ---------- ของตกแต่งพื้น (ยังไม่ชน/ไม่บัง — แค่ให้เห็นการเคลื่อนที่) ----------
   const keepClear: (Point & { r: number })[] = [

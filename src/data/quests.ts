@@ -48,5 +48,5 @@ export const SEAL = {
   rewardCount: 2,
   rewardMinOrder: 2,
   pityCount: 1,
-  trapDamage: 1
+  trapDamage: 100
 };

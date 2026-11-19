@@ -1,4 +1,5 @@
 // ตัวละครผู้เล่น — แก้ตัวเลขสมดุลที่นี่ที่เดียว
+// สเกลเลือด/ดาเมจ = หลักร้อย (1 หน่วยเดิม = 100) เพื่อจูนละเอียดทีละ 10
 export type CharacterId = 'akkhani' | 'luma';
 
 export interface CharacterDef {
@@ -27,7 +28,7 @@ export const CHARACTERS: Record<CharacterId, CharacterDef> = {
       'คลิกขวา — อมตะ แล้วฟันใหญ่ + ฟื้นเลือด',
       'พาสซีฟ — โดนตีแล้วได้โล่ 1 ฮิต'
     ],
-    maxHP: 6,
+    maxHP: 600,
     speed: 150,
     scale: 1.1,
     tint: 0xff8a7a,
@@ -44,7 +45,7 @@ export const CHARACTERS: Record<CharacterId, CharacterDef> = {
       'คลิกขวา — แดช (ไม่อมตะ)',
       'พาสซีฟ — โจมตีโดนครบ 8 ครั้ง รีเซ็ตแดช'
     ],
-    maxHP: 4,
+    maxHP: 400,
     speed: 175,
     scale: 0.8,
     tint: 0xbfeaff,
@@ -56,7 +57,7 @@ export const CHARACTERS: Record<CharacterId, CharacterDef> = {
 // ---------- ตัวเลขท่าของอัคนี ----------
 export const AKKHANI = {
   light: {
-    damage: 1,
+    damage: 100,
     range: 95,
     halfAngle: 60,     // ครึ่งมุมของกรวยฟัน (องศา)
     activeMs: 140,     // ช่วงที่ดาบ "โดน" ได้
@@ -68,14 +69,14 @@ export const AKKHANI = {
   },
   charged: {
     holdMs: 400,
-    sweepDamage: 1,
+    sweepDamage: 100,
     sweepRange: 105,
     sweepHalfAngle: 65,
     sweepActiveMs: 160,
     thrustDelayMs: 200,
     thrustMs: 240,
     thrustSpeed: 420,
-    thrustDamage: 2,
+    thrustDamage: 200,
     totalMs: 720,
     assistRange: 220,
     assistAngle: 75
@@ -84,8 +85,8 @@ export const AKKHANI = {
     windupMs: 600,     // ช่วงอมตะ
     range: 170,
     halfAngle: 100,
-    damage: 3,
-    heal: 1,           // ฟื้นเลือดเมื่อฟันโดนบอส
+    damage: 300,
+    heal: 100,         // ค่าอ้างอิง — ของจริงอ่านจากดาวตัวละครใน Upgrades.ts
     activeMs: 220,
     recoverMs: 500,    // ช่วงเปิดหลังฟัน (ไม่อมตะแล้ว)
     assistRange: 260,
@@ -104,8 +105,8 @@ export const LUMA = {
     range: 320,
     radius: 6,
     aoeRadius: 38,
-    nearDamage: 1,     // ระเบิดใกล้
-    farDamage: 2,      // ระเบิดไกล (ยิงจากระยะไกล = แรงกว่า)
+    nearDamage: 100,   // ระเบิดใกล้
+    farDamage: 200,    // ระเบิดไกล (ยิงจากระยะไกล = แรงกว่า)
     farRatio: 0.6,     // เดินทางเกินกี่ % ของระยะ ถึงนับว่า "ไกล"
     color: 0xbff7ff,
     assistRange: 420,
@@ -119,7 +120,7 @@ export const LUMA = {
     range: 170,
     radius: 5,
     aoeRadius: 14,
-    damage: 1,
+    damage: 100,
     totalMs: 500,
     color: 0xffc8f5,
     assistRange: 240,

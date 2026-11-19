@@ -5,11 +5,31 @@
 export const TILE_SIZE = 400;
 
 /** ขนาดแอเรียที่สุ่มได้ (จำนวนแผ่น) — 8x6=48 · 10x8=80 · 9x9=81 */
-export const AREA_SIZES: { cols: number; rows: number }[] = [
-  { cols: 8, rows: 6 },
-  { cols: 10, rows: 8 },
-  { cols: 9, rows: 9 }
+// ขนาดแอเรียที่สุ่มได้ — weight มาก = เจอบ่อย (แมพเล็กเจอบ่อย แมพใหญ่นาน ๆ ครั้ง)
+export const AREA_SIZES: { cols: number; rows: number; weight: number }[] = [
+  { cols: 5, rows: 4, weight: 3 },   // 20 แผ่น · 2000x1600 (เล็ก)
+  { cols: 6, rows: 5, weight: 3 },   // 30 แผ่น · 2400x2000
+  { cols: 7, rows: 6, weight: 2 },   // 42 แผ่น · 2800x2400
+  { cols: 9, rows: 7, weight: 1 }    // 63 แผ่น · 3600x2800 (ใหญ่)
 ];
+
+/** สุ่มขนาดตามน้ำหนัก */
+export function pickAreaSize(rng: () => number): { cols: number; rows: number } {
+  const total = AREA_SIZES.reduce((s, a) => s + a.weight, 0);
+  let roll = rng() * total;
+  for (const a of AREA_SIZES) {
+    roll -= a.weight;
+    if (roll < 0) return { cols: a.cols, rows: a.rows };
+  }
+  const last = AREA_SIZES[AREA_SIZES.length - 1];
+  return { cols: last.cols, rows: last.rows };
+}
+
+/** ตัวคูณระยะการวางของ — แมพเล็กต้องผ่อนระยะ ไม่งั้นวางบอส/เสาไม่ลง (0.55-1) */
+export function placementScale(width: number, height: number): number {
+  const k = Math.min(width / 3200, height / 2400);
+  return Math.max(0.55, Math.min(1, k));
+}
 
 export type TileKind = 'dirt' | 'moss' | 'gravel' | 'sand' | 'brush';
 

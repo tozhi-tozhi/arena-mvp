@@ -615,7 +615,7 @@ export class PhasamaBoss extends BossBase {
           const d = Phaser.Math.Distance.Between(x, y, t.x, t.y);
           if (d <= this.radius + 14) {
             this.hitDone = true;
-            this.hooks.onHitTarget(t, 1, x, y);
+            this.hooks.onHitTarget(t, S.dashDamage, x, y);
             break;
           }
         }

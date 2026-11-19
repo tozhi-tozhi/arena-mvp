@@ -152,7 +152,7 @@ export function charmEffectAt(id: string, lv: number): CharmEffect {
   const L = clampLevel(lv) - 1;
   return {
     healChance: Math.min(0.75, 0.30 + L * 0.05),
-    healAmount: 1 + Math.floor(L / 5),
+    healAmount: 100 + Math.floor(L / 5) * 100,
     healMaxPerHunt: 2 + Math.floor(L / 3),
     streakHitsNeeded: Math.max(2, 5 - Math.floor(L / 3)),
     streakMultiplier: 2 + Math.floor(L / 4)
@@ -166,7 +166,7 @@ export function petEffectAt(id: string, lv: number): PetEffect {
     swiftDurationMs: 3000 + L * 250,
     swiftBonusPct: 40 + L * 3,
     mortarIntervalMs: Math.max(3500, 8000 - L * 500),
-    mortarDamage: 2 + Math.floor(L / 3)
+    mortarDamage: 200 + Math.floor(L / 3) * 100
   };
 }
 
@@ -278,7 +278,7 @@ export function charStarEffectAt(id: string, stars: number): CharStarEffect {
   return {
     thrustSpeedMult: s >= 1 ? 1.35 : 1,
     shieldBlocksBurn: s >= 2,
-    skillHeal: s >= 3 ? 2 : 1,
+    skillHeal: s >= 3 ? 200 : 100,
     chargedCountBonus: s >= 1 ? 2 : 0,
     dashDistMult: s >= 2 ? 1.4 : 1,
     passiveHitsNeeded: s >= 3 ? 6 : 8

@@ -33,6 +33,12 @@ const AUTO_MINION_RANGE = 380; // ไม่มีบอสให้เล็ง 
 const AUTO_LOCK_TOL = 90; // เป้าที่ล็อกไว้ขยับไม่เกินนี้ต่อเฟรม = ตัวเดิม
 const AUTO_SWITCH_RATIO = 1.25; // เป้าใหม่ต้องใกล้กว่าเดิมเกิน 25% ถึงจะสลับ (กันเป้ากระตุก)
 
+// ความรู้สึกหนักตอนตีโดน (ms) — ต้องไม่ขึ้นกับขนาดตัวเลขดาเมจ
+// เดิมคิดจากดาเมจตรง ๆ พอขยายสเกลเลือดเป็นหลักร้อยแล้วหยุดเดินเป็นวินาที
+const HIT_STOP_BASE_MS = 40;   // พื้นฐานทุกฮิต
+const HIT_STOP_PER_100 = 12;   // เพิ่มตามดาเมจ ทุก 100 หน่วย = 12 ms
+const HIT_STOP_MAX_MS = 90;    // เพดาน — เกินนี้คือแข็งทื่อ ไม่ใช่หนัก
+
 // ท่าฟันกวาด — โดนเป้าละ 1 ครั้งต่อท่า (handled เก็บเป้าที่ตรวจไปแล้ว)
 interface Sweep {
   dir: Phaser.Math.Vector2;
@@ -596,7 +602,8 @@ heal(n: number): number {
     target.takeHit(damage);
     this.host.onTargetDamaged?.(target);
     this.cam.shake(120, 0.006 + damage * 0.002);
-    this.hitStop(40 + damage * 12);
+    const weight = Math.min(HIT_STOP_MAX_MS, HIT_STOP_BASE_MS + (damage / 100) * HIT_STOP_PER_100);
+    this.hitStop(weight);
     if (actionId >= 0) this.countAttackHit(actionId);
   }
 

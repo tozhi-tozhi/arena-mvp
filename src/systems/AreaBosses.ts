@@ -7,6 +7,7 @@ import type { BossHooks } from '../entities/BossBase';
 import type { BossId } from '../data/bosses';
 import type { AreaLayout } from './AreaGenerator';
 import { SPAWNABLE_BOSSES } from '../data/bosses';
+import { placementScale } from '../data/world';
 
 const MIN_DIST_FROM_SPAWN = 1000;
 const MIN_DIST_BETWEEN_BOSSES = 800;
@@ -34,17 +35,26 @@ export function spawnAreaBosses(
   random: () => number = Math.random
 ): SpawnedBoss[] {
   const spawned: SpawnedBoss[] = [];
+
+    // แมพเล็กผ่อนระยะวางลงตามสัดส่วน — กันวางบอสไม่ลงแล้วได้แอเรียว่าง
+  const k = placementScale(layout.width, layout.height);
+  const minFromSpawn = MIN_DIST_FROM_SPAWN * k;
+  const minBetween = MIN_DIST_BETWEEN_BOSSES * k;
+  const margin = EDGE_MARGIN * k;
+
   for (let i = 0; i < bossCount; i++) {
     let placed = false;
     for (let attempt = 0; attempt < MAX_PLACEMENT_ATTEMPTS && !placed; attempt++) {
-      const x = EDGE_MARGIN + random() * (layout.width - EDGE_MARGIN * 2);
-      const y = EDGE_MARGIN + random() * (layout.height - EDGE_MARGIN * 2);
+      const x = margin + random() * (layout.width - margin * 2);
+      const y = margin + random() * (layout.height - margin * 2);
+
       // กฎ 1: ห่างจุดเกิด
-      if (Math.hypot(x - layout.spawn.x, y - layout.spawn.y) < MIN_DIST_FROM_SPAWN) continue;
+      if (Math.hypot(x - layout.spawn.x, y - layout.spawn.y) < minFromSpawn) continue;
+
       // กฎ 2: ห่างบอสตัวอื่น
       let tooClose = false;
       for (const other of spawned) {
-        if (Math.hypot(x - other.x, y - other.y) < MIN_DIST_BETWEEN_BOSSES) {
+        if (Math.hypot(x - other.x, y - other.y) < minBetween) {
           tooClose = true;
           break;
         }

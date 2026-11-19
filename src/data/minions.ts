@@ -4,7 +4,7 @@
 export const MINION = {
   name: 'ตัวแทะกระดาษ',
   count: [4, 5] as [number, number], // จำนวนต่อแอเรีย (สุ่ม)
-  hp: 3,                  // ฟันธรรมดา 3 ที / ชาร์จทีเดียว / ลูมิไกล 2 ที
+  hp: 300,                // ฟันธรรมดา 3 ที / ชาร์จทีเดียว / ลูมิไกล 2 ที
   displayWidth: 46,
   color: 0xe8e0c8,
 
@@ -21,7 +21,7 @@ export const MINION = {
   lungeSpeed: 250,
   lungeMs: 220,
   hitRadius: 46,
-  damage: 1,
+  damage: 80,
   recoverMs: 750,         // พุ่งเสร็จนิ่งเปิดให้ตีฟรี
 
   // การวางจุดเกิด

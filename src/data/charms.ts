@@ -13,7 +13,7 @@ export const CHARMS: Record<CharmId, CharmDef> = {
   heal: {
     id: 'heal',
     name: 'ตราต่อชีวิต',
-    desc: 'โจมตีโดน 30% ฟื้นเลือด 1 (สูงสุด 2 ครั้งต่อการล่า)'
+    desc: 'โจมตีโดน 30% ฟื้นเลือด 100 (สูงสุด 2 ครั้งต่อการล่า)'
   },
   streak: {
     id: 'streak',
@@ -25,7 +25,7 @@ export const CHARMS: Record<CharmId, CharmDef> = {
 // ตัวเลขสมดุล
 export const CHARM_HEAL = {
   chance: 0.3,      // โอกาสต่อ "การโจมตี 1 ครั้งที่โดน"
-  amount: 1,
+  amount: 100,
   maxPerHunt: 2
 };
 

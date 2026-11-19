@@ -146,7 +146,7 @@ export class WorldScene extends Phaser.Scene {
 
 // P3d: โทนสีตามเขต (Depth Tint) — ใช้ Camera ColorMatrix (Phaser 4)
 const cam = this.cameras.main;
-if (this.areaIndex <= 2) {
+    if (this.areaIndex <= 10) {
   // เขตตื้น: อบอุ่น (เพิ่มแดง/เขียว ลดน้ำเงินเล็กน้อย)
   const cm = cam.filters.internal.addColorMatrix();
   cm.colorMatrix.set([
@@ -155,7 +155,7 @@ if (this.areaIndex <= 2) {
     0, 0, 0.96, 0, 0,
     0, 0, 0, 1, 0
   ]);
-} else if (this.areaIndex >= 6) {
+    } else if (this.areaIndex >= 21) {
   // เขตลึก: เย็น (ลดแดง เพิ่มน้ำเงิน)
   const cm = cam.filters.internal.addColorMatrix();
   cm.colorMatrix.set([

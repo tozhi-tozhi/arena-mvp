@@ -1,6 +1,6 @@
 // src/data/depth.ts
-// ระดับความลึกของแอเรีย — ยิ่งลึก บอสยิ่งอึด ตีแรง ไฟสะสมไว ของดรอปดีขึ้น
-// เขตตื้นจูนสำหรับผู้เล่นล่าคนเดียว: สู้สั้น โดนเบา ติดไฟช้า
+// ระดับความลึกของแอเรีย — ก้าวกระโดดทุก 10 แอเรีย (1-10 / 11-20 / 21-30)
+// เขตตื้น = ค่าฐาน (ตัวคูณเลือด 1.0) จูนสำหรับผู้เล่นล่าคนเดียว
 // ตัวเลขทั้งหมดอยู่ที่นี่ที่เดียว ห้ามฝังใน Scene
 export interface DepthTier {
   minArea: number;
@@ -10,7 +10,7 @@ export interface DepthTier {
   rareBonus: number;
   /** ตัวคูณเลือดบอส (1 = เลือดฐานใน bosses.ts) */
   hpMult: number;
-  /** ตัวคูณดาเมจที่บอสตีผู้เล่น (ปัดเศษnearest ขั้นต่ำ 1) */
+  /** ตัวคูณดาเมจที่บอสตีผู้เล่น (ปัดเศษใกล้ที่สุด ขั้นต่ำ 1) */
   dmgMult: number;
   /** ตัวคูณความเร็วสะสมไฟไหม้ (ต่ำกว่า 1 = ติดไฟช้าลง — ใช้เฉพาะ The World) */
   burnMult: number;
@@ -20,10 +20,12 @@ export interface DepthTier {
 }
 
 export const DEPTH_TIERS: DepthTier[] = [
-  // เขตตื้น: ภัสมะ 120 / มายา 105 · ทุกท่าตี 1 · ไฟสะสมครึ่ง速 → Solo เอาชนะได้จริง
-  { minArea: 1, bossMin: 0, bossMax: 1, rareBonus: 1.0, hpMult: 1.5, dmgMult: 0.6, burnMult: 0.5, dropCount: 4, label: 'เขตตื้น' },
-  { minArea: 3, bossMin: 0, bossMax: 2, rareBonus: 1.5, hpMult: 2.5, dmgMult: 1.0, burnMult: 0.8, dropCount: 5, label: 'เขตกลาง' },
-  { minArea: 6, bossMin: 1, bossMax: 2, rareBonus: 2.5, hpMult: 4.0, dmgMult: 1.6, burnMult: 1.0, dropCount: 6, label: 'เขตลึก' }
+  // เขตตื้น 1-10: ภัสมะ 3000 / มายา 2600 · อัคนีฟันเบา 100 = 30 ที
+  { minArea: 1,  bossMin: 0, bossMax: 1, rareBonus: 1.0, hpMult: 1.0, dmgMult: 0.5, burnMult: 0.5, dropCount: 4, label: 'เขตตื้น' },
+  // เขตกลาง 11-20: ก้าวแรก — เลือด x1.8 ดาเมจ x0.8
+  { minArea: 11, bossMin: 0, bossMax: 2, rareBonus: 1.5, hpMult: 1.8, dmgMult: 0.8, burnMult: 0.8, dropCount: 5, label: 'เขตกลาง' },
+  // เขตลึก 21-30: เลือด x3.0 ดาเมจ x1.2 ไฟเต็มความเร็ว
+  { minArea: 21, bossMin: 1, bossMax: 2, rareBonus: 2.5, hpMult: 3.0, dmgMult: 1.2, burnMult: 1.0, dropCount: 6, label: 'เขตลึก' }
 ];
 
 // หลังเขตลึก: ทุก 3 แอเรีย เลือด/ดาเมจ/เรท ไต่ต่อ แต่มีเพดานกันหลุดสมดุล

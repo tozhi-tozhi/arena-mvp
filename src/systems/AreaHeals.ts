@@ -4,6 +4,7 @@ import Phaser from 'phaser';
 import type { AreaLayout, Point } from './AreaGenerator';
 import { HealShrine } from '../entities/HealShrine';
 import { HEAL_SHRINE } from '../data/healing';
+import { placementScale } from '../data/world';
 
 const MAX_ATTEMPTS = 200;
 
@@ -14,15 +15,20 @@ export function spawnHealShrines(
 ): HealShrine[] {
   const count = HEAL_SHRINE.count[0] + Math.floor(random() * (HEAL_SHRINE.count[1] - HEAL_SHRINE.count[0] + 1));
   const out: HealShrine[] = [];
+    // แมพเล็กผ่อนระยะวางลง เหตุผลเดียวกับบอส
+  const k = placementScale(layout.width, layout.height);
+  const minFromSpawn = HEAL_SHRINE.minFromSpawn * k;
+  const minBetween = HEAL_SHRINE.minBetween * k;
+  const minFromGate = HEAL_SHRINE.minFromGate * k;
   for (let i = 0; i < count; i++) {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      const m = HEAL_SHRINE.edgeMargin;
+      const m = HEAL_SHRINE.edgeMargin * k;
       const x = m + random() * (layout.width - m * 2);
       const y = m + random() * (layout.height - m * 2);
-      if (Math.hypot(x - layout.spawn.x, y - layout.spawn.y) < HEAL_SHRINE.minFromSpawn) continue;
-      if (Math.hypot(x - layout.exitGate.x, y - layout.exitGate.y) < HEAL_SHRINE.minFromGate) continue;
-      if (Math.hypot(x - layout.returnGate.x, y - layout.returnGate.y) < HEAL_SHRINE.minFromGate) continue;
-      if (out.some((s) => Math.hypot(x - s.x, y - s.y) < HEAL_SHRINE.minBetween)) continue;
+      if (Math.hypot(x - layout.spawn.x, y - layout.spawn.y) < minFromSpawn) continue;
+      if (Math.hypot(x - layout.exitGate.x, y - layout.exitGate.y) < minFromGate) continue;
+      if (Math.hypot(x - layout.returnGate.x, y - layout.returnGate.y) < minFromGate) continue;
+      if (out.some((s) => Math.hypot(x - s.x, y - s.y) < minBetween)) continue;
       out.push(new HealShrine(scene, x, y));
       break;
     }

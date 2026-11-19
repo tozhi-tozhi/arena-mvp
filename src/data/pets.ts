@@ -20,7 +20,7 @@ export const PETS: Record<PetId, PetDef> = {
   mortar: {
     id: 'mortar',
     name: 'ครกจิ๋ว',
-    desc: 'ทุก 8 วิ ยิงกระสุนตกใส่ที่บอสยืน (ดาเมจ 2)',
+    desc: 'ทุก 8 วิ ยิงกระสุนตกใส่ที่บอสยืน (ดาเมจ 200)',
     color: 0xff9a5a
   }
 };
@@ -35,6 +35,6 @@ export const PET_SPEED = {
 export const PET_MORTAR = {
   intervalMs: 8000,
   radius: 70,
-  damage: 2,
+  damage: 200,
   flightMs: 1200 // เวลาจากยิงถึงตก (วงเตือนที่พื้นเต็มพอดี)
 };
