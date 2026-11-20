@@ -73,6 +73,7 @@ export class LoadoutScene extends Phaser.Scene {
     kb.on('keydown-TWO', () => this.pickCharacter(CHARACTER_IDS[1]));
     kb.on('keydown-C', () => this.cycleCharm());
     kb.on('keydown-P', () => this.cyclePet());
+    kb.on('keydown-K', () => this.openSkills());
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       kb.removeAllListeners();
       this.objs.forEach((o) => this.tweens.killTweensOf(o));
@@ -115,6 +116,15 @@ export class LoadoutScene extends Phaser.Scene {
     sfx.pickup();
     this.flash(id ? `เรียก ${PETS[id].name} มาติดตาม` : 'ส่งสัตว์เลี้ยงกลับแล้ว');
     this.render();
+  }
+
+  // ---------- ไปหน้าเลือกสกิล ----------
+  private openSkills() {
+    if (this.leaving) return;
+    this.leaving = true;
+    saveGame();
+    sfx.open();
+    this.scene.start('SkillScene');
   }
 
   private cycleCharm() {
@@ -178,14 +188,15 @@ export class LoadoutScene extends Phaser.Scene {
     this.objs = [];
 
     this.text(GAME_WIDTH / 2, L.titleY, 'ห้องแต่งตัว', 26, '#ffd54a', 0.5, true);
-    this.text(GAME_WIDTH / 2, L.hintY, 'คลิกเลือกได้เลย · 1/2 ตัวละคร · C เครื่องราง · P สัตว์เลี้ยง · E หรือ ESC กลับฐาน', 11, '#a89f8c');
+    this.text(GAME_WIDTH / 2, L.hintY, 'คลิกเลือกได้เลย · 1/2 ตัวละคร · K สกิล · C เครื่องราง · P สัตว์เลี้ยง · E หรือ ESC กลับฐาน', 11, '#a89f8c');
 
     this.renderStage();
     this.renderCharacters();
     this.renderCharm();
     this.renderPet();
 
-    this.button(GAME_WIDTH / 2, L.backY, 220, 36, 'กลับฐาน (E)', () => this.backToBase(), 0x7dff9b);
+    this.button(GAME_WIDTH / 2 - 120, L.backY, 200, 36, 'เลือกสกิล (K)', () => this.openSkills(), 0xc084fc);
+    this.button(GAME_WIDTH / 2 + 120, L.backY, 200, 36, 'กลับฐาน (E)', () => this.backToBase(), 0x7dff9b);
   }
 
   // ---------- เวทีกระจก: เห็นตัวละคร + ของที่ใส่จริง ----------
