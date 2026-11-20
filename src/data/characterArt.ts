@@ -33,29 +33,31 @@ export const CHARACTER_ART: Record<CharacterId, CharacterArt> = {
     prefix: 'char_akkhani',
     scale: 0.43,
     clips: {
+      // ---------- ท่าพื้นฐาน ----------
       idle:   { frames: 1, loop: true, frameMs: 1000 },
       walk:   { frames: 4, loop: true, frameMs: 120 },
+      knock:  { frames: 8, frameMs: 130 },   // ท่าตาย (ยังไม่มีท่าถูกโจมตี/ชะงัก/กระเด็นแยก)
+
+      // ---------- คลิปเก่า เก็บไว้เป็นสำรองตอนคลิปใหม่ไฟล์ไม่ครบ ----------
       attack: { frames: 5, frameMs: 60 },
       charge: { frames: 7, frameMs: 40 },
       thrust: { frames: 8, frameMs: 30 },
       skill:  { frames: 8, frameMs: 60 },
-      knock:  { frames: 8, frameMs: 130 },
 
-      // ---------- ท่าใหม่ตามเอกสารออกแบบ (ยังไม่มีไฟล์ — ใส่ไว้ให้พร้อม) ----------
-      // พอผลิตภาพครบตามจำนวนเฟรม: แก้เลข frames ให้ตรง + ลบ planned: true ออก เกมหยิบไปใช้เองทันที
-      combo1:         { frames: 5, frameMs: 60, fallback: 'attack', planned: true },
-      combo2:         { frames: 5, frameMs: 60, fallback: 'attack', planned: true },
-      combo3_spin:    { frames: 6, frameMs: 70, fallback: 'skill', planned: true },
-      combo3_wave:    { frames: 6, frameMs: 70, fallback: 'attack', planned: true },
-      combo3_triangle:{ frames: 8, frameMs: 60, fallback: 'thrust', planned: true },
-      barrage:        { frames: 8, frameMs: 50, fallback: 'attack', planned: true },
-      charge_hold:    { frames: 4, loop: true, frameMs: 90, fallback: 'charge', planned: true },
-      charge_spin:    { frames: 6, frameMs: 60, fallback: 'skill', planned: true },
-      charge_rush:    { frames: 5, frameMs: 50, fallback: 'thrust', planned: true },
-      charge_heal:    { frames: 6, frameMs: 60, fallback: 'thrust', planned: true },
-      ulti_sweep:     { frames: 8, frameMs: 70, fallback: 'skill', planned: true },
-      ulti_slam:      { frames: 8, frameMs: 70, fallback: 'skill', planned: true },
-      ulti_star:      { frames: 9, frameMs: 80, fallback: 'skill', planned: true }
+      // ---------- ชุดท่าใหม่ ผลิตครบแล้ว ----------
+      combo1:         { frames: 3, frameMs: 60, fallback: 'attack' },
+      combo2:         { frames: 4, frameMs: 60, fallback: 'attack' },
+      combo3_spin:    { frames: 3, frameMs: 70, fallback: 'skill' },
+      combo3_wave:    { frames: 6, frameMs: 70, fallback: 'attack' },
+      combo3_triangle:{ frames: 8, frameMs: 60, fallback: 'thrust' },
+      barrage:        { frames: 8, frameMs: 50, fallback: 'attack' },
+      charge_hold:    { frames: 7, loop: true, frameMs: 90, fallback: 'charge' },
+      charge_spin:    { frames: 8, frameMs: 60, fallback: 'skill' },
+      charge_rush:    { frames: 8, frameMs: 50, fallback: 'thrust' },
+      charge_heal:    { frames: 8, frameMs: 60, fallback: 'thrust' },
+      ulti_sweep:     { frames: 8, frameMs: 70, fallback: 'skill' },
+      ulti_slam:      { frames: 8, frameMs: 70, fallback: 'skill' },
+      ulti_star:      { frames: 8, frameMs: 80, fallback: 'skill' }
     }
   },
 
@@ -64,7 +66,6 @@ export const CHARACTER_ART: Record<CharacterId, CharacterArt> = {
     prefix: 'char_luma',
     scale: 0.68,
     // ยังไม่ผลิตภาพจริง — ปล่อยว่างไว้ ผู้เล่นจะใช้ภาพดินน้ำมันชั่วคราวเหมือนเดิม
-    // พอมีภาพ: ใส่ idle/walk/attack ก่อน แล้วค่อยเติมท่าอื่นตามเอกสารของลูมิ
     clips: {}
   }
 };

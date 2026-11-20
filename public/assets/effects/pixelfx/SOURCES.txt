@@ -10,3 +10,12 @@ Integration: Sprite Sheet (exported with: node tools/render.mjs <id> --no-actor 
 
 Date added: 2026-11-13
 License: MIT (see LICENSE and NOTICE.md in the PixelFX repository). Re-check before commercial release.
+--- เพิ่มรอบ Session 12 (2026-11-20) ---
+4) impacts/hit-spark    -> impacts/hit-spark.png     (ประกายตีโดนศัตรู)
+5) impacts/crit-hit     -> impacts/crit-hit.png      (คริติคอล)
+6) impacts/ground-slam  -> impacts/ground-slam.png   (ไม้ตายฟาดพื้น)
+7) holy/heal            -> holy/heal.png             (ฟื้นเลือด, --no-actor)
+8) melee/thrust         -> melee/thrust.png          (พุ่งดาบ, --no-actor)
+
+Source: https://github.com/patch-gg/pixelfx (MIT)
+Integration: node tools/render.mjs <id> --sheet  (2 ตัวล่างใส่ --no-actor)

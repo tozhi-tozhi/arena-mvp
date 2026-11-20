@@ -122,6 +122,8 @@ export class PlayerActor {
   shield: boolean = false;
   // ตัวนับคอมโบ 3 ฮิต (แยกจากตัวนับพาสซีฟของลูมิที่อยู่ข้างบน)
   combo = new ComboTracker();
+  /** เลขฮิตตีปกติที่กำลังจะออก (1/2) — ชุดท่าใช้อ่านเลือกคลิป combo1/combo2 */
+  lightHit: number = 1;
   private comboGfx: any;
   // ชุดท่าของตัวละครที่เล่นอยู่ (ท่าตี/ชาร์จ/ไม้ตาย/พาสซีฟ) — ดู src/characters/
   private kit!: CharacterKit;
@@ -629,8 +631,14 @@ heal(n: number): number {
     if (this.shield) {
       this.shield = false;
       sfx.hit();
-      ringEffect(this.scene, player.x, player.y, 44, 0x66e0ff, 300);
-      burst(this.scene, player.x, player.y, 0x66e0ff, 10, 40, 4);
+      const blockFx = spawnPixelFx(this.scene, 'divine-shield', {
+        x: player.x, y: this.feetY(), scale: 1, tint: 0x9de7ff, add: true,
+        durationMs: 320, fadeOutMs: 120, depth: DEPTH.SLASH + 1
+      });
+      if (!blockFx) {
+        ringEffect(this.scene, player.x, player.y, 44, 0x66e0ff, 300);
+        burst(this.scene, player.x, player.y, 0x66e0ff, 10, 40, 4);
+      }
       showDamage(this.scene, player.x, player.y, 'BLOCK', '#66e0ff');
       this.isInvincible = true;
       this.time.delayedCall(450, () => {
@@ -736,22 +744,22 @@ private updateClip(now: number) {
 const key = this.clips.frameKeyAt(now);
 if (key) this.setPlayerTexture(key);
 }
-private updateAkkVisual(now: number, moving: boolean) {
-let want = '';
-if (!this.isAttacking) {
-if (this.isCharging && now - this.chargeStartAt >= 120) want = 'charge';
-else want = moving ? 'walk' : 'idle';
-}
-if (want && want !== this.clips.current) {
-if (want === 'walk') this.playClip('walk', 120, true);
-else if (want === 'charge') {
-const n = this.clips.frames.charge ?? 7;
-const ms = Math.max(30, (this.kit.chargeNeeded() - 120) / Math.max(1, n - 1));
-this.playClip('charge', ms, false);
-} else this.playClip('idle', 1000, true);
-}
-this.updateClip(now);
-}
+  private updateAkkVisual(now: number, moving: boolean) {
+    let want = '';
+    if (!this.isAttacking) {
+      if (this.isCharging && now - this.chargeStartAt >= 120) want = 'charge_hold';
+      else want = moving ? 'walk' : 'idle';
+    }
+    if (want && want !== this.clips.current) {
+      if (want === 'walk') this.playClip('walk', 120, true);
+      else if (want === 'charge_hold') {
+        const n = this.clips.frames.charge_hold ?? 7;
+        const ms = Math.max(40, (this.kit.chargeNeeded() - 120) / Math.max(1, n));
+        this.playClip('charge_hold', ms, true);
+      } else this.playClip('idle', 1000, true);
+    }
+    this.updateClip(now);
+  }
 
   feetY(): number {
     return this.clips.ready
@@ -759,12 +767,26 @@ this.updateClip(now);
       : this.sprite.y + this.sprite.displayHeight / 2;
   }
 
-  slashFx(scale: number) {
+  slashFx(scale: number, angle?: number, tint?: number) {
     spawnPixelFx(this.scene, 'sword-slash', {
       x: this.sprite.x,
       y: this.feetY(),
       scale,
-      flipX: this.sprite.flipX,
+      flipX: angle === undefined ? this.sprite.flipX : false,
+      angle,
+      tint,
+      depth: DEPTH.SLASH + 1
+    });
+  }
+
+  /** เอฟเฟกต์พุ่งดาบ — วางที่เท้า หมุนตามทิศพุ่ง บีบให้จบพร้อมท่า */
+  thrustFx(dir: Phaser.Math.Vector2, totalMs: number) {
+    spawnPixelFx(this.scene, 'thrust', {
+      x: this.sprite.x,
+      y: this.feetY(),
+      scale: 1,
+      angle: Math.atan2(dir.y, dir.x),
+      fitMs: totalMs,
       depth: DEPTH.SLASH + 1
     });
   }
@@ -987,6 +1009,7 @@ private getAimDir(): Phaser.Math.Vector2 {
       this.kit.comboFinisher();
       return;
     }
+    this.lightHit = hit;
     this.kit.light();
   }
 
@@ -1077,9 +1100,11 @@ private getAimDir(): Phaser.Math.Vector2 {
   // ===============================================================
 
   /** เล่นคลิปของท่า — ไม่มีภาพจริงก็ถอยไปคลิปสำรองตามตาราง · ไม่มีภาพเลยก็ใช้ภาพดินน้ำมัน */
-  playSkillClip(clip: string, totalMs: number) {
-    if (this.clips.ready) this.playClip(clip, totalMs / Math.max(1, this.clips.frames[clip] ?? 1), false);
-    else this.setPlayerTexture('hero_clay_attack');
+  playSkillClip(clip: string, totalMs: number, durations?: number[]) {
+    if (this.clips.ready) {
+      const n = Math.max(1, this.clips.frames[clip] ?? 1);
+      this.playClip(clip, durations ?? totalMs / n, false);
+    } else this.setPlayerTexture('hero_clay_attack');
   }
 
   /** จบท่า: ปลดล็อกทุกอย่างที่ท่านี้ล็อกไว้ */

@@ -7,7 +7,7 @@ import { sfx } from '../systems/sfx';
 import { AKKHANI, type CharacterId } from '../data/characters';
 import { loadout } from '../systems/Loadout';
 import { COMBO3_SPIN, COMBO3_WAVE, COMBO3_TRIANGLE, AKK_PASSIVE_CRIT, AKK_PASSIVE_RUSH, CHARGE_RUSH, CHARGE_HEAL, ULT_SLAM, ULT_STAR, SKILL_SLOTS, findSkill, ultimateCooldownOf, type SkillOption, type SkillSlot } from '../data/skills';
-import { spawnPixelFx } from '../systems/pixelFx';
+import { spawnPixelFx, hasPixelFx } from '../systems/pixelFx';
 import type { CombatTarget } from '../systems/CombatTarget';
 import { controls } from '../systems/Controls';
 import type { PlayerActor } from '../actors/PlayerActor';
@@ -175,8 +175,7 @@ export class AkkhaniKit implements CharacterKit {
     this.p.isAttacking = true;
     this.p.isActionLocked = true; // หมุนอยู่กับที่
     this.p.sprite.setVelocity(0);
-    if (this.p.clips.ready) this.p.playClip('skill', S.durationMs / (this.p.clips.frames.skill ?? 8), false);
-    else this.p.setPlayerTexture('hero_clay_attack');
+    this.p.playSkillClip('combo3_spin', S.durationMs);
     sfx.swing();
     spawnArcSlash(
       this.p.scene,
@@ -222,7 +221,7 @@ export class AkkhaniKit implements CharacterKit {
     this.p.facing.copy(dir);
 
     this.p.isAttacking = true;
-    this.p.playAttackClip(A.durationMs / (this.p.clips.frames.attack ?? 5));
+    this.p.playSkillClip(this.p.lightHit === 2 ? 'combo2' : 'combo1', A.durationMs);
     sfx.swing();
     spawnArcSlash(
       this.p.scene,
@@ -273,7 +272,7 @@ export class AkkhaniKit implements CharacterKit {
 
     this.p.isAttacking = true;
     this.p.isActionLocked = true;
-    this.p.playAttackClip(C.thrustDelayMs / (this.p.clips.frames.attack ?? 5));
+    this.p.playSkillClip('combo1', C.thrustDelayMs);
     this.p.sprite.setVelocity(0);
 
     sfx.swing();
@@ -302,7 +301,7 @@ export class AkkhaniKit implements CharacterKit {
 
     this.p.time.delayedCall(C.thrustDelayMs, () => {
       if (token !== this.p.actionToken) return;
-      if (this.p.clips.ready) this.p.playClip('thrust', C.thrustMs / (this.p.clips.frames.thrust ?? 8), false);
+      this.p.playSkillClip('charge_spin', C.thrustMs);
       this.p.isLunging = true;
       this.p.thrust = {
         until: this.p.time.now + C.thrustMs,
@@ -323,6 +322,7 @@ export class AkkhaniKit implements CharacterKit {
       const thrustSpeed = C.thrustSpeed * this.p.starFx.thrustSpeedMult;
       this.p.sprite.setVelocity(tdir.x * thrustSpeed, tdir.y * thrustSpeed);
       sfx.dash();
+      this.p.thrustFx(tdir, C.thrustMs);
       spawnThrustDir(this.p.scene, this.p.sprite.x, this.p.sprite.y, tdir.x, tdir.y, 150, 3);
       this.p.cam.shake(120, 0.005);
       this.p.time.addEvent({ delay: 40, repeat: 4, callback: () => this.p.spawnAfterimage(0xff8a5a) });
@@ -351,11 +351,12 @@ export class AkkhaniKit implements CharacterKit {
     this.p.skillInvincible = true;
     this.p.sprite.setVelocity(0);
 
-    const nPre = SKILL_SLASH_AT - 1;
-    const nPost = (this.p.clips.frames.skill ?? 8) - nPre;
+    const nSweep = this.p.clips.frames.ulti_sweep ?? 8;
+    const nPre = Math.max(1, SKILL_SLASH_AT - 1);
+    const nPost = Math.max(1, nSweep - nPre);
     if (this.p.clips.ready) {
       const dur = [...Array(nPre).fill(S.windupMs / nPre), ...Array(nPost).fill(S.activeMs / nPost)];
-      this.p.playClip('skill', dur, false);
+      this.p.playClip('ulti_sweep', dur, false);
     } else {
       this.p.setPlayerTexture('hero_clay_attack');
     }
@@ -447,7 +448,10 @@ export class AkkhaniKit implements CharacterKit {
         this.critCount = 0;
         this.critActionId = actionId;
         showDamage(this.p.scene, this.p.sprite.x, this.p.sprite.y - 44, 'CRIT!', '#ffd166', 700);
-        ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 46, 0xffd166, 260);
+        const critFx = spawnPixelFx(this.p.scene, 'crit-hit', {
+          x: this.p.sprite.x, y: this.p.feetY(), scale: 1, tint: 0xffd166, fitMs: 420, depth: DEPTH.SLASH + 1
+        });
+        if (!critFx) ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 46, 0xffd166, 260);
         return Math.round(damage * AKK_PASSIVE_CRIT.multiplier);
       }
     }
@@ -459,7 +463,11 @@ export class AkkhaniKit implements CharacterKit {
     if (this.rushReady) return;
     this.rushReady = true;
     showDamage(this.p.scene, this.p.sprite.x, this.p.sprite.y - 44, 'พลังเต็ม!', '#ffb15a', 800);
-    ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 50, 0xffb15a, 320);
+    const fullFx = spawnPixelFx(this.p.scene, 'divine-shield', {
+      x: this.p.sprite.x, y: this.p.feetY(), scale: 1, tint: 0xffb15a, add: true,
+      durationMs: 420, fadeOutMs: 140, depth: DEPTH.SLASH + 1
+    });
+    if (!fullFx) ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 50, 0xffb15a, 320);
   }
 
   private updatePassiveEnergy(delta: number) {
@@ -473,7 +481,11 @@ export class AkkhaniKit implements CharacterKit {
     if (this.opt.passive === 'a') {
       if (!this.p.shield) {
         this.p.shield = true;
-        ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 40, 0x66e0ff, 400);
+        const shieldFx = spawnPixelFx(this.p.scene, 'divine-shield', {
+          x: this.p.sprite.x, y: this.p.feetY(), scale: 1, tint: 0x9de7ff, add: true,
+          durationMs: 400, fadeOutMs: 140, depth: DEPTH.SLASH + 1
+        });
+        if (!shieldFx) ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 40, 0x66e0ff, 400);
         showDamage(this.p.scene, this.p.sprite.x, this.p.sprite.y - 44, 'โล่!', '#66e0ff', 700);
       }
     } else if (this.opt.passive === 'b') {
@@ -499,6 +511,15 @@ export class AkkhaniKit implements CharacterKit {
     this.p.isActionLocked = true;
     this.p.sprite.setVelocity(0);
     this.p.playSkillClip('barrage', R.totalMs);
+    // เอฟเฟกต์รัวดาบสีทอง — เล่นจบพร้อมท่าพอดี
+    spawnPixelFx(this.p.scene, 'dagger-flurry', {
+      x: this.p.sprite.x,
+      y: this.p.feetY(),
+      scale: 1,
+      angle: Math.atan2(this.p.facing.y, this.p.facing.x),
+      fitMs: R.totalMs,
+      depth: DEPTH.SLASH + 1
+    });
     sfx.swing();
 
     R.hits.forEach((dmg, i) => {
@@ -629,6 +650,16 @@ export class AkkhaniKit implements CharacterKit {
     this.p.skillInvincible = true;
     this.p.sprite.setVelocity(0);
     this.p.playSkillClip('combo3_triangle', T.totalMs);
+    // เอฟเฟกต์ระบำดาบสีทอง — เกาะตามตัวขณะพุ่งสลับจุดยอด
+    spawnPixelFx(this.p.scene, 'dagger-flurry', {
+      x: this.p.sprite.x,
+      y: this.p.feetY(),
+      scale: 1,
+      angle: Math.atan2(dir0.y, dir0.x),
+      fitMs: T.totalMs,
+      depth: DEPTH.SLASH + 1,
+      follow: () => ({ x: this.p.sprite.x, y: this.p.feetY() })
+    });
 
     // จุดยอดเทียบจุดเริ่ม (f = ไปข้างหน้า, r = ไปทางขวา) — วนกลับมาใกล้จุดเริ่ม
     const verts = [
@@ -723,6 +754,7 @@ export class AkkhaniKit implements CharacterKit {
     };
     this.p.sprite.setVelocity(dir.x * C.speed, dir.y * C.speed);
     sfx.dash();
+    this.p.thrustFx(dir, C.durationMs);
     spawnThrustDir(this.p.scene, this.p.sprite.x, this.p.sprite.y, dir.x, dir.y, 150, 3);
     this.p.cam.shake(110, 0.005);
     this.p.time.addEvent({ delay: 40, repeat: 4, callback: () => this.p.spawnAfterimage(0xff8a5a) });
@@ -755,12 +787,18 @@ export class AkkhaniKit implements CharacterKit {
       onHit: () => {
         const n = Math.round((this.p.maxPlayerHP * C.healPercent) / 100);
         this.p.healPlayer(n);
-        burst(this.p.scene, this.p.sprite.x, this.p.sprite.y, 0x7dff9b, 10, 40, 4);
-        ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 44, 0x7dff9b, 320);
+        const healFx = spawnPixelFx(this.p.scene, 'heal', {
+          x: this.p.sprite.x, y: this.p.feetY(), scale: 1, fitMs: 700, depth: DEPTH.SLASH + 1
+        });
+        if (!healFx) {
+          burst(this.p.scene, this.p.sprite.x, this.p.sprite.y, 0x7dff9b, 10, 40, 4);
+          ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 44, 0x7dff9b, 320);
+        }
       }
     };
     this.p.sprite.setVelocity(dir.x * C.speed, dir.y * C.speed);
     sfx.dash();
+    this.p.thrustFx(dir, C.durationMs);
     spawnThrustDir(this.p.scene, this.p.sprite.x, this.p.sprite.y, dir.x, dir.y, 170, 3);
     this.p.cam.shake(110, 0.005);
     this.p.time.addEvent({ delay: 40, repeat: 5, callback: () => this.p.spawnAfterimage(0xff8a5a) });
@@ -794,9 +832,14 @@ export class AkkhaniKit implements CharacterKit {
       const x = this.p.sprite.x;
       const y = this.p.sprite.y;
       sfx.swing();
-      ringEffect(this.p.scene, x, y, U.radius, 0xffb15a, 420);
-      ringEffect(this.p.scene, x, y, U.radius * 0.6, 0xffffff, 280);
-      burst(this.p.scene, x, y, 0xc9a06a, 16, U.radius * 0.9, 5);
+      const slamFx = spawnPixelFx(this.p.scene, 'ground-slam', {
+        x, y: this.p.feetY(), scale: 1, fitMs: 900, depth: DEPTH.SLASH + 1
+      });
+      if (!slamFx) {
+        ringEffect(this.p.scene, x, y, U.radius, 0xffb15a, 420);
+        ringEffect(this.p.scene, x, y, U.radius * 0.6, 0xffffff, 280);
+        burst(this.p.scene, x, y, 0xc9a06a, 16, U.radius * 0.9, 5);
+      }
       this.p.cam.shake(240, 0.012);
       this.p.sweep = {
         dir: this.p.facing.clone(),
@@ -828,7 +871,20 @@ export class AkkhaniKit implements CharacterKit {
     this.p.skillInvincible = true;
     this.p.sprite.setVelocity(0);
     const total = U.windupMs + U.vanishMs + U.recoverMs;
-    this.p.playSkillClip('ulti_star', total);
+    const nStar = this.p.clips.frames.ulti_star ?? 8;
+    if (nStar >= 6) {
+      // เฟรม 01–04 = ช่วงร่าย · เฟรม 05 ค้างตลอดช่วงหายตัว · เฟรมที่เหลือ = ช่วงปรากฏตัว
+      const pre = 4;
+      const post = nStar - pre - 1;
+      const dur = [
+        ...Array(pre).fill(U.windupMs / pre),
+        U.vanishMs,
+        ...Array(post).fill(U.recoverMs / post)
+      ];
+      this.p.playSkillClip('ulti_star', total, dur);
+    } else {
+      this.p.playSkillClip('ulti_star', total);
+    }
 
     // ช่วงที่ 1: เงาดาบ 7 เล่มล้อมตัว หมุนแล้วรวมเข้าหากลาง
     const blades = this.p.scene.add.graphics();
@@ -859,6 +915,14 @@ export class AkkhaniKit implements CharacterKit {
     this.p.time.delayedCall(U.windupMs, () => {
       if (token !== this.p.actionToken) return;
       this.p.vanished = true;
+      // เอฟเฟกต์หายตัวสีทอง — จบพร้อมช่วงหายตัว ไม่ค้างหลังปรากฏตัว
+      spawnPixelFx(this.p.scene, 'blink-out', {
+        x: cx,
+        y: this.p.feetY(),
+        scale: 1,
+        fitMs: U.vanishMs,
+        depth: DEPTH.SLASH + 1
+      });
       this.p.sprite.setAlpha(0);
       burst(this.p.scene, cx, cy, 0xff8a5a, 12, 60, 4);
     });
@@ -885,8 +949,13 @@ export class AkkhaniKit implements CharacterKit {
       if (token !== this.p.actionToken) return;
       this.p.vanished = false;
       this.p.sprite.setAlpha(1);
-      ringEffect(this.p.scene, cx, cy, 60, 0xff8a5a, 300);
-      burst(this.p.scene, cx, cy, 0xff8a5a, 10, 50, 4);
+      const backFx = spawnPixelFx(this.p.scene, 'spin-slash', {
+        x: cx, y: this.p.feetY(), scale: 1, tint: 0xff8a5a, add: true, depth: DEPTH.SLASH + 1
+      });
+      if (!backFx) {
+        ringEffect(this.p.scene, cx, cy, 60, 0xff8a5a, 300);
+        burst(this.p.scene, cx, cy, 0xff8a5a, 10, 50, 4);
+      }
     });
     this.p.time.delayedCall(total, () => this.p.endAction(token));
   }
