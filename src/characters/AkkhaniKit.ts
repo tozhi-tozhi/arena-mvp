@@ -55,6 +55,8 @@ export class AkkhaniKit implements CharacterKit {
   private buffUntil: number = 0;
   private passiveReadyAt: number = 0;
   private lastCountedAction: number = -1;
+  private shieldFxAt: number = 0;
+  private buffFxAt: number = 0;
 
   constructor(private p: PlayerActor) {
     this.opt = readSkillOptions('akkhani');
@@ -73,6 +75,7 @@ export class AkkhaniKit implements CharacterKit {
     this.updatePassiveEnergy(delta);
     this.updateWaves(delta);
     this.drawAura(now);
+    this.updateStatusFx(now);
   }
 
   chargeNeeded(): number {
@@ -138,7 +141,6 @@ export class AkkhaniKit implements CharacterKit {
     if (this.opt.passive === 'a' && !this.p.shield && this.p.time.now >= this.passiveReadyAt) {
       this.p.shield = true;
       this.passiveReadyAt = this.p.time.now + AKKHANI.passive.shieldCooldownMs;
-      ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 40, 0x66e0ff, 400);
     }
   }
 
@@ -177,17 +179,7 @@ export class AkkhaniKit implements CharacterKit {
     this.p.sprite.setVelocity(0);
     this.p.playSkillClip('combo3_spin', S.durationMs);
     sfx.swing();
-    spawnArcSlash(
-      this.p.scene,
-      this.p.sprite.x,
-      this.p.sprite.y,
-      Math.atan2(dir.y, dir.x),
-      S.range,
-      S.halfAngle,
-      0xff8a5a,
-      7,
-      240
-    );
+
     spawnPixelFx(this.p.scene, 'spin-slash', {
       x: this.p.sprite.x,
       y: this.p.feetY(),
@@ -223,18 +215,8 @@ export class AkkhaniKit implements CharacterKit {
     this.p.isAttacking = true;
     this.p.playSkillClip(this.p.lightHit === 2 ? 'combo2' : 'combo1', A.durationMs);
     sfx.swing();
-    spawnArcSlash(
-      this.p.scene,
-      this.p.sprite.x,
-      this.p.sprite.y,
-      Math.atan2(dir.y, dir.x),
-      A.range,
-      A.halfAngle,
-      0xff6a5a,
-      6,
-      180
-    );
-    this.p.slashFx(2);
+
+    this.slashFx(2);
     this.p.cam.shake(80, 0.003);
 
     this.p.sweep = {
@@ -276,18 +258,8 @@ export class AkkhaniKit implements CharacterKit {
     this.p.sprite.setVelocity(0);
 
     sfx.swing();
-    spawnArcSlash(
-      this.p.scene,
-      this.p.sprite.x,
-      this.p.sprite.y,
-      Math.atan2(dir.y, dir.x),
-      C.sweepRange,
-      C.sweepHalfAngle,
-      0xffb15a,
-      7,
-      200
-    );
-    this.p.slashFx(2);
+
+    this.slashFx(2);
     this.p.cam.shake(100, 0.004);
     this.p.sweep = {
       dir,
@@ -322,8 +294,8 @@ export class AkkhaniKit implements CharacterKit {
       const thrustSpeed = C.thrustSpeed * this.p.starFx.thrustSpeedMult;
       this.p.sprite.setVelocity(tdir.x * thrustSpeed, tdir.y * thrustSpeed);
       sfx.dash();
-      this.p.thrustFx(tdir, C.thrustMs);
-      spawnThrustDir(this.p.scene, this.p.sprite.x, this.p.sprite.y, tdir.x, tdir.y, 150, 3);
+      this.thrustFx(tdir, C.thrustMs);
+
       this.p.cam.shake(120, 0.005);
       this.p.time.addEvent({ delay: 40, repeat: 4, callback: () => this.p.spawnAfterimage(0xff8a5a) });
     });
@@ -361,7 +333,6 @@ export class AkkhaniKit implements CharacterKit {
       this.p.setPlayerTexture('hero_clay_attack');
     }
 
-    ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 70, 0xffffff, S.windupMs);
     this.p.tweens.add({
       targets: this.p.sprite,
       alpha: 0.5,
@@ -394,18 +365,6 @@ export class AkkhaniKit implements CharacterKit {
       if (Math.abs(dir.x) > 0.3) this.p.sprite.setFlipX(dir.x < 0);
 
       sfx.swing();
-      spawnArcSlash(
-        this.p.scene,
-        this.p.sprite.x,
-        this.p.sprite.y,
-        Math.atan2(dir.y, dir.x),
-        S.range,
-        S.halfAngle,
-        0xff3b2f,
-        10,
-        300
-      );
-      ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, S.range * 0.7, 0xff8a5a, 300);
       spawnPixelFx(this.p.scene, 'spin-slash', {
         x: this.p.sprite.x,
         y: this.p.feetY(),
@@ -530,19 +489,9 @@ export class AkkhaniKit implements CharacterKit {
         this.p.facing.copy(dir);
         if (Math.abs(dir.x) > 0.3) this.p.sprite.setFlipX(dir.x < 0);
         sfx.swing();
-        spawnArcSlash(
-          this.p.scene,
-          this.p.sprite.x,
-          this.p.sprite.y,
-          Math.atan2(dir.y, dir.x),
-          R.range,
-          R.halfAngle,
-          last ? 0xffb15a : 0xff6a5a,
-          last ? 9 : 4,
-          last ? 240 : 150
-        );
+        if (!last) this.pxSlash(dir, R.range, R.halfAngle, 0xff6a5a, 4, 150);
         if (last) {
-          this.p.slashFx(2);
+          this.slashFx(2);
           this.p.cam.shake(140, 0.006);
         }
         this.p.sweep = {
@@ -575,7 +524,7 @@ export class AkkhaniKit implements CharacterKit {
     this.p.time.delayedCall(W.releaseMs, () => {
       if (token !== this.p.actionToken) return;
       sfx.swing();
-      this.p.slashFx(2);
+      this.slashFx(2);
       this.p.cam.shake(110, 0.005);
       this.spawnWave(dir, actionId);
     });
@@ -708,17 +657,7 @@ export class AkkhaniKit implements CharacterKit {
     if (Math.abs(dir.x) > 0.3) this.p.sprite.setFlipX(dir.x < 0);
     const last = i === T.damages.length - 1;
     sfx.swing();
-    spawnArcSlash(
-      this.p.scene,
-      this.p.sprite.x,
-      this.p.sprite.y,
-      Math.atan2(dir.y, dir.x),
-      T.range,
-      T.halfAngle,
-      last ? 0xff5a3a : 0xff8a5a,
-      last ? 9 : 6,
-      220
-    );
+    this.pxSlash(dir, T.range, T.halfAngle, last ? 0xff5a3a : 0xff8a5a, last ? 9 : 6, 220);
     this.p.cam.shake(last ? 120 : 80, last ? 0.006 : 0.004);
     this.p.sweep = {
       dir,
@@ -732,7 +671,7 @@ export class AkkhaniKit implements CharacterKit {
     this.p.updateSweep(this.p.time.now); // ตรวจโดนทันที ไม่รอเฟรมถัดไป
   }
 
-  // ---------- ชาร์จ B: พุ่งทันที + กระตุ้นพาสซีฟ ----------
+  // ---------- ชาร์จ B: พุ่งทันที ไม่มีดาเมจ + กระตุ้นพาสซีฟ ----------
   private akkhaniRush() {
     const C = CHARGE_RUSH;
     const token = this.p.beginAction();
@@ -740,24 +679,30 @@ export class AkkhaniKit implements CharacterKit {
     const dir = this.p.rushDirection(base);
     this.p.facing.copy(dir);
     if (Math.abs(dir.x) > 0.3) this.p.sprite.setFlipX(dir.x < 0);
-    const actionId = ++this.p.actionSeq;
     this.p.isAttacking = true;
     this.p.isActionLocked = true;
     this.p.isLunging = true;
     this.triggerPassiveFromCharge();
     this.p.playSkillClip('charge_rush', C.totalMs);
-    this.p.thrust = {
-      until: this.p.time.now + C.durationMs,
-      damage: C.damage,
-      handled: new Set<CombatTarget>(),
-      actionId
-    };
-    this.p.sprite.setVelocity(dir.x * C.speed, dir.y * C.speed);
+
+    // ระยะพุ่ง = ไกลกว่าท่าพุ่งอื่นของอัคนี 1.4 เท่า (คำนวณจากท่าเดิมอัตโนมัติ) · ค่าชั่วคราว
+    const RUSH_FAR_MULT = 1.4;
+    const otherDist = Math.max(
+      (AKKHANI.charged.thrustSpeed * AKKHANI.charged.thrustMs) / 1000,
+      (CHARGE_HEAL.speed * CHARGE_HEAL.durationMs) / 1000
+    );
+    const speed = Math.max(C.speed, (otherDist * RUSH_FAR_MULT) / (C.durationMs / 1000));
+
+    // ไม่ตั้ง this.p.thrust = ไม่มี hitbox ไม่มีดาเมจ
+    this.p.sprite.setVelocity(dir.x * speed, dir.y * speed);
     sfx.dash();
-    this.p.thrustFx(dir, C.durationMs);
-    spawnThrustDir(this.p.scene, this.p.sprite.x, this.p.sprite.y, dir.x, dir.y, 150, 3);
+    this.thrustFx(dir, C.durationMs);
     this.p.cam.shake(110, 0.005);
-    this.p.time.addEvent({ delay: 40, repeat: 4, callback: () => this.p.spawnAfterimage(0xff8a5a) });
+    this.p.time.addEvent({
+      delay: 40,
+      repeat: Math.floor(C.durationMs / 40),
+      callback: () => this.p.spawnAfterimage(0xff8a5a)
+    });
     this.p.time.delayedCall(C.durationMs, () => {
       if (token !== this.p.actionToken) return;
       this.p.isLunging = false;
@@ -798,15 +743,9 @@ export class AkkhaniKit implements CharacterKit {
     };
     this.p.sprite.setVelocity(dir.x * C.speed, dir.y * C.speed);
     sfx.dash();
-    this.p.thrustFx(dir, C.durationMs);
-    spawnThrustDir(this.p.scene, this.p.sprite.x, this.p.sprite.y, dir.x, dir.y, 170, 3);
+    this.thrustFx(dir, C.durationMs);
     this.p.cam.shake(110, 0.005);
     this.p.time.addEvent({ delay: 40, repeat: 5, callback: () => this.p.spawnAfterimage(0xff8a5a) });
-    // รอยฟันสั้นระหว่างพุ่งผ่าน
-    this.p.time.delayedCall(Math.round(C.durationMs * 0.4), () => {
-      if (token !== this.p.actionToken) return;
-      spawnArcSlash(this.p.scene, this.p.sprite.x, this.p.sprite.y, Math.atan2(dir.y, dir.x), 80, 100, 0xffb15a, 6, 180);
-    });
     this.p.time.delayedCall(C.durationMs, () => {
       if (token !== this.p.actionToken) return;
       this.p.isLunging = false;
@@ -825,7 +764,6 @@ export class AkkhaniKit implements CharacterKit {
     this.p.isActionLocked = true;
     this.p.sprite.setVelocity(0);
     this.p.playSkillClip('ulti_slam', U.windupMs + U.recoverMs);
-    ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 56, 0xffb15a, U.windupMs);
 
     this.p.time.delayedCall(U.windupMs, () => {
       if (token !== this.p.actionToken) return;
@@ -833,14 +771,15 @@ export class AkkhaniKit implements CharacterKit {
       const y = this.p.sprite.y;
       sfx.swing();
       const slamFx = spawnPixelFx(this.p.scene, 'ground-slam', {
-        x, y: this.p.feetY(), scale: 1, fitMs: 900, depth: DEPTH.SLASH + 1
+        x, y: this.p.feetY(), scale: 1.6, fitMs: 900, depth: DEPTH.SLASH + 1
       });
       if (!slamFx) {
         ringEffect(this.p.scene, x, y, U.radius, 0xffb15a, 420);
         ringEffect(this.p.scene, x, y, U.radius * 0.6, 0xffffff, 280);
         burst(this.p.scene, x, y, 0xc9a06a, 16, U.radius * 0.9, 5);
       }
-      this.p.cam.shake(240, 0.012);
+      this.p.cam.shake(320, 0.014);
+      this.slamBigFx(x, y);
       this.p.sweep = {
         dir: this.p.facing.clone(),
         range: U.radius,
@@ -857,7 +796,72 @@ export class AkkhaniKit implements CharacterKit {
     });
     this.p.time.delayedCall(U.windupMs + U.recoverMs, () => this.p.endAction(token));
   }
+  /** เอฟเฟกต์เสริมไม้ตาย B ให้ยิ่งใหญ่ขึ้น — ภาพล้วน ไม่แตะดาเมจ/hitbox */
+  private slamBigFx(x: number, y: number) {
+    const sc = this.p.scene;
+    const R = ULT_SLAM.radius;
+    const fy = this.p.feetY();
 
+    // 1) คลื่นกระแทก 3 ชั้น เหลื่อมจังหวะ
+    const rings = [
+      { r: R * 0.75, color: 0xffffff, ms: 420, delay: 0 },
+      { r: R, color: 0xffb15a, ms: 540, delay: 70 },
+      { r: R * 1.15, color: 0xff6a3a, ms: 660, delay: 140 }
+    ];
+    for (const rg of rings) {
+      sc.time.delayedCall(rg.delay, () => ringEffect(sc, x, fy, rg.r, rg.color, rg.ms));
+    }
+
+    // 2) แผ่นแสงวาบบนพื้น ขยายแล้วจาง
+    const disk = sc.add.circle(x, fy, R, 0xffd9a0, 0.35);
+    disk.setBlendMode(Phaser.BlendModes.ADD);
+    disk.setDepth(DEPTH.BURST);
+    disk.setScale(0.2);
+    sc.tweens.add({
+      targets: disk,
+      scale: 1,
+      alpha: 0,
+      duration: 380,
+      onComplete: () => disk.destroy()
+    });
+
+    // 3) รอยแตกบนพื้น 10 เส้นกระจายออก ค้างสั้น ๆ แล้วจาง
+    const cracks = sc.add.graphics();
+    cracks.setDepth(DEPTH.ENEMY_SHADOW);
+    cracks.setBlendMode(Phaser.BlendModes.ADD);
+    for (const [width, alpha, color] of [[8, 0.25, 0xff6a3a], [3, 0.95, 0xffe2b0]] as Array<[number, number, number]>) {
+      cracks.lineStyle(width, color, alpha);
+      for (let k = 0; k < 10; k++) {
+        const a = (k * Math.PI * 2) / 10 + Phaser.Math.FloatBetween(-0.15, 0.15);
+        const len = R * Phaser.Math.FloatBetween(0.7, 1.05);
+        cracks.beginPath();
+        cracks.moveTo(x, fy);
+        let px = x;
+        let py = fy;
+        for (let s = 1; s <= 3; s++) {
+          const aa = a + Phaser.Math.FloatBetween(-0.25, 0.25);
+          px = x + Math.cos(aa) * (len * s) / 3;
+          py = fy + Math.sin(aa) * (len * s) / 3;
+          cracks.lineTo(px, py);
+        }
+        cracks.strokePath();
+      }
+    }
+    sc.tweens.add({
+      targets: cracks,
+      alpha: 0,
+      delay: 350,
+      duration: 650,
+      onComplete: () => cracks.destroy()
+    });
+
+    // 4) เศษดินกระเด็น + ประกายทอง
+    burst(sc, x, fy, 0xc9a06a, 26, R * 1.1, 6);
+    burst(sc, x, fy, 0xffd166, 18, R * 0.9, 3);
+
+    // 5) แฟลชจอสั้น ๆ
+    sc.cameras.main.flash(90, 255, 225, 170);
+  }
   // ---------- ไม้ตาย C: ดาบ 7 เล่ม หายตัว ฟันดาว 7 แฉก ----------
   private akkhaniUltStar() {
     const U = ULT_STAR;
@@ -993,7 +997,67 @@ export class AkkhaniKit implements CharacterKit {
       onComplete: () => g.destroy()
     });
   }
+    /** รอยฟันตีปกติ/ฮิตท้าย — pixelfx เป็นหลัก ไม่มีภาพก็ใช้เส้นโค้งสำรอง */
+  private slashFx(level: number) {
+    const dir = this.p.facing;
+    const angle = Math.atan2(dir.y, dir.x);
+    const fx = spawnPixelFx(this.p.scene, 'sword-slash', {
+      x: this.p.sprite.x + dir.x * 40,
+      y: this.p.sprite.y + dir.y * 40,
+      scale: level >= 2 ? 1.2 : 1,
+      angle,
+      fitMs: 200,
+      depth: DEPTH.SLASH + 1
+    });
+    if (!fx) spawnArcSlash(this.p.scene, this.p.sprite.x, this.p.sprite.y, angle, 90, 60, 0xff6a5a, 6, 180);
+  }
 
+  /** ภาพพุ่ง — ใช้ pixelfx เป็นหลัก ไม่มีภาพก็ใช้เส้นพุ่งสำรอง */
+  private thrustFx(dir: Phaser.Math.Vector2, ms: number) {
+    const fx = spawnPixelFx(this.p.scene, 'sword-slash', {
+      x: this.p.sprite.x + dir.x * 30,
+      y: this.p.sprite.y + dir.y * 30,
+      scale: 1.2,
+      angle: Math.atan2(dir.y, dir.x),
+      fitMs: ms,
+      depth: DEPTH.SLASH + 1,
+      follow: () => ({ x: this.p.sprite.x + dir.x * 30, y: this.p.sprite.y + dir.y * 30 })
+    });
+    if (!fx) spawnThrustDir(this.p.scene, this.p.sprite.x, this.p.sprite.y, dir.x, dir.y, 150, 3);
+  }
+  /** รอยฟันด้วย pixelfx เป็นหลัก — เส้นโค้ง prototype ใช้เป็น fallback เมื่อไม่มีภาพเท่านั้น */
+  private pxSlash(dir: Phaser.Math.Vector2, range: number, halfAngle: number, color: number, lineWidth: number, ms: number) {
+    const x = this.p.sprite.x + dir.x * range * 0.4;
+    const y = this.p.sprite.y + dir.y * range * 0.4;
+    const angle = Math.atan2(dir.y, dir.x);
+    const fx = spawnPixelFx(this.p.scene, 'sword-slash', {
+      x, y, scale: range / 100, angle, fitMs: ms, depth: DEPTH.SLASH + 1
+    });
+    if (!fx) spawnArcSlash(this.p.scene, this.p.sprite.x, this.p.sprite.y, angle, range, halfAngle, color, lineWidth, ms);
+  }
+    /** pixelfx ติดตัวขณะมีโล่ / โหมดบุก — ปล่อยซ้ำเป็นจังหวะ หยุดเองเมื่อสถานะหมด */
+  private updateStatusFx(now: number) {
+    if (this.p.character.id !== 'akkhani' || this.p._isDead || this.p.vanished) return;
+    const follow = () => ({ x: this.p.sprite.x, y: this.p.feetY() });
+
+    if (this.p.shield && now >= this.shieldFxAt) {
+      this.shieldFxAt = now + 800;
+      const shieldFx = spawnPixelFx(this.p.scene, 'divine-shield', {
+        x: this.p.sprite.x, y: this.p.feetY(), scale: 1, tint: 0x9de7ff, add: true,
+        durationMs: 900, fadeOutMs: 150, depth: DEPTH.SLASH + 1, follow
+      });
+      if (!shieldFx) ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 40, 0x66e0ff, 400);
+    }
+
+    if (now < this.buffUntil && now >= this.buffFxAt) {
+      this.buffFxAt = now + 700;
+      spawnPixelFx(this.p.scene, 'divine-shield', {
+        x: this.p.sprite.x, y: this.p.feetY(), scale: 1.5, tint: 0xff8a3a, add: true,
+        durationMs: 800, fadeOutMs: 150, depth: DEPTH.SLASH, follow
+      });
+      burst(this.p.scene, this.p.sprite.x, this.p.sprite.y + 10, 0xff8a3a, 4, 30, 3);
+    }
+  }
   // ---------- ภาพบอกสถานะ: ประกายพาสซีฟ / ออร่าโหมดบุก ----------
   private drawAura(now: number) {
     const g = this.auraGfx;
@@ -1002,13 +1066,6 @@ export class AkkhaniKit implements CharacterKit {
     const px = this.p.sprite.x;
     const py = this.p.sprite.y;
     const r = Math.max(30, this.p.sprite.displayWidth * 0.42);
-
-    if (now < this.buffUntil) {
-      const left = this.buffUntil - now;
-      const a = left < 1000 ? 0.25 + 0.25 * Math.sin(now / 60) : 0.55;
-      g.lineStyle(3, 0xff8a3a, a);
-      g.strokeCircle(px, py, r + 6 + Math.sin(now / 120) * 2);
-    }
 
     if (this.opt.passive === 'b') {
       const n = this.critReady ? 4 : this.critCount;

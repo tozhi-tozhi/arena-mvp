@@ -501,7 +501,8 @@ heal(n: number): number {
     const shadowOffset = this.useClay ? this.sprite.displayHeight / 2 - 6 : 14;
     syncShadow(this.playerShadow, this.sprite, 0, false, this.useClay ? this.sprite.displayHeight / 2 - 6 : 14);
     this.shieldRing.setPosition(this.sprite.x, this.sprite.y);
-    this.shieldRing.setVisible(this.shield && !this.vanished);
+    // อัคนีใช้ pixelfx แสดงโล่ (AkkhaniKit.updateStatusFx) · ตัวอื่นยังใช้วงเส้นเดิม
+    this.shieldRing.setVisible(this.shield && !this.vanished && this.character.id !== 'akkhani');
     this.playerShadow.setVisible(!this.vanished);
     this.drawComboPips(now);
     this.updateHudTexts(now);
@@ -619,7 +620,26 @@ heal(n: number): number {
     this.hitStop(weight);
     if (actionId >= 0) this.kit.onHitLanded(actionId);
   }
-
+  /** ตำแหน่ง Y ที่เท้าผู้เล่น */
+  feetY(): number {
+    return this.sprite.y + this.sprite.displayHeight / 2 - 4;
+  }
+    /** แฟลชปากกระบอก — ประกายสั้น ๆ หน้าตัวละครตอนยิง (ภาพล้วน ไม่แตะดาเมจ) */
+  muzzleFx(dir: Phaser.Math.Vector2, color: number) {
+    const x = this.sprite.x + dir.x * 34;
+    const y = this.sprite.y + dir.y * 34;
+    const flash = this.scene.add.circle(x, y, 10, color, 0.9);
+    flash.setBlendMode(Phaser.BlendModes.ADD);
+    flash.setDepth(DEPTH.SLASH + 1);
+    this.scene.tweens.add({
+      targets: flash,
+      scale: 2,
+      alpha: 0,
+      duration: 120,
+      onComplete: () => flash.destroy()
+    });
+    burst(this.scene, x, y, color, 4, 22, 3);
+  }
   // ---------------------------------------------------------------
   // โดนตี / ไฟไหม้ / ตาย
   // ---------------------------------------------------------------
@@ -744,6 +764,9 @@ private updateClip(now: number) {
 const key = this.clips.frameKeyAt(now);
 if (key) this.setPlayerTexture(key);
 }
+  private chargeHoldStartAt: number = 0;
+  private chargeHoldMs: number = 0;
+
   private updateAkkVisual(now: number, moving: boolean) {
     let want = '';
     if (!this.isAttacking) {
@@ -755,48 +778,20 @@ if (key) this.setPlayerTexture(key);
       else if (want === 'charge_hold') {
         const n = this.clips.frames.charge_hold ?? 7;
         const ms = Math.max(40, (this.kit.chargeNeeded() - 120) / Math.max(1, n));
-        this.playClip('charge_hold', ms, true);
+        this.chargeHoldStartAt = now;
+        this.chargeHoldMs = ms;
+        this.playClip('charge_hold', ms, false);
       } else this.playClip('idle', 1000, true);
     }
+    // charge_hold: เล่นครบทุกเฟรมแล้วค้างเฟรมสุดท้ายจนปล่อยปุ่ม (ไม่ให้ ClipSet วนซ้ำ)
+    if (this.clips.current === 'charge_hold' && !this.isAttacking) {
+      const n = this.clips.frames.charge_hold ?? 7;
+      if (now - this.chargeHoldStartAt >= n * this.chargeHoldMs) {
+        this.setPlayerTexture(this.clips.keyOf('charge_hold', n));
+        return;
+      }
+    }
     this.updateClip(now);
-  }
-
-  feetY(): number {
-    return this.clips.ready
-      ? this.sprite.y + this.sprite.displayHeight * 0.45
-      : this.sprite.y + this.sprite.displayHeight / 2;
-  }
-
-  slashFx(scale: number, angle?: number, tint?: number) {
-    spawnPixelFx(this.scene, 'sword-slash', {
-      x: this.sprite.x,
-      y: this.feetY(),
-      scale,
-      flipX: angle === undefined ? this.sprite.flipX : false,
-      angle,
-      tint,
-      depth: DEPTH.SLASH + 1
-    });
-  }
-
-  /** เอฟเฟกต์พุ่งดาบ — วางที่เท้า หมุนตามทิศพุ่ง บีบให้จบพร้อมท่า */
-  thrustFx(dir: Phaser.Math.Vector2, totalMs: number) {
-    spawnPixelFx(this.scene, 'thrust', {
-      x: this.sprite.x,
-      y: this.feetY(),
-      scale: 1,
-      angle: Math.atan2(dir.y, dir.x),
-      fitMs: totalMs,
-      depth: DEPTH.SLASH + 1
-    });
-  }
-
-  muzzleFx(dir: Phaser.Math.Vector2, color: number) {
-    const mx = this.sprite.x + dir.x * 20;
-    const my = this.sprite.y + dir.y * 20;
-    spawnArcSlash(this.scene, mx, my, Math.atan2(dir.y, dir.x), 26, 35, color, 3, 130);
-    ringEffect(this.scene, mx, my, 18, color, 150);
-    burst(this.scene, mx, my, color, 4, 22, 3);
   }
 
 private getAimDir(): Phaser.Math.Vector2 {
