@@ -295,6 +295,18 @@ export class AkkhaniKit implements CharacterKit {
       this.p.sprite.setVelocity(tdir.x * thrustSpeed, tdir.y * thrustSpeed);
       sfx.dash();
       this.thrustFx(tdir, C.thrustMs);
+      // วงหมุนฟันรอบตัวขณะพุ่ง เกาะตามตัวจนจบท่าพุ่ง + ประกายสีส้มตอนออกตัว
+      spawnPixelFx(this.p.scene, 'spin-slash', {
+        x: this.p.sprite.x,
+        y: this.p.feetY(),
+        scale: this.p.fxScale(2.2),
+        tint: 0xffb15a,
+        add: true,
+        fitMs: C.thrustMs,
+        depth: DEPTH.SLASH + 1,
+        follow: () => ({ x: this.p.sprite.x, y: this.p.feetY() })
+      });
+      burst(this.p.scene, this.p.sprite.x, this.p.sprite.y, 0xffb15a, 10, 50, 4);
 
       this.p.cam.shake(120, 0.005);
       this.p.time.addEvent({ delay: 40, repeat: 4, callback: () => this.p.spawnAfterimage(0xff8a5a) });
@@ -365,12 +377,21 @@ export class AkkhaniKit implements CharacterKit {
       if (Math.abs(dir.x) > 0.3) this.p.sprite.setFlipX(dir.x < 0);
 
       sfx.swing();
+      const ux = this.p.sprite.x;
+      const uy = this.p.sprite.y;
+      // ชั้นที่ 1: วงฟันหลัก · ชั้นที่ 2: วงใหญ่สีแดงตามมาติด ๆ ให้ดูกวาดกว้างแรงขึ้น
       spawnPixelFx(this.p.scene, 'spin-slash', {
-        x: this.p.sprite.x,
-        y: this.p.feetY(),
-        scale: 2,
-        depth: DEPTH.SLASH + 1
+        x: ux, y: this.p.feetY(), scale: this.p.fxScale(2.6), depth: DEPTH.SLASH + 1
       });
+      this.p.time.delayedCall(90, () => {
+        if (token !== this.p.actionToken) return;
+        spawnPixelFx(this.p.scene, 'spin-slash', {
+          x: ux, y: this.p.feetY(), scale: this.p.fxScale(3.8), tint: 0xff3b2f, add: true, depth: DEPTH.SLASH + 1
+        });
+      });
+      burst(this.p.scene, ux, uy, 0xff8a5a, 18, S.range * 0.9, 5);
+      burst(this.p.scene, ux, uy, 0xffd166, 12, S.range * 0.6, 3);
+      this.p.cam.flash(70, 255, 200, 150);
       this.p.cam.shake(220, 0.012);
 
       this.p.sweep = {
@@ -470,14 +491,15 @@ export class AkkhaniKit implements CharacterKit {
     this.p.isActionLocked = true;
     this.p.sprite.setVelocity(0);
     this.p.playSkillClip('barrage', R.totalMs);
-    // เอฟเฟกต์รัวดาบสีทอง — เล่นจบพร้อมท่าพอดี
+    // เอฟเฟกต์รัวดาบสีทองใหญ่ — เป็นภาพหลักของท่านี้ เล่นจบพร้อมท่าพอดี
     spawnPixelFx(this.p.scene, 'dagger-flurry', {
       x: this.p.sprite.x,
       y: this.p.feetY(),
-      scale: 1,
+      scale: this.p.fxScale(2.4),
       angle: Math.atan2(this.p.facing.y, this.p.facing.x),
       fitMs: R.totalMs,
-      depth: DEPTH.SLASH + 1
+      depth: DEPTH.SLASH + 1,
+      follow: () => ({ x: this.p.sprite.x, y: this.p.feetY() })
     });
     sfx.swing();
 
@@ -489,11 +511,17 @@ export class AkkhaniKit implements CharacterKit {
         this.p.facing.copy(dir);
         if (Math.abs(dir.x) > 0.3) this.p.sprite.setFlipX(dir.x < 0);
         sfx.swing();
-        if (!last) this.pxSlash(dir, R.range, R.halfAngle, 0xff6a5a, 4, 150);
-        if (last) {
-          this.slashFx(2);
-          this.p.cam.shake(140, 0.006);
-        }
+        // ไม่มีรอยฟันธรรมดาแล้ว — ใช้ประกายทองสั้น ๆ บอกจังหวะแต่ละฮิต
+        burst(
+          this.p.scene,
+          this.p.sprite.x + dir.x * R.range * 0.6,
+          this.p.sprite.y + dir.y * R.range * 0.6,
+          last ? 0xffd166 : 0xffb15a,
+          last ? 12 : 5,
+          last ? 60 : 36,
+          last ? 5 : 3
+        );
+        if (last) this.p.cam.shake(140, 0.006);
         this.p.sweep = {
           dir,
           range: R.range,
@@ -603,7 +631,7 @@ export class AkkhaniKit implements CharacterKit {
     spawnPixelFx(this.p.scene, 'dagger-flurry', {
       x: this.p.sprite.x,
       y: this.p.feetY(),
-      scale: 1,
+      scale: this.p.fxScale(2.4),
       angle: Math.atan2(dir0.y, dir0.x),
       fitMs: T.totalMs,
       depth: DEPTH.SLASH + 1,
@@ -657,7 +685,16 @@ export class AkkhaniKit implements CharacterKit {
     if (Math.abs(dir.x) > 0.3) this.p.sprite.setFlipX(dir.x < 0);
     const last = i === T.damages.length - 1;
     sfx.swing();
-    this.pxSlash(dir, T.range, T.halfAngle, last ? 0xff5a3a : 0xff8a5a, last ? 9 : 6, 220);
+    // ไม่มีรอยฟันธรรมดาแล้ว — ภาพหลักคือ dagger-flurry · ประกายทองบอกจังหวะแต่ละจุดยอด
+    burst(
+      this.p.scene,
+      this.p.sprite.x + dir.x * T.range * 0.6,
+      this.p.sprite.y + dir.y * T.range * 0.6,
+      last ? 0xffd166 : 0xffb15a,
+      last ? 12 : 6,
+      last ? 60 : 40,
+      last ? 5 : 4
+    );
     this.p.cam.shake(last ? 120 : 80, last ? 0.006 : 0.004);
     this.p.sweep = {
       dir,
@@ -1035,7 +1072,7 @@ export class AkkhaniKit implements CharacterKit {
     });
     if (!fx) spawnArcSlash(this.p.scene, this.p.sprite.x, this.p.sprite.y, angle, range, halfAngle, color, lineWidth, ms);
   }
-    /** pixelfx ติดตัวขณะมีโล่ / โหมดบุก — ปล่อยซ้ำเป็นจังหวะ หยุดเองเมื่อสถานะหมด */
+  /** pixelfx ติดตัวขณะมีโล่ / โหมดบุก — ขนาดอิงตัวละคร ปล่อยซ้ำเป็นจังหวะ หยุดเองเมื่อสถานะหมด */
   private updateStatusFx(now: number) {
     if (this.p.character.id !== 'akkhani' || this.p._isDead || this.p.vanished) return;
     const follow = () => ({ x: this.p.sprite.x, y: this.p.feetY() });
@@ -1043,16 +1080,16 @@ export class AkkhaniKit implements CharacterKit {
     if (this.p.shield && now >= this.shieldFxAt) {
       this.shieldFxAt = now + 800;
       const shieldFx = spawnPixelFx(this.p.scene, 'divine-shield', {
-        x: this.p.sprite.x, y: this.p.feetY(), scale: 1, tint: 0x9de7ff, add: true,
+        x: this.p.sprite.x, y: this.p.feetY(), scale: this.p.fxScale(1.5), tint: 0x9de7ff, add: true,
         durationMs: 900, fadeOutMs: 150, depth: DEPTH.SLASH + 1, follow
       });
-      if (!shieldFx) ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, 40, 0x66e0ff, 400);
+      if (!shieldFx) ringEffect(this.p.scene, this.p.sprite.x, this.p.sprite.y, this.p.sprite.displayWidth * 0.5, 0x66e0ff, 400);
     }
 
     if (now < this.buffUntil && now >= this.buffFxAt) {
       this.buffFxAt = now + 700;
       spawnPixelFx(this.p.scene, 'divine-shield', {
-        x: this.p.sprite.x, y: this.p.feetY(), scale: 1.5, tint: 0xff8a3a, add: true,
+        x: this.p.sprite.x, y: this.p.feetY(), scale: this.p.fxScale(2.1), tint: 0xff8a3a, add: true,
         durationMs: 800, fadeOutMs: 150, depth: DEPTH.SLASH, follow
       });
       burst(this.p.scene, this.p.sprite.x, this.p.sprite.y + 10, 0xff8a3a, 4, 30, 3);

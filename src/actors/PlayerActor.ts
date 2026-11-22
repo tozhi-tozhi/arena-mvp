@@ -624,6 +624,11 @@ heal(n: number): number {
   feetY(): number {
     return this.sprite.y + this.sprite.displayHeight / 2 - 4;
   }
+    /** สเกลเอฟเฟกต์ที่อิงขนาดตัวละครจริง — ถ้าเอฟเฟกต์ใหญ่/เล็กเกินทุกท่า ปรับ REF_WIDTH ตัวเดียว */
+  fxScale(mult: number = 1): number {
+    const REF_WIDTH = 90;
+    return (this.sprite.displayWidth / REF_WIDTH) * mult;
+  }
     /** แฟลชปากกระบอก — ประกายสั้น ๆ หน้าตัวละครตอนยิง (ภาพล้วน ไม่แตะดาเมจ) */
   muzzleFx(dir: Phaser.Math.Vector2, color: number) {
     const x = this.sprite.x + dir.x * 34;
@@ -652,7 +657,7 @@ heal(n: number): number {
       this.shield = false;
       sfx.hit();
       const blockFx = spawnPixelFx(this.scene, 'divine-shield', {
-        x: player.x, y: this.feetY(), scale: 1, tint: 0x9de7ff, add: true,
+        x: player.x, y: this.feetY(), scale: this.fxScale(1.5), tint: 0x9de7ff, add: true,
         durationMs: 320, fadeOutMs: 120, depth: DEPTH.SLASH + 1
       });
       if (!blockFx) {
