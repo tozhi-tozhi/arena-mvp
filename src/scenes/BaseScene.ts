@@ -21,6 +21,7 @@ import { AmbientDust } from '../systems/AmbientDust';
 import { bakeBaseTextures, BASE_TEX } from '../systems/baseTextures';
 import { LogbookPanel } from '../ui/LogbookPanel';
 import { sfx } from '../systems/sfx';
+import { trainingState } from '../systems/trainingState';
 import { controls, pressed, CONTROL_LABEL } from '../systems/Controls';
 
 let saveLoaded = false; // โหลดเซฟแค่ครั้งแรกที่เปิดเกม
@@ -62,6 +63,7 @@ export class BaseScene extends Phaser.Scene {
     if (!saveLoaded) { loadGame(); saveLoaded = true; }
 
     this.starting = false;
+    trainingState.loadoutReturn = ''; // เข้าฐานแล้ว Loadout ต้องกลับฐานตามปกติ ไม่ใช่ห้องฝึก
     this.nearId = '';
     this.uiTexts = [];
     this.spots = [];

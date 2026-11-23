@@ -23,6 +23,8 @@ import type { CombatTarget } from '../systems/CombatTarget';
 import { controls, touch, skillKeyLabel } from '../systems/Controls';
 
 const CLAY_SCALE = 0.68;
+/** ค่าจูนขนาดเอฟเฟกต์ — ห้องฝึกปรับสดด้วยปุ่ม [ ] · เจอเลขที่ชอบแล้วแก้เลข 90 ตรงนี้ */
+export const FX_TUNE = { refWidth: 90 };
 
 // แรงสั่นจอตอนตีโดน — ห้ามคูณตามดาเมจตรง ๆ (บทเรียนเดียวกับ	hit-stop)
 // เดิม: 0.006 + damage * 0.002 → ดาเมจ 200 = 0.406 จอสะบัดแรงกว่าตอนโดนตีหลายเท่า
@@ -626,7 +628,7 @@ heal(n: number): number {
   }
     /** สเกลเอฟเฟกต์ที่อิงขนาดตัวละครจริง — ถ้าเอฟเฟกต์ใหญ่/เล็กเกินทุกท่า ปรับ REF_WIDTH ตัวเดียว */
   fxScale(mult: number = 1): number {
-    const REF_WIDTH = 90;
+    const REF_WIDTH = FX_TUNE.refWidth;
     return (this.sprite.displayWidth / REF_WIDTH) * mult;
   }
     /** แฟลชปากกระบอก — ประกายสั้น ๆ หน้าตัวละครตอนยิง (ภาพล้วน ไม่แตะดาเมจ) */

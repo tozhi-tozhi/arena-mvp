@@ -14,6 +14,7 @@ import { levelOf, starsOf, MAX_STARS, charmEffectLines, petEffectLines } from '.
 import { makeGlow, makeVignette } from '../systems/effects';
 import { bakeBaseTextures, BASE_TEX } from '../systems/baseTextures';
 import { sfx } from '../systems/sfx';
+import { trainingState } from '../systems/trainingState';
 
 // ---------- เลย์เอาต์ (ปรับที่นี่ที่เดียว) ----------
 const L = {
@@ -82,13 +83,19 @@ export class LoadoutScene extends Phaser.Scene {
     this.render();
   }
 
-  // ---------- ออกจากห้อง → กลับฐานจุดเดิม ----------
+  // ---------- ออกจากห้อง → กลับฐานจุดเดิม (หรือกลับห้องฝึกถ้าเปิดมาจากห้องฝึก) ----------
   private backToBase() {
     if (this.leaving) return;
     this.leaving = true;
     saveGame();
-    huntSession.markFromDressing();
     sfx.open();
+    const back = trainingState.loadoutReturn;
+    if (back) {
+      trainingState.loadoutReturn = '';
+      this.scene.start(back);
+      return;
+    }
+    huntSession.markFromDressing();
     this.scene.start('BaseScene');
   }
 
@@ -188,7 +195,8 @@ export class LoadoutScene extends Phaser.Scene {
     this.objs = [];
 
     this.text(GAME_WIDTH / 2, L.titleY, 'ห้องแต่งตัว', 26, '#ffd54a', 0.5, true);
-    this.text(GAME_WIDTH / 2, L.hintY, 'คลิกเลือกได้เลย · 1/2 ตัวละคร · K สกิล · C เครื่องราง · P สัตว์เลี้ยง · E หรือ ESC กลับฐาน', 11, '#a89f8c');
+    const backName = trainingState.loadoutReturn ? 'กลับห้องฝึก' : 'กลับฐาน';
+    this.text(GAME_WIDTH / 2, L.hintY, `คลิกเลือกได้เลย · 1/2 ตัวละคร · K สกิล · C เครื่องราง · P สัตว์เลี้ยง · E หรือ ESC ${backName}`, 11, '#a89f8c');
 
     this.renderStage();
     this.renderCharacters();
@@ -196,7 +204,7 @@ export class LoadoutScene extends Phaser.Scene {
     this.renderPet();
 
     this.button(GAME_WIDTH / 2 - 120, L.backY, 200, 36, 'เลือกสกิล (K)', () => this.openSkills(), 0xc084fc);
-    this.button(GAME_WIDTH / 2 + 120, L.backY, 200, 36, 'กลับฐาน (E)', () => this.backToBase(), 0x7dff9b);
+    this.button(GAME_WIDTH / 2 + 120, L.backY, 200, 36, `${backName} (E)`, () => this.backToBase(), 0x7dff9b);
   }
 
   // ---------- เวทีกระจก: เห็นตัวละคร + ของที่ใส่จริง ----------

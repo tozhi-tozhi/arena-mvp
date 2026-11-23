@@ -1,6 +1,6 @@
-// src/scenes/GameScene.ts — ห้องฝึก (Training Room): ผู้เล่น vs บอส 1 ตัว
-// Phase 3A: ตรรกะผู้เล่น/ต่อสู้ย้ายไป src/actors/PlayerActor.ts แล้ว
-// ไฟล์นี้เหลือเฉพาะเรื่องของฉาก: พื้น/กำแพง, บอส + HUD บอส, กล่องลูท, ไอเทม, ประตูออก, ลูกศรชี้บอส
+// src/scenes/GameScene.ts — ห้องฝึก (Training Room): หุ่นฟาง + แผง DPS + เครื่องมือทดสอบท่า
+// คีย์ฉาก 'GameScene' คงเดิม — ฐานยังเรียก scene.start('GameScene') ได้เหมือนเดิม
+// ไม่มีบอส ไม่มีลูท ไม่มีประตูออก · ออกด้วย ESC · เปิด Loadout ด้วย L (กลับมาห้องเดิมที่ยืนเดิม)
 import Phaser from 'phaser';
 import {
   GAME_WIDTH,
@@ -11,55 +11,68 @@ import {
   SPRITE_SCALE,
   DEPTH
 } from '../config';
-import { showDamage, makeVignette, showRarityBanner } from '../systems/effects';
+import { makeVignette } from '../systems/effects';
 import { sfx } from '../systems/sfx';
-import { BossHUD } from '../ui/BossHUD';
-import { showEndScreen } from '../ui/GameOverScreen';
 import { loadout } from '../systems/Loadout';
-import { starsOf, starName } from '../systems/Upgrades';
 import { saveGame } from '../systems/SaveGame';
-import { LootBox } from '../entities/LootBox';
-import { showHuntSummary } from '../ui/HuntSummaryScreen';
-import { DroppedItem } from '../entities/DroppedItem';
-import { ExitPortal } from '../entities/ExitPortal';
-import { rollBossDrops, type DroppedLoot } from '../data/loot';
-import type { BossId } from '../data/bosses';
-import { RARITY } from '../data/rarity';
-import { huntSession } from '../systems/HuntSession';
-import { createBoss, type Boss } from '../entities/createBoss';
-import { pickRandomBossId } from '../data/bosses';
-import { ensureBossTextures } from '../systems/bossTextures';
+import { findSkill, SKILL_SLOTS } from '../data/skills';
 import { loadMagmusFrames } from '../systems/magmusFrames';
 import { loadPixelFx } from '../systems/pixelFx';
-import { PlayerActor } from '../actors/PlayerActor';
-import { bossAsTarget, type CombatTarget } from '../systems/CombatTarget';
+import { PlayerActor, FX_TUNE } from '../actors/PlayerActor';
+import type { CombatTarget } from '../systems/CombatTarget';
+import { StrawDummy, dummyAsTarget, DUMMY } from '../entities/StrawDummy';
+import { DpsMeter } from '../systems/DpsMeter';
+import { trainingState, type TrainingRun } from '../systems/trainingState';
+import { controls, pressed, CONTROL_LABEL } from '../systems/Controls';
+
+const TIMER_MS = 30000; // จับเวลาทดสอบ DPS
+const HITBOX_HOLD_MS = 500; // ค้างภาพกรวยฟันไว้ให้ดูหลังฟันออก
+const MIN_MEASURE = 80; // วัดระยะเฉพาะการเคลื่อนที่ที่ไกลเกินนี้ (กันก้าวสั้นของตีเบา)
+const MEASURE_SHOW_MS = 4000;
+const PANEL_EVERY_MS = 100;
+const FX_DEFAULT_REF = 90; // ต้องตรงกับค่าเริ่มต้น FX_TUNE.refWidth ใน PlayerActor
+const RULER_RINGS = [100, 200, 300, 400, 500];
+const SELF_HIT = 100;
+const PATROL_INDEX = 4; // หุ่นตัวที่ 5 เป็นหุ่นเดินวน
+const SLOT_SHORT: Record<string, string> = { passive: 'P', combo: 'Cb', charge: 'Ch', ultimate: 'U' };
 
 export class GameScene extends Phaser.Scene {
   private actor!: PlayerActor;
+  private meter: DpsMeter = new DpsMeter();
+  private dummies: StrawDummy[] = [];
+  private targets: CombatTarget[] = [];
+  private colliders: any[] = [];
 
-  private keyRestart: any;
-  private keyInteract: any;
-  private keyMute: any;
+  private keyM!: Phaser.Input.Keyboard.Key;
+  private leaving: boolean = false;
 
-  private monster!: Boss;
-  private monsterTarget!: CombatTarget;
-  private bossHud!: BossHUD;
-  private bossCollider: any;
-  private bossIndicator!: Phaser.GameObjects.Text;
-  private bossIndicatorLabel!: Phaser.GameObjects.Text;
+  // จับเวลา 30 วินาที
+  private timer: { armed: boolean; startAt: number; endAt: number } | null = null;
+  private frozenDps: number | null = null;
 
-  private lootBox: LootBox | null = null;
-  private droppedItems: DroppedItem[] = [];
-  private exitPortal: ExitPortal | null = null;
-  private huntLoot: DroppedLoot[] = [];
-  private huntStartTime: number = 0;
-  private currentBossId: BossId = 'phasama';
-  private focusCanvas = () => this.sys.game.canvas.focus();
+  // ภาพช่วยทดสอบ
+  private hitGfx!: Phaser.GameObjects.Graphics;
+  private rulerGfx!: Phaser.GameObjects.Graphics;
+  private measureGfx!: Phaser.GameObjects.Graphics;
+  private rulerLabels: Phaser.GameObjects.Text[] = [];
+  private measureText!: Phaser.GameObjects.Text;
+  private sweepRef: any = null;
+  private sweepSnap: { x: number; y: number; ang: number; range: number; half: number; at: number } | null = null;
+  private wasLunging: boolean = false;
+  private lungeStart: { x: number; y: number } | null = null;
+  private measure: { x1: number; y1: number; x2: number; y2: number; dist: number; at: number } | null = null;
+  private lastMove: number = 0;
+
+  // UI
+  private panel!: Phaser.GameObjects.Text;
+  private panelAt: number = 0;
+  private controlLabel!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
+  // โหลดชุดเดิมไว้ครบ (ฉากอื่นอาจพึ่งภาพที่ฉากนี้เคยโหลด — โหลดซ้ำ Phaser ข้ามให้เอง)
   preload() {
     PlayerActor.preloadAssets(this);
 
@@ -77,11 +90,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
-    this.lootBox = null;
-    this.droppedItems = [];
-    this.exitPortal = null;
-    this.huntLoot = [];
-    this.huntStartTime = this.time.now;
+    // ฉากเดิมถูกใช้ซ้ำตอน restart — ล้างค่าทุกตัวที่เป็นของรอบก่อน
+    this.leaving = false;
+    this.dummies = [];
+    this.targets = [];
+    this.colliders = [];
+    this.timer = null;
+    this.frozenDps = null;
+    this.sweepRef = null;
+    this.sweepSnap = null;
+    this.wasLunging = false;
+    this.lungeStart = null;
+    this.measure = null;
+    this.lastMove = 0;
+    this.panelAt = 0;
+    this.rulerLabels = [];
+    this.meter = new DpsMeter();
 
     const W = WORLD_WIDTH;
     const H = WORLD_HEIGHT;
@@ -89,209 +113,547 @@ export class GameScene extends Phaser.Scene {
     this.add.tileSprite(0, 0, W, H, 'floor').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.FLOOR);
     this.createFloorDetails();
     this.add.tileSprite(0, 0, W, t, 'wall').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.WALL);
-    this.add
-      .tileSprite(0, H - t, W, t, 'wall')
-      .setOrigin(0)
-      .setTileScale(SPRITE_SCALE)
-      .setDepth(DEPTH.WALL);
+    this.add.tileSprite(0, H - t, W, t, 'wall').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.WALL);
     this.add.tileSprite(0, 0, t, H, 'wall').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.WALL);
-    this.add
-      .tileSprite(W - t, 0, t, H, 'wall')
-      .setOrigin(0)
-      .setTileScale(SPRITE_SCALE)
-      .setDepth(DEPTH.WALL);
+    this.add.tileSprite(W - t, 0, t, H, 'wall').setOrigin(0).setTileScale(SPRITE_SCALE).setDepth(DEPTH.WALL);
 
     this.physics.world.setBounds(t, t, W - t * 2, H - t * 2);
     makeVignette(this);
 
+    // ตำแหน่งเริ่ม: กลับจากเปิด Loadout / ล้มแล้วเริ่มใหม่ = ยืนจุดเดิม · ไม่มี = ซ้ายของกลางห้องเล็กน้อย
+    const saved = trainingState.pos;
+    trainingState.pos = null;
+    const px = saved ? Phaser.Math.Clamp(saved.x, t + 40, W - t - 40) : W / 2 - 100;
+    const py = saved ? Phaser.Math.Clamp(saved.y, t + 40, H - t - 40) : H / 2;
+
+    this.hitGfx = this.add.graphics().setDepth(DEPTH.TELEGRAPH);
+    this.rulerGfx = this.add.graphics().setDepth(DEPTH.FLOOR + 3);
+    this.measureGfx = this.add.graphics().setDepth(DEPTH.TELEGRAPH);
+    this.buildRulerLabels();
+
     // ---------- ผู้เล่น (ตรรกะทั้งหมดอยู่ใน PlayerActor) ----------
-    this.actor = new PlayerActor(this, W / 2, H / 2, {
-      // ห้องฝึกมีเป้าหมายเดียวคือบอส
-      getTargets: () => (this.monsterTarget ? [this.monsterTarget] : []),
-      onTargetDamaged: () => this.bossHud.update(this.monster.hp),
-      onDeathShown: () => showEndScreen(this, 'GAME OVER', '#ff4444', 'กด R เพื่อกลับฐาน')
+    this.actor = new PlayerActor(this, px, py, {
+      getTargets: () => this.targets,
+      onDeathShown: () => this.onPlayerDeath()
     });
 
-    this.keyRestart = (this.input.keyboard as any).addKey(Phaser.Input.Keyboard.KeyCodes.R);
-    this.keyInteract = (this.input.keyboard as any).addKey(Phaser.Input.Keyboard.KeyCodes.E);
-    this.keyMute = (this.input.keyboard as any).addKey(Phaser.Input.Keyboard.KeyCodes.M);
+    this.spawnDummies(W / 2, H / 2, W, H);
+    this.applyCollide();
 
-    // ---------- บอส ----------
-    ensureBossTextures(this);
-    const bossId = loadout.bossChoice === 'random' ? pickRandomBossId() : loadout.bossChoice;
-    this.currentBossId = bossId;
-    this.monster = createBoss(this, bossId, WORLD_WIDTH * 0.78, WORLD_HEIGHT / 2, {
-      getTargets: () => (this.actor.isDead ? [] : [this.actor.sprite]),
-      onHitTarget: (_target, damage, fromX, fromY) => this.actor.takeDamage(damage, fromX, fromY),
-      onBurn: (_target, delta) => this.actor.applyBurn(delta),
-      onDeath: () => this.onMonsterDeath()
-    });
-    this.monsterTarget = bossAsTarget(this.monster);
-    this.bossHud = new BossHUD(this, this.monster.def.name, this.monster.def.hp);
-    this.bossCollider = this.physics.add.collider(this.actor.sprite, this.monster.sprite);
-
-    this.bossIndicator = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '▲', {
-        fontFamily: 'Arial',
-        fontSize: '28px',
-        fontStyle: 'bold',
-        color: '#ffd166',
-        stroke: '#4a2600',
-        strokeThickness: 4
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.HUD)
-      .setScrollFactor(0)
-      .setVisible(false);
-    this.bossIndicatorLabel = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 24, 'บอส', {
-        fontFamily: '"Noto Sans Thai", monospace',
-        fontSize: '12px',
-        fontStyle: 'bold',
-        color: '#ffffff',
-        backgroundColor: 'rgba(25, 15, 5, 0.78)',
-        padding: { x: 5, y: 2 },
-        stroke: '#000000',
-        strokeThickness: 2
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.HUD)
-      .setScrollFactor(0)
-      .setVisible(false);
-
-    this.showControlsNotice();
+    this.keyM = (this.input.keyboard as any).addKey(Phaser.Input.Keyboard.KeyCodes.M);
+    this.bindKeys();
+    this.buildPanel();
+    this.buildControlLabel();
 
     const camera = this.cameras.main;
     camera.setBounds(0, 0, W, H);
     camera.startFollow(this.actor.sprite, true, 0.08, 0.08);
     camera.setDeadzone(440, 340);
 
-    this.sys.game.canvas.addEventListener('click', this.focusCanvas);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.sys.game.canvas.removeEventListener('click', this.focusCanvas);
+      (this.input.keyboard as any).removeAllListeners();
+      for (const d of this.dummies) d.destroy();
     });
+
+    this.refreshPanel(this.time.now, true);
   }
 
   update(_time: number, delta: number) {
     if (!this.actor) return;
+    const now = this.time.now;
 
-    if (Phaser.Input.Keyboard.JustDown(this.keyMute)) {
-      const nowMuted = sfx.toggleMute();
-      showDamage(this, this.actor.x, this.actor.y - 40, nowMuted ? 'ปิดเสียง' : 'เปิดเสียง', '#ffffff', 900);
+    if (pressed(this.keyM, 'M')) {
+      const off = sfx.toggleMute();
+      this.showToast(off ? 'ปิดเสียง' : 'เปิดเสียง');
     }
 
-    // ผู้เล่น: ควบคุม + ต่อสู้ + เครื่องราง/สัตว์เลี้ยง + ไฟไหม้ + HUD ของผู้เล่น
+    // ผู้เล่น: ควบคุม + ต่อสู้ + เครื่องราง/สัตว์เลี้ยง + HUD ของผู้เล่น
     this.actor.update(delta);
+    if (this.actor.isDead) return; // เริ่มห้องใหม่เองใน onPlayerDeath
 
-    if (this.actor.isDead || this.actor.isVictory) {
-      if (this.keyRestart && Phaser.Input.Keyboard.JustDown(this.keyRestart)) {
-        this.scene.start('BaseScene');
-      }
-      return;
-    }
-
-    this.monster.update(delta);
-
-    const px = this.actor.x;
-    const py = this.actor.y;
-    const justPressedE = Phaser.Input.Keyboard.JustDown(this.keyInteract);
-
-    if (this.lootBox) {
-      this.lootBox.checkPlayerDistance(px, py);
-      if (justPressedE && !this.lootBox.isOpened) {
-        const dist = Phaser.Math.Distance.Between(this.lootBox.sprite.x, this.lootBox.sprite.y, px, py);
-        if (dist <= 60) {
-          sfx.open();
-          this.lootBox.open(() => {
-            const boxX = this.lootBox!.sprite.x;
-            const boxY = this.lootBox!.sprite.y;
-            this.lootBox = null;
-
-            // ดรอป 4 ชิ้นจากบอสนี้
-            const rolledDrops = rollBossDrops(this.currentBossId, 4);
-            const margin = WALL_THICKNESS + 30;
-            for (let i = 0; i < rolledDrops.length; i++) {
-              const angle = (i * Math.PI) / 2 + (Math.random() - 0.5) * 0.4;
-              const dist = 40 + Math.random() * 20;
-              const ix = Phaser.Math.Clamp(boxX + Math.cos(angle) * dist, margin, WORLD_WIDTH - margin);
-              const iy = Phaser.Math.Clamp(boxY + Math.sin(angle) * dist, margin, WORLD_HEIGHT - margin);
-              const item = new DroppedItem(this, ix, iy, rolledDrops[i]);
-              this.droppedItems.push(item);
-            }
-
-            // แบนเนอร์เฉพาะ rarity สูงสุด
-            const highest = rolledDrops.reduce((max, d) =>
-              RARITY[d.rarity].order > RARITY[max.rarity].order ? d : max
-            );
-            if (RARITY[highest.rarity].glow) {
-              showRarityBanner(this, boxX, boxY - 70, highest.rarity, highest.name);
-            }
-
-            // ประตูออกเกิดตรงจุดที่บอสตาย (ใต้กล่องลงมานิดนึง) เพื่อให้ผู้เล่นหาเจอทันที
-            this.exitPortal = new ExitPortal(this, boxX, boxY + 80);
-          });
-        }
-      }
-    }
-
-    // เก็บได้ทีละหลายชิ้น — E ครั้งเดียวเก็บทุกไอเทมในระยะ
-    if (this.droppedItems.length > 0) {
-      for (const item of this.droppedItems) {
-        item.checkPlayerDistance(px, py);
-      }
-      if (justPressedE) {
-        const toCollect = this.droppedItems.filter((item) => {
-          if (item.isCollected) return false;
-          const dist = Phaser.Math.Distance.Between(item.sprite.x, item.sprite.y, px, py);
-          return dist <= 50;
-        });
-        for (const item of toCollect) {
-          const loot = item.loot;
-          this.droppedItems = this.droppedItems.filter((d) => d !== item);
-          item.collect(() => {
-            sfx.pickup();
-            huntSession.addItem(loot);
-            saveGame();
-            this.huntLoot.push(loot);
-            showDamage(
-              this,
-              this.actor.x,
-              this.actor.y - 40,
-              `+ ${loot.name}`,
-              RARITY[loot.rarity].color,
-              1500
-            );
-          });
-        }
-      }
-    }
-
-    if (this.exitPortal) {
-      this.exitPortal.checkPlayerDistance(px, py);
-      if (justPressedE) {
-        const dist = Phaser.Math.Distance.Between(this.exitPortal.sprite.x, this.exitPortal.sprite.y, px, py);
-        if (dist <= 55) {
-          this.exitPortal.enter(() => {
-            sfx.pickup();
-            this.exitPortal = null;
-            this.actor.setVictory();
-            this.time.delayedCall(400, () => {
-              showHuntSummary(this, {
-                timeTakenMs: this.time.now - this.huntStartTime,
-                huntLoot: this.huntLoot,
-                bag: huntSession.getBag()
-              });
-            });
-          });
-        }
-      }
-    }
-
-    this.updateBossIndicator();
+    for (const d of this.dummies) d.update();
+    this.trackLunge(now);
+    this.updateTimer(now);
+    this.drawHitboxes(now);
+    this.drawRuler();
+    this.drawMeasure(now);
+    this.refreshPanel(now, false);
   }
 
   // =====================================================
-  // ตัวช่วยของฉาก
+  //  หุ่น + การชน
+  // =====================================================
+  private spawnDummies(cx: number, cy: number, W: number, H: number) {
+    const t = WALL_THICKNESS;
+    const place = (dx: number, dy: number) => ({
+      x: Phaser.Math.Clamp(cx + dx, t + 80, W - t - 80),
+      y: Phaser.Math.Clamp(cy + dy, t + 100, H - t - 100)
+    });
+    // กลุ่ม 3 ตัวใกล้ (ทดสอบฟันโดนหลายเป้า) · ตัวไกลสุด (ทดสอบระยะพุ่ง) · ตัวเดินวนซ้ายมือ
+    const spots = [place(240, 0), place(290, -80), place(290, 80), place(560, 0), place(-280, 0)];
+    for (const p of spots) {
+      this.dummies.push(new StrawDummy(this, p.x, p.y, (damage) => this.onDummyHit(damage)));
+    }
+    this.dummies[PATROL_INDEX].setPatrol(trainingState.patrol);
+    // สร้าง CombatTarget ครั้งเดียว ไม่สร้างใน getTargets()
+    this.targets = this.dummies.map((d) => dummyAsTarget(d));
+  }
+
+  /** เปิด/ปิดการชนระหว่างผู้เล่นกับหุ่น (หุ่นเป็นของแข็งเหมือนบอสตอนเปิด) */
+  private applyCollide() {
+    for (const c of this.colliders) c.destroy();
+    this.colliders = [];
+    if (!trainingState.collide) return;
+    for (const d of this.dummies) {
+      this.colliders.push(this.physics.add.collider(this.actor.sprite, d.sprite));
+    }
+  }
+
+  private onDummyHit(damage: number) {
+    const now = this.time.now;
+    // จับเวลาเริ่มนับตอนตีฮิตแรก
+    if (this.timer && this.timer.armed) {
+      this.timer.armed = false;
+      this.timer.startAt = now;
+      this.timer.endAt = now + TIMER_MS;
+    }
+    this.meter.record(now, damage);
+  }
+
+  // =====================================================
+  //  ปุ่ม
+  // =====================================================
+  private bindKeys() {
+    const kb = this.input.keyboard as any;
+    kb.on('keydown-L', () => this.openLoadout());
+    kb.on('keydown-R', () => this.onResetKey());
+    kb.on('keydown-G', () => this.selfHit());
+    kb.on('keydown-H', () => this.toggleHitbox());
+    kb.on('keydown-X', () => this.toggleRuler());
+    kb.on('keydown-T', () => this.toggleTimer());
+    kb.on('keydown-N', () => this.togglePatrol());
+    kb.on('keydown-C', () => this.toggleCollide());
+    kb.on('keydown-OPEN_BRACKET', () => this.tuneFx(-1));
+    kb.on('keydown-CLOSED_BRACKET', () => this.tuneFx(1));
+    kb.on('keydown-ESC', () => this.exitRoom());
+    kb.on('keydown-V', () => this.cycleControls());
+  }
+
+  /** เปิดห้องแต่งตัว (ตัวละคร/สกิล/เครื่องราง/สัตว์เลี้ยง) — ปิดแล้วกลับมาห้องนี้ ยืนจุดเดิม สกิลใหม่มีผลทันที */
+  private openLoadout() {
+    if (this.leaving || this.actor.isDead) return;
+    this.leaving = true;
+    saveGame();
+    trainingState.pos = { x: this.actor.x, y: this.actor.y };
+    trainingState.loadoutReturn = 'GameScene';
+    sfx.open();
+    this.scene.start('LoadoutScene');
+  }
+
+  private exitRoom() {
+    if (this.leaving) return;
+    this.leaving = true;
+    saveGame();
+    trainingState.loadoutReturn = '';
+    trainingState.pos = null;
+    sfx.whoosh();
+    this.scene.start('BaseScene');
+  }
+
+  private onPlayerDeath() {
+    this.showToast('ล้มแล้ว — เริ่มห้องใหม่');
+    this.time.delayedCall(600, () => this.restartRoom());
+  }
+
+  private restartRoom() {
+    if (this.leaving) return;
+    this.leaving = true;
+    trainingState.pos = { x: this.actor.x, y: this.actor.y };
+    this.scene.restart();
+  }
+
+  private onResetKey() {
+    if (this.actor.isDead) {
+      this.restartRoom();
+      return;
+    }
+    this.meter.reset();
+    this.frozenDps = null;
+    this.timer = null;
+    this.lastMove = 0;
+    this.measure = null;
+    this.actor.heal(this.actor.maxPlayerHP);
+    this.actor.skillReadyAt = 0;
+    this.actor.ultReadyAt = 0;
+    this.showToast('รีเซ็ตแล้ว: เลือดเต็ม · คูลดาวน์ไม้ตาย · DPS');
+  }
+
+  /** โดนตีเบา ๆ ให้ตัวเอง — ทดสอบโล่ Passive A และทุกอย่างที่ทำงานตอนรับดาเมจ */
+  private selfHit() {
+    if (this.actor.isDead) return;
+    if (this.actor.hp <= SELF_HIT) this.actor.heal(this.actor.maxPlayerHP);
+    this.actor.takeDamage(SELF_HIT, this.actor.x - 40, this.actor.y);
+  }
+
+  private toggleHitbox() {
+    trainingState.hitbox = !trainingState.hitbox;
+    this.showToast(trainingState.hitbox ? 'แสดง hitbox' : 'ซ่อน hitbox');
+  }
+
+  private toggleRuler() {
+    trainingState.ruler = !trainingState.ruler;
+    this.showToast(trainingState.ruler ? 'แสดงไม้บรรทัดระยะ' : 'ซ่อนไม้บรรทัดระยะ');
+  }
+
+  private togglePatrol() {
+    trainingState.patrol = !trainingState.patrol;
+    this.dummies[PATROL_INDEX].setPatrol(trainingState.patrol);
+    this.showToast(trainingState.patrol ? 'หุ่นซ้ายมือเดินวน' : 'หุ่นซ้ายมือหยุดนิ่ง');
+  }
+
+  private toggleCollide() {
+    trainingState.collide = !trainingState.collide;
+    this.applyCollide();
+    this.showToast(trainingState.collide ? 'ชนหุ่น: เปิด (ตันเหมือนบอส)' : 'ชนหุ่น: ปิด (เดินทะลุได้)');
+  }
+
+  /** ปรับขนาดเอฟเฟกต์ทุกท่าที่ใช้ fxScale สด — dir +1 = ใหญ่ขึ้น · เจอค่าที่ชอบแล้วจดเลข REF ไปแก้ในโค้ด */
+  private tuneFx(dir: number) {
+    FX_TUNE.refWidth = Phaser.Math.Clamp(FX_TUNE.refWidth - dir * 5, 30, 240);
+    this.showToast(`ขนาดเอฟเฟกต์ ×${(FX_DEFAULT_REF / FX_TUNE.refWidth).toFixed(2)} (REF ${FX_TUNE.refWidth})`);
+  }
+
+  private cycleControls() {
+    if (this.leaving) return;
+    controls.cycle();
+    this.refreshControlLabel();
+    sfx.open();
+    this.showToast('ควบคุม: ' + CONTROL_LABEL[controls.mode]);
+  }
+
+  // =====================================================
+  //  จับเวลา 30 วินาที
+  // =====================================================
+  private toggleTimer() {
+    if (this.actor.isDead) return;
+    if (this.timer) {
+      this.timer = null;
+      this.meter.reset();
+      this.frozenDps = null;
+      this.showToast('ยกเลิกจับเวลา');
+      return;
+    }
+    this.meter.reset();
+    this.frozenDps = null;
+    this.meter.idleResetMs = Infinity; // ห้ามแตกรอบกลางการจับเวลา
+    this.timer = { armed: true, startAt: 0, endAt: 0 };
+    this.showToast('จับเวลา 30 วิ — เริ่มนับเมื่อตีฮิตแรก');
+  }
+
+  private updateTimer(now: number) {
+    const t = this.timer;
+    if (!t || t.armed) return;
+    if (now >= t.endAt) this.finishTimer();
+  }
+
+  private finishTimer() {
+    const dps = this.meter.total / (TIMER_MS / 1000);
+    const run: TrainingRun = {
+      dps,
+      total: this.meter.total,
+      hits: this.meter.count,
+      maxHit: this.meter.maxHit,
+      label: this.skillLabel()
+    };
+    trainingState.runs.unshift(run);
+    if (trainingState.runs.length > 5) trainingState.runs.length = 5;
+    this.meter.locked = true;
+    this.frozenDps = dps;
+    this.timer = null;
+    sfx.pickup();
+    this.showToast(`จบ 30 วิ · DPS ${dps.toFixed(1)} · ${this.meter.count} ฮิต`);
+  }
+
+  /** ชื่อชุดสกิลที่ใส่อยู่ เช่น "อัคนี P:A Cb:B Ch:C U:A" — ใช้ติดป้ายผลจับเวลา */
+  private skillLabel(): string {
+    const id = this.actor.character.id;
+    const parts: string[] = [];
+    for (const slot of SKILL_SLOTS) {
+      const d = findSkill(loadout.skillOf(slot));
+      const opt = d && d.char === id ? d.option : 'a';
+      parts.push(`${SLOT_SHORT[slot] ?? slot}:${String(opt).toUpperCase()}`);
+    }
+    return `${this.actor.character.name} ${parts.join(' ')}`;
+  }
+
+  // =====================================================
+  //  ภาพช่วยทดสอบ: hitbox / ไม้บรรทัด / วัดระยะพุ่ง
+  // =====================================================
+  /** วัดระยะที่ตัวละครเคลื่อนที่ระหว่างท่า (isLunging) — เทียบ Charge A/B/C ด้วยตัวเลข */
+  private trackLunge(now: number) {
+    const l = this.actor.isLunging;
+    if (l && !this.wasLunging) this.lungeStart = { x: this.actor.x, y: this.actor.y };
+    if (!l && this.wasLunging && this.lungeStart) {
+      const dist = Math.round(Phaser.Math.Distance.Between(this.lungeStart.x, this.lungeStart.y, this.actor.x, this.actor.y));
+      if (dist >= MIN_MEASURE) {
+        this.lastMove = dist;
+        this.measure = { x1: this.lungeStart.x, y1: this.lungeStart.y, x2: this.actor.x, y2: this.actor.y, dist, at: now };
+      }
+      this.lungeStart = null;
+    }
+    this.wasLunging = l;
+  }
+
+  private drawMeasure(now: number) {
+    const g = this.measureGfx;
+    g.clear();
+    const m = this.measure;
+    if (!m || now - m.at > MEASURE_SHOW_MS) {
+      this.measureText.setVisible(false);
+      return;
+    }
+    const a = 1 - (now - m.at) / MEASURE_SHOW_MS;
+    g.lineStyle(2, 0xffd166, 0.3 + 0.6 * a);
+    g.beginPath();
+    g.moveTo(m.x1, m.y1);
+    g.lineTo(m.x2, m.y2);
+    g.strokePath();
+    g.fillStyle(0xffd166, 0.3 + 0.6 * a);
+    g.fillCircle(m.x1, m.y1, 5);
+    g.fillCircle(m.x2, m.y2, 5);
+    this.measureText
+      .setPosition((m.x1 + m.x2) / 2, (m.y1 + m.y2) / 2 - 14)
+      .setText(`${m.dist} px`)
+      .setAlpha(0.4 + 0.6 * a)
+      .setVisible(true);
+  }
+
+  private buildRulerLabels() {
+    this.rulerLabels = RULER_RINGS.map((r) =>
+      this.add
+        .text(0, 0, String(r), {
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          color: '#e8e0c8',
+          stroke: '#000000',
+          strokeThickness: 3
+        })
+        .setDepth(DEPTH.FLOOR + 3)
+        .setVisible(false)
+    );
+    this.measureText = this.add
+      .text(0, 0, '', {
+        fontFamily: '"Noto Sans Thai", monospace',
+        fontSize: '14px',
+        fontStyle: 'bold',
+        color: '#ffd166',
+        stroke: '#000000',
+        strokeThickness: 3
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.TELEGRAPH)
+      .setVisible(false);
+  }
+
+  private drawRuler() {
+    const g = this.rulerGfx;
+    g.clear();
+    const on = trainingState.ruler;
+    for (const l of this.rulerLabels) l.setVisible(on);
+    if (!on) return;
+    const x = this.actor.x;
+    const y = this.actor.y;
+    RULER_RINGS.forEach((r, i) => {
+      g.lineStyle(1, 0xe8e0c8, i % 2 === 0 ? 0.55 : 0.3);
+      g.strokeCircle(x, y, r);
+      this.rulerLabels[i].setPosition(x + r + 4, y - 8);
+    });
+  }
+
+  /** กรวยฟันที่ใช้ตรวจจริง (ค้างให้ดู 0.5 วินาที) + วงพุ่ง + วงเป้าของหุ่น — ภาพ debug ไม่แตะ gameplay */
+  private drawHitboxes(now: number) {
+    const g = this.hitGfx;
+    g.clear();
+    if (!trainingState.hitbox) {
+      this.sweepSnap = null;
+      return;
+    }
+    g.lineStyle(2, 0x7dff9b, 0.55);
+    for (const d of this.dummies) g.strokeCircle(d.sprite.x, d.sprite.y, DUMMY.radius);
+
+    const s = this.actor.sweep;
+    if (s && s !== this.sweepRef) {
+      this.sweepRef = s;
+      this.sweepSnap = {
+        x: this.actor.x,
+        y: this.actor.y,
+        ang: Math.atan2(s.dir.y, s.dir.x),
+        range: s.range,
+        half: s.halfAngle,
+        at: now
+      };
+    }
+    const snap = this.sweepSnap;
+    if (snap) {
+      const age = now - snap.at;
+      if (age > HITBOX_HOLD_MS) {
+        this.sweepSnap = null;
+      } else {
+        const a = 1 - age / HITBOX_HOLD_MS;
+        g.fillStyle(0x9de7ff, 0.04 + 0.12 * a);
+        g.lineStyle(2, 0x9de7ff, 0.1 + 0.9 * a);
+        if (snap.half >= 180) {
+          g.fillCircle(snap.x, snap.y, snap.range);
+          g.strokeCircle(snap.x, snap.y, snap.range);
+        } else {
+          const half = Phaser.Math.DegToRad(snap.half);
+          g.beginPath();
+          g.moveTo(snap.x, snap.y);
+          g.arc(snap.x, snap.y, snap.range, snap.ang - half, snap.ang + half, false);
+          g.closePath();
+          g.fillPath();
+          g.strokePath();
+        }
+      }
+    }
+
+    // ท่าพุ่ง: เป้าโดนเมื่อวงเป้าแตะวงรัศมี 30 รอบตัวผู้เล่น
+    if (this.actor.thrust) {
+      g.lineStyle(2, 0xffb15a, 0.9);
+      g.strokeCircle(this.actor.x, this.actor.y, 30);
+    }
+  }
+
+  // =====================================================
+  //  UI
+  // =====================================================
+  private buildPanel() {
+    this.panel = this.add
+      .text(GAME_WIDTH - 14, 14, '', {
+        fontFamily: '"Noto Sans Thai", monospace',
+        fontSize: '13px',
+        color: '#ffffff',
+        backgroundColor: 'rgba(20, 16, 10, 0.88)',
+        padding: { x: 10, y: 8 },
+        lineSpacing: 3
+      })
+      .setOrigin(1, 0)
+      .setDepth(DEPTH.HUD)
+      .setScrollFactor(0);
+
+    this.add
+      .text(
+        GAME_WIDTH / 2,
+        GAME_HEIGHT - 34,
+        'L Loadout · R รีเซ็ต · G โดนตี · T จับเวลา · H hitbox · X ไม้บรรทัด · C ชนหุ่น · N หุ่นเดิน · [ ] เอฟเฟกต์ · ESC กลับฐาน',
+        {
+          fontFamily: '"Noto Sans Thai", monospace',
+          fontSize: '10px',
+          color: '#a89f8c',
+          stroke: '#000000',
+          strokeThickness: 2
+        }
+      )
+      .setOrigin(0.5, 1)
+      .setDepth(DEPTH.HUD)
+      .setScrollFactor(0);
+  }
+
+  private currentDps(now: number): number {
+    if (this.frozenDps !== null) return this.frozenDps;
+    if (this.timer && !this.timer.armed) {
+      return this.meter.total / Math.max(1, (now - this.timer.startAt) / 1000);
+    }
+    return this.meter.dps(now);
+  }
+
+  private refreshPanel(now: number, force: boolean) {
+    if (!force && now - this.panelAt < PANEL_EVERY_MS) return;
+    this.panelAt = now;
+    const m = this.meter;
+    const lines: string[] = [];
+    lines.push(`ห้องฝึก · ${this.actor.character.name}`);
+
+    if (this.timer) {
+      if (this.timer.armed) lines.push('จับเวลา 30 วิ: รอตีฮิตแรก…');
+      else lines.push(`จับเวลา: เหลือ ${Math.max(0, (this.timer.endAt - now) / 1000).toFixed(1)} วิ`);
+    }
+
+    let tag = '';
+    if (this.frozenDps !== null) tag = '  (ผลจับเวลา · R รีเซ็ต)';
+    else if (m.count > 0) tag = m.isActive(now) ? '  ●' : '  (หยุดแล้ว)';
+    lines.push(`DPS ${this.currentDps(now).toFixed(1)}${tag}`);
+    lines.push(`ดาเมจรวม ${m.total.toLocaleString()} · ${m.count} ฮิต`);
+    lines.push(`ฮิตแรงสุด ${m.maxHit} · ล่าสุด ${m.lastHit}`);
+    const recent = m.recentList();
+    lines.push(`ลำดับ: ${recent.length > 0 ? recent.join(' · ') : '—'}`);
+    lines.push(`ระยะพุ่งล่าสุด ${this.lastMove > 0 ? this.lastMove + ' px' : '—'}`);
+
+    if (trainingState.runs.length > 0) {
+      lines.push('— ผลจับเวลา 30 วิ —');
+      trainingState.runs.slice(0, 3).forEach((r, i) => {
+        lines.push(`#${i + 1} ${r.dps.toFixed(1)} · ${r.label}`);
+      });
+    }
+
+    const flag = (b: boolean) => (b ? 'เปิด' : 'ปิด');
+    lines.push(`H hitbox ${flag(trainingState.hitbox)} · X ไม้บรรทัด ${flag(trainingState.ruler)}`);
+    lines.push(`C ชนหุ่น ${flag(trainingState.collide)} · N หุ่นเดิน ${flag(trainingState.patrol)}`);
+    lines.push(`[ ] ขนาดเอฟเฟกต์ ×${(FX_DEFAULT_REF / FX_TUNE.refWidth).toFixed(2)}`);
+
+    this.panel.setText(lines.join('\n'));
+  }
+
+  /** ป้ายมุมซ้ายล่าง: โหมดควบคุมปัจจุบัน — กด V หรือแตะเพื่อสลับ (แบบเดียวกับฐาน) */
+  private buildControlLabel() {
+    this.controlLabel = this.add
+      .text(12, GAME_HEIGHT - 10, '', {
+        fontFamily: '"Noto Sans Thai", monospace',
+        fontSize: '12px',
+        fontStyle: 'bold',
+        color: '#a89f8c',
+        stroke: '#000000',
+        strokeThickness: 3
+      })
+      .setOrigin(0, 1)
+      .setDepth(DEPTH.HUD)
+      .setScrollFactor(0);
+    this.controlLabel.setInteractive({ useHandCursor: true });
+    this.controlLabel.on('pointerdown', () => this.cycleControls());
+    this.refreshControlLabel();
+  }
+
+  private refreshControlLabel() {
+    this.controlLabel.setText(`ควบคุม: ${CONTROL_LABEL[controls.mode]}  ([V] หรือแตะเพื่อสลับ)`);
+  }
+
+  private showToast(msg: string) {
+    const toast = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 140, msg, {
+        fontFamily: '"Noto Sans Thai", monospace',
+        fontSize: '16px',
+        fontStyle: 'bold',
+        color: '#7dff9b',
+        stroke: '#000000',
+        strokeThickness: 4,
+        backgroundColor: 'rgba(0,0,0,0.72)',
+        padding: { x: 12, y: 6 }
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.OVERLAY)
+      .setScrollFactor(0);
+    this.tweens.add({
+      targets: toast,
+      alpha: 0,
+      y: toast.y - 20,
+      delay: 1400,
+      duration: 480,
+      onComplete: () => toast.destroy()
+    });
+  }
+
+  // =====================================================
+  //  พื้นห้อง (ชุดเดิม)
   // =====================================================
   private createFloorDetails() {
     const g = this.add.graphics();
@@ -333,116 +695,6 @@ export class GameScene extends Phaser.Scene {
       g.moveTo(x, y);
       g.lineTo(x + 4 + rand() * 5, y - 4 - rand() * 6);
       g.strokePath();
-    }
-  }
-
-  private onMonsterDeath() {
-    this.actor.endEncounter();
-    this.bossHud.update(0);
-    sfx.bossDie();
-    this.actor.hitStop(180);
-    this.cameras.main.shake(300, 0.02);
-
-    this.lootBox = new LootBox(this, this.monster.sprite.x, this.monster.sprite.y);
-    if (this.bossCollider) this.bossCollider.destroy();
-  }
-
-  private updateBossIndicator() {
-    if (!this.bossIndicator || !this.bossIndicatorLabel || !this.monster?.isAlive) {
-      this.bossIndicator?.setVisible(false);
-      this.bossIndicatorLabel?.setVisible(false);
-      return;
-    }
-
-    const camera = this.cameras.main;
-    const boss = this.monster.sprite;
-    const view = camera.worldView;
-    const isVisible =
-      boss.x >= view.x && boss.x <= view.x + view.width && boss.y >= view.y && boss.y <= view.y + view.height;
-
-    if (isVisible) {
-      this.bossIndicator.setVisible(false);
-      this.bossIndicatorLabel.setVisible(false);
-      return;
-    }
-
-    const dx = boss.x - (view.x + view.width / 2);
-    const dy = boss.y - (view.y + view.height / 2);
-    const angle = Math.atan2(dy, dx);
-    const edgeX = camera.width / 2 - 42;
-    const edgeY = camera.height / 2 - 48;
-    const scaleX = edgeX / Math.max(Math.abs(dx), 0.001);
-    const scaleY = edgeY / Math.max(Math.abs(dy), 0.001);
-    const edgeScale = Math.min(scaleX, scaleY);
-    const screenX = camera.width / 2 + dx * edgeScale;
-    const screenY = camera.height / 2 + dy * edgeScale;
-
-    this.bossIndicator
-      .setPosition(screenX, screenY)
-      .setRotation(angle + Math.PI / 2)
-      .setVisible(true);
-    const labelY = screenY > GAME_HEIGHT * 0.72 ? screenY - 27 : screenY + 25;
-    this.bossIndicatorLabel.setPosition(screenX, labelY).setVisible(true);
-  }
-
-  private showControlsNotice() {
-    const label =
-      this.actor.character.id === 'akkhani'
-        ? 'อัคนี · คลิกซ้าย ฟัน (ค้าง = ฟัน+พุ่ง) · คลิกขวา สกิล'
-        : 'ลูมิ · คลิกซ้าย ยิง (ค้าง = กระสุนพัด) · คลิกขวา แดช';
-
-    const notice = this.add
-      .text(GAME_WIDTH / 2, 60, label, {
-        fontFamily: '"Noto Sans Thai", monospace',
-        fontSize: '16px',
-        fontStyle: 'bold',
-        color: '#9de7ff',
-        backgroundColor: 'rgba(0,0,0,0.55)',
-        padding: { x: 12, y: 6 },
-        stroke: '#000000',
-        strokeThickness: 3
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.HUD)
-      .setScrollFactor(0)
-      .setAlpha(0);
-
-    this.tweens.add({ targets: notice, alpha: 1, duration: 250 });
-    this.tweens.add({
-      targets: notice,
-      alpha: 0,
-      delay: 2600,
-      duration: 500,
-      onComplete: () => notice.destroy()
-    });
-
-    // โชว์ดาวที่ปลดล็อกแล้ว ให้ผู้เล่นรู้ว่าของใหม่ทำงาน
-    const st = starsOf(this.actor.character.id);
-    if (st > 0) {
-      const names = Array.from({ length: st }, (_, i) => starName(this.actor.character.id, i)).join(' · ');
-      const starNotice = this.add
-        .text(GAME_WIDTH / 2, 92, `${'★'.repeat(st)} ${names}`, {
-          fontFamily: '"Noto Sans Thai", monospace',
-          fontSize: '14px',
-          fontStyle: 'bold',
-          color: '#ffd54a',
-          backgroundColor: 'rgba(0,0,0,0.55)',
-          padding: { x: 10, y: 4 },
-          stroke: '#000000',
-          strokeThickness: 3
-        })
-        .setOrigin(0.5)
-        .setDepth(DEPTH.HUD)
-        .setScrollFactor(0)
-        .setAlpha(0);
-      this.tweens.add({ targets: starNotice, alpha: 1, duration: 250, delay: 200 });
-      this.tweens.add({
-        targets: starNotice,
-        alpha: 0,
-        delay: 3000,
-        duration: 500,
-        onComplete: () => starNotice.destroy()
-      });
     }
   }
 }
