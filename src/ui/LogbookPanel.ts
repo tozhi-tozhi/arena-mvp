@@ -21,14 +21,16 @@ const L = {
   footY: 478
 };
 
+// คอลัมน์อิงขอบซ้ายของแผง (แผงกว้าง 664 จัดกึ่งกลางพื้นที่ 1200)
+const PANEL_LEFT = GAME_WIDTH / 2 - 664 / 2;
 const COL = {
-  outcome: 100,
-  area: 214,
-  kept: 318,
-  lost: 388,
-  hp: 468,
-  time: 556,
-  when: 700
+  outcome: PANEL_LEFT + 26,
+  area: PANEL_LEFT + 140,
+  kept: PANEL_LEFT + 244,
+  lost: PANEL_LEFT + 314,
+  hp: PANEL_LEFT + 394,
+  time: PANEL_LEFT + 482,
+  when: PANEL_LEFT + 638
 };
 
 function clock(ms: number): string {
@@ -113,7 +115,7 @@ export class LogbookPanel {
     this.text(L.cx, L.titleY, 'สมุดบันทึกการล่า', 24, '#ffd54a', 0.5, true);
     this.text(L.cx, L.subY, 'บันทึกอัตโนมัติทุกครั้งที่จบทริป — เก็บไว้ในเครื่องนี้', 11, '#a89f8c');
 
-    const close = this.text(706, L.titleY, '✕', 18, '#c9c2b2', 0.5, true);
+    const close = this.text(PANEL_LEFT + 664 - 26, L.titleY, '✕', 18, '#c9c2b2', 0.5, true);
     close.setInteractive({ useHandCursor: true });
     close.on('pointerdown', () => this.scene.time.delayedCall(0, () => this.close()));
 
@@ -127,7 +129,7 @@ export class LogbookPanel {
       { label: 'ของสะสม', value: `${stats.loot}`, color: '#9de7ff' }
     ];
     chips.forEach((c, i) => {
-      const x = 135 + i * 106;
+      const x = PANEL_LEFT + 62 + i * 108;
       this.rect(x, L.chipY, 98, 46, 0x241f14, 1, 0x4a4130);
       this.text(x, L.chipY - 8, c.value, 17, c.color, 0.5, true);
       this.text(x, L.chipY + 13, c.label, 9, '#8d8677');
@@ -153,7 +155,7 @@ export class LogbookPanel {
         const y = L.rowY + i * L.rowGap;
         const back = e.outcome === 'return';
         this.rect(L.cx, y, L.panelW - 44, 28, i % 2 === 0 ? 0x1f1a11 : 0x191510, 1);
-        this.rect(90, y, 3, 22, back ? 0x7dff9b : 0xff5a3a, 0.9);
+        this.rect(PANEL_LEFT + 16, y, 3, 22, back ? 0x7dff9b : 0xff5a3a, 0.9);
         this.text(COL.outcome, y, back ? 'กลับฐาน' : 'ตาย', 13, back ? '#7dff9b' : '#ff8a7a', 0, true);
         this.text(COL.area, y, `แอเรีย ${e.area}`, 13, '#e8e0c8', 0);
         this.text(COL.kept, y, `${e.kept}`, 13, e.kept > 0 ? '#9de7ff' : '#5f5a50', 0.5);

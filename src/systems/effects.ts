@@ -131,11 +131,17 @@ export function makeVignette(scene: Phaser.Scene) {
   if (!scene.textures.exists('vignette')) {
     const tex = scene.textures.createCanvas('vignette', w, h) as any;
     const ctx = tex.getContext();
-    const g = ctx.createRadialGradient(w / 2, h / 2, h * 0.35, w / 2, h / 2, h * 0.85);
+    // วงรีตามสัดส่วนจอ — ขยายจากสัดส่วนเดิม 4:3 กันขอบซ้ายขวามืดเกินเมื่อจอกว้างขึ้น
+    const sx = w / h / (4 / 3);
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.scale(sx, 1);
+    const g = ctx.createRadialGradient(0, 0, h * 0.35, 0, 0, h * 0.85);
     g.addColorStop(0, 'rgba(0,0,0,0)');
     g.addColorStop(1, 'rgba(0,0,0,0.65)');
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(-w / 2 / sx, -h / 2, w / sx, h);
+    ctx.restore();
     tex.refresh();
   }
   scene.add.image(0, 0, 'vignette').setOrigin(0).setDepth(DEPTH.VIGNETTE).setScrollFactor(0);

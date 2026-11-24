@@ -2,7 +2,7 @@
 // รอบนี้: เลือดไม่ฟื้นข้ามแมพ (ฝากใน huntSession) · จุดฟื้นเลือดสุ่ม 0–2 จุด (กด E ยืนฟื้น) ·
 //         ตัวแทะเฝ้าจุดฟื้น · hint คมขึ้น (ทิศ+เมตร+จำนวนจุด)
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, WALL_THICKNESS, SPRITE_SCALE, DEPTH, DEV_TOOLS } from '../config';
+import { GAME_WIDTH, GAME_HEIGHT, WALL_THICKNESS, SPRITE_SCALE, DEPTH, DEV_TOOLS, VIEW_SCALE } from '../config';
 import { TILE_SIZE, GROUND_LOOT_PER_SPOT } from '../data/world';
 import { generateArea, type AreaLayout } from '../systems/AreaGenerator';
 import { bakeAreaTextures, tileKey, propKey } from '../systems/areaTextures';
@@ -46,8 +46,8 @@ import { HuntMinimap, type MinimapSources } from '../systems/HuntMinimap';
 
 const DETECT_RADIUS = 500;
 // ความรู้สึกซูมกล้อง (ภาพล้วน — ไม่แตะการต่อสู้)
-const ZOOM_COMBAT = 0.75;
-const ZOOM_NORMAL = 1;
+const ZOOM_COMBAT = 0.75 * VIEW_SCALE;
+const ZOOM_NORMAL = 1 * VIEW_SCALE;
 const ZOOM_DAMP_MS = 260;
 const STEP_DIST = 46;      // เดินกี่ px ต่อ 1 ก้าว (เสียงเท้า)
 const LOW_HP_RATIO = 0.34; // เลือดต่ำกว่าสัดส่วนนี้ = หัวใจเต้น
@@ -275,7 +275,7 @@ const cam = this.cameras.main;
 
     cam.setBounds(0, 0, W, H);
     cam.startFollow(this.actor.sprite, true, 0.08, 0.08);
-    cam.setDeadzone(440, 340);
+    cam.setDeadzone(440 / VIEW_SCALE, 340 / VIEW_SCALE);
 
     this.pouchText = this.add.text(GAME_WIDTH - 12, 12, '', {
       fontFamily: '"Noto Sans Thai", monospace', fontSize: '16px', fontStyle: 'bold',
@@ -665,11 +665,12 @@ const cam = this.cameras.main;
         const dx = gate.x - (view.x + view.width / 2);
         const dy = gate.y - (view.y + view.height / 2);
         const angle = Math.atan2(dy, dx);
-        const edgeX = cam.width / 2 - 42;
-        const edgeY = cam.height / 2 - 48;
+        // ขอบจอคิดในพื้นที่ออกแบบ ไม่ใช่ขนาดแคนวาส
+        const edgeX = GAME_WIDTH / 2 - 46;
+        const edgeY = GAME_HEIGHT / 2 - 52;
         const edgeScale = Math.min(edgeX / Math.max(Math.abs(dx), 0.001), edgeY / Math.max(Math.abs(dy), 0.001));
         this.gateNavigator
-          .setPosition(cam.width / 2 + dx * edgeScale, cam.height / 2 + dy * edgeScale)
+          .setPosition(GAME_WIDTH / 2 + dx * edgeScale, GAME_HEIGHT / 2 + dy * edgeScale)
           .setRotation(angle + Math.PI / 2)
           .setVisible(true);
       }

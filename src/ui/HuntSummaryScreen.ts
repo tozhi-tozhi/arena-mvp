@@ -1,7 +1,7 @@
-// หน้าจอสรุปผลล่า (Loot Report)
-// ไอเทมทุกรายการมีขอบ rarity — ไม่มีตัวเลขแต้มแล้ว มีแค่ชื่อระดับและจำนวนชิ้น
+// หน้าจอสรุปผลล่า — จัดเลย์เอาต์ relatif กับแผงกึ่งกลางพื้นที่ออกแบบ 1200x600
+// แตะที่ไหนก็ได้เพื่อกลับฐาน (มือถือ) · กด R ก็ได้ (คีย์บอร์ด)
 import Phaser from 'phaser';
-import { DEPTH, GAME_WIDTH } from '../config';
+import { DEPTH, GAME_WIDTH, GAME_HEIGHT } from '../config';
 import type { DroppedLoot } from '../data/loot';
 import { RARITY } from '../data/rarity';
 import { ensureItemIcons } from '../systems/itemIcons';
@@ -11,102 +11,113 @@ export interface HuntReportData {
   timeTakenMs: number;
   huntLoot: DroppedLoot[];
   bag: BagEntry[];
-  /** ข้อความท้ายหน้าจอ (ไม่ใส่ = 'กด R เพื่อล่าอีกครั้ง') */
   footer?: string;
 }
 
+const PANEL_W = 520;
+const PANEL_H = 468;
+
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${String(Math.floor(totalSec / 60)).padStart(2, '0')}:${String(totalSec % 60).padStart(2, '0')}`;
 }
 
 export function showHuntSummary(scene: Phaser.Scene, data: HuntReportData) {
   ensureItemIcons(scene);
 
   const cx = GAME_WIDTH / 2;
+  const cy = GAME_HEIGHT / 2;
+  const left = cx - PANEL_W / 2;
+  const right = cx + PANEL_W / 2;
+  const padL = left + 30;
+  const padR = right - 30;
   const objects: Phaser.GameObjects.GameObject[] = [];
 
-  const overlay = scene.add.rectangle(0, 0, GAME_WIDTH, 600, 0x000000, 0.72)
-    .setOrigin(0).setDepth(DEPTH.OVERLAY).setScrollFactor(0);
-  objects.push(overlay);
+  const ui = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
+    (o as any).setScrollFactor(0);
+    objects.push(o);
+    return o;
+  };
 
-  const panel = scene.add.rectangle(cx, 300, 500, 460, 0x17130c, 0.96)
-    .setStrokeStyle(3, 0xffd54a).setDepth(DEPTH.OVERLAY_TEXT).setScrollFactor(0);
-  objects.push(panel);
+  const overlay = ui(scene.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.72)
+    .setOrigin(0).setDepth(DEPTH.OVERLAY));
+  overlay.setInteractive();
 
-  const txt = (x: number, y: number, str: string, size: number, color: string, originX: number = 0.5, bold: boolean = false) => {
-    const t = scene.add.text(x, y, str, {
+  ui(scene.add.rectangle(cx, cy, PANEL_W, PANEL_H, 0x17130c, 0.97)
+    .setStrokeStyle(3, 0xffd54a).setDepth(DEPTH.OVERLAY_TEXT));
+
+  const txt = (x: number, y: number, str: string, size: number, color: string, ox = 0.5, bold = false) =>
+    ui(scene.add.text(x, y, str, {
       fontFamily: '"Noto Sans Thai", monospace',
       fontSize: `${size}px`,
       fontStyle: bold ? 'bold' : 'normal',
       color,
       stroke: '#000000',
       strokeThickness: 3
-    }).setOrigin(originX, 0.5).setDepth(DEPTH.OVERLAY_TEXT).setScrollFactor(0);
-    objects.push(t);
-    return t;
-  };
+    }).setOrigin(ox, 0.5).setDepth(DEPTH.OVERLAY_TEXT));
 
-  const divider = (y: number) => {
-    const d = scene.add.rectangle(cx, y, 440, 2, 0xffd54a, 0.45)
-      .setDepth(DEPTH.OVERLAY_TEXT).setScrollFactor(0);
-    objects.push(d);
-  };
+  const divider = (y: number) =>
+    ui(scene.add.rectangle(cx, y, PANEL_W - 60, 2, 0xffd54a, 0.45).setDepth(DEPTH.OVERLAY_TEXT));
 
-  txt(cx, 112, 'HUNT COMPLETE', 34, '#ffd54a', 0.5, true);
-  txt(cx, 145, 'กลับถึงฐานแล้ว', 15, '#c9c9c9');
-  divider(170);
+  const top = cy - PANEL_H / 2;
+  txt(cx, top + 42, 'HUNT COMPLETE', 30, '#ffd54a', 0.5, true);
+  txt(cx, top + 72, 'กลับถึงฐานแล้ว', 14, '#c9c9c9');
+  divider(top + 94);
 
-  txt(210, 198, 'เวลาที่ใช้', 18, '#ffffff', 0);
-  txt(590, 198, formatTime(data.timeTakenMs), 20, '#ffe9a3', 1, true);
-  divider(226);
+  txt(padL, top + 120, 'เวลาที่ใช้', 16, '#ffffff', 0);
+  txt(padR, top + 120, formatTime(data.timeTakenMs), 19, '#ffe9a3', 1, true);
+  divider(top + 144);
 
-  txt(210, 252, 'ของที่ได้รอบนี้', 18, '#ffffff', 0);
-  
-  if (data.huntLoot.length === 0) {
-    txt(cx, 300, '(ไม่ได้เก็บอะไรเลย)', 15, '#888888');
+  txt(padL, top + 170, 'ของที่ได้รอบนี้', 16, '#ffffff', 0);
+
+  const counts: Record<string, { loot: DroppedLoot; count: number }> = {};
+  for (const item of data.huntLoot) {
+    const key = `${item.id}_${item.rarity}`;
+    if (!counts[key]) counts[key] = { loot: item, count: 0 };
+    counts[key].count += 1;
+  }
+  const keys = Object.keys(counts).slice(0, 5);
+
+  if (keys.length === 0) {
+    txt(cx, top + 214, '(ไม่ได้เก็บอะไรเลย)', 14, '#888888');
   } else {
-    const counts: Record<string, { loot: DroppedLoot; count: number }> = {};
-    for (const item of data.huntLoot) {
-      const key = `${item.id}_${item.rarity}`;
-      if (!counts[key]) counts[key] = { loot: item, count: 0 };
-      counts[key].count += 1;
-    }
-    
-    let rowY = 284;
-    for (const key of Object.keys(counts)) {
+    let rowY = top + 202;
+    for (const key of keys) {
       const { loot, count } = counts[key];
       const rd = RARITY[loot.rarity];
-
       if (scene.textures.exists(loot.icon)) {
-        const border = scene.add.rectangle(230, rowY, 30, 30)
-          .setStrokeStyle(2, rd.colorNum, 0.9)
-          .setDepth(DEPTH.OVERLAY_TEXT).setScrollFactor(0);
-        objects.push(border);
-
-        const icon = scene.add.image(230, rowY, loot.icon)
-          .setDisplaySize(24, 24)
-          .setDepth(DEPTH.OVERLAY_TEXT).setScrollFactor(0);
-        objects.push(icon);
+        ui(scene.add.rectangle(padL + 14, rowY, 28, 28)
+          .setStrokeStyle(2, rd.colorNum, 0.9).setDepth(DEPTH.OVERLAY_TEXT));
+        ui(scene.add.image(padL + 14, rowY, loot.icon)
+          .setDisplaySize(22, 22).setDepth(DEPTH.OVERLAY_TEXT));
       }
-
-      txt(254, rowY, loot.name, 16, rd.color, 0);
-      // โชว์แค่ระดับ rarity ตรงกลาง เป็น text สีจางๆ ไม่มีตัวเลขแล้ว
-      txt(480, rowY, `[${rd.name}]`, 14, '#888888', 0);
-      txt(590, rowY, `x${count}`, 16, '#ffffff', 1);
-      rowY += 30;
+      txt(padL + 36, rowY, loot.name, 15, rd.color, 0);
+      txt(padR - 62, rowY, `[${rd.name}]`, 12, '#8d8677', 1);
+      txt(padR, rowY, `x${count}`, 15, '#ffffff', 1);
+      rowY += 28;
+    }
+    if (Object.keys(counts).length > keys.length) {
+      txt(cx, top + 202 + keys.length * 28, `+ อีก ${Object.keys(counts).length - keys.length} ชนิด`, 12, '#8d8677');
     }
   }
-  divider(382);
 
+  divider(cy + PANEL_H / 2 - 96);
   const bagTotal = data.bag.reduce((sum, item) => sum + item.count, 0);
-  txt(210, 410, 'ในกระเป๋าทั้งหมด', 17, '#ffffff', 0);
-  txt(590, 410, `${bagTotal} ชิ้น`, 18, '#7dff9b', 1, true);
+  txt(padL, cy + PANEL_H / 2 - 68, 'ในกระเป๋าทั้งหมด', 16, '#ffffff', 0);
+  txt(padR, cy + PANEL_H / 2 - 68, `${bagTotal} ชิ้น`, 18, '#7dff9b', 1, true);
 
-  txt(cx, 462, data.footer ?? 'กด R เพื่อล่าอีกครั้ง', 20, '#ffffff', 0.5);
+  const foot = txt(cx, cy + PANEL_H / 2 - 30, data.footer ?? 'แตะจอ หรือ กด R เพื่อกลับฐาน', 16, '#ffffff');
+  scene.tweens.add({ targets: foot, alpha: 0.45, duration: 700, yoyo: true, repeat: -1 });
 
   objects.forEach((o: any) => o.setAlpha(0));
-  scene.tweens.add({ targets: objects, alpha: 1, duration: 400, delay: 150 });
+  scene.tweens.add({ targets: objects, alpha: 1, duration: 380, delay: 120 });
+
+  // แตะเพื่อไปต่อ — ใช้ได้ทั้งมือถือและคอม
+  let leaving = false;
+  const go = () => {
+    if (leaving) return;
+    leaving = true;
+    scene.time.delayedCall(0, () => scene.scene.start('BaseScene'));
+  };
+  overlay.on('pointerdown', go);
 }

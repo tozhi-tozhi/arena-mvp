@@ -9,9 +9,11 @@ import {
   WORLD_HEIGHT,
   WALL_THICKNESS,
   SPRITE_SCALE,
-  DEPTH
+  DEPTH,
+  VIEW_SCALE
 } from '../config';
 import { makeVignette } from '../systems/effects';
+import { UiCamera } from '../systems/UiCamera';
 import { sfx } from '../systems/sfx';
 import { loadout } from '../systems/Loadout';
 import { saveGame } from '../systems/SaveGame';
@@ -67,6 +69,7 @@ export class GameScene extends Phaser.Scene {
   private panel!: Phaser.GameObjects.Text;
   private panelAt: number = 0;
   private controlLabel!: Phaser.GameObjects.Text;
+  private uiCam!: UiCamera;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -91,6 +94,7 @@ export class GameScene extends Phaser.Scene {
 
   create() {
     // ฉากเดิมถูกใช้ซ้ำตอน restart — ล้างค่าทุกตัวที่เป็นของรอบก่อน
+    this.uiCam = new UiCamera(this);
     this.leaving = false;
     this.dummies = [];
     this.targets = [];
@@ -146,9 +150,10 @@ export class GameScene extends Phaser.Scene {
     this.buildControlLabel();
 
     const camera = this.cameras.main;
+    camera.setZoom(VIEW_SCALE);
     camera.setBounds(0, 0, W, H);
     camera.startFollow(this.actor.sprite, true, 0.08, 0.08);
-    camera.setDeadzone(440, 340);
+    camera.setDeadzone(440 / VIEW_SCALE, 340 / VIEW_SCALE);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       (this.input.keyboard as any).removeAllListeners();
@@ -600,6 +605,36 @@ export class GameScene extends Phaser.Scene {
     lines.push(`H hitbox ${flag(trainingState.hitbox)} · X ไม้บรรทัด ${flag(trainingState.ruler)}`);
     lines.push(`C ชนหุ่น ${flag(trainingState.collide)} · N หุ่นเดิน ${flag(trainingState.patrol)}`);
     lines.push(`[ ] ขนาดเอฟเฟกต์ ×${(FX_DEFAULT_REF / FX_TUNE.refWidth).toFixed(2)}`);
+
+    // วินิจฉัยความคม: ยืด > 1 = ภาพถูกขยาย (นุ่ม) · = 1 คมตามพิกเซล · < 1 = ถูกย่อ
+    const cv = this.sys.game.canvas;
+    const box = cv.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const stretch = (box.width * dpr) / cv.width;
+    lines.push(`DPR ${dpr.toFixed(2)} · แคนวาส ${cv.width}×${cv.height} · ยืด ×${stretch.toFixed(2)}`);
+    lines.push(`หน้าต่าง ${window.innerWidth}×${window.innerHeight} css`);
+
+    // วินิจฉัยกล้อง: กล้อง ui ต้องซูมเท่า VIEW_SCALE และกว้างเท่า CANVAS_W
+    const uc = this.uiCam?.cam;
+    lines.push(
+      `VIEW_SCALE ${VIEW_SCALE.toFixed(3)} · ui ${uc ? uc.zoom.toFixed(3) + ' / ' + uc.width + '×' + uc.height : 'ไม่มีกล้อง ui'} · main ${this.cameras.main.zoom.toFixed(3)}`
+    );
+    lines.push(`FPS ${Math.round(this.game.loop.actualFps)}`);
+
+    // วัดพื้นที่ที่กล้อง ui มองเห็นจริง — ถ้าจุดเริ่มไม่ใช่ 0,0 คือต้นเหตุที่ UI เลื่อน
+    if (uc) {
+      const wv = uc.worldView;
+      // จุดออกแบบ 0,0 และ 1200,600 ต้องลงที่มุมจอพอดี (0,0 และ แคนวาสจริง)
+      const mapX = (dx: number) => uc.x + uc.zoom * (dx - uc.width * uc.originX);
+      const mapY = (dy: number) => uc.y + uc.zoom * (dy - uc.height * uc.originY);
+      lines.push(`ui origin ${uc.originX}/${uc.originY} · มุมซ้ายบน ${mapX(0).toFixed(0)},${mapY(0).toFixed(0)} · มุมขวาล่าง ${mapX(GAME_WIDTH).toFixed(0)},${mapY(GAME_HEIGHT).toFixed(0)}`);
+      lines.push(`origin ${uc.originX}/${uc.originY} · กล้อง ${this.cameras.cameras.length} ตัว · เกม ${this.game.scale.gameSize.width}×${this.game.scale.gameSize.height}`);
+      // ตำแหน่ง viewport ของกล้องบนแคนวาส — ต้องเป็น 0,0 และกว้างเท่าแคนวาสจริง
+      lines.push(`ui pos ${uc.x},${uc.y} · main pos ${this.cameras.main.x},${this.cameras.main.y} zoom ${this.cameras.main.zoom.toFixed(3)}`);
+      lines.push(`แคนวาสจริง ${this.sys.game.canvas.width}×${this.sys.game.canvas.height} · scale ${this.game.scale.displaySize.width}×${this.game.scale.displaySize.height}`);
+      // ทดสอบวาดจุดอ้างอิงมุมซ้ายบนของพื้นที่ออกแบบ — ถ้าไม่เห็น = มุมซ้ายบนยังถูกตัดจริง
+      lines.push(`main เห็น ${this.cameras.main.worldView.x.toFixed(0)},${this.cameras.main.worldView.y.toFixed(0)} ขนาด ${this.cameras.main.worldView.width.toFixed(0)}×${this.cameras.main.worldView.height.toFixed(0)}`);
+    }
 
     this.panel.setText(lines.join('\n'));
   }

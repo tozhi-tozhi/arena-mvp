@@ -1,6 +1,6 @@
-// จุดเริ่มต้นของเกม — แค่ตั้งค่าแล้วสร้างเกม (ตรรกะอยู่ใน scenes/)
+// จุดเริ่มต้นของเกม — แคนวาสวาดละเอียดตามจอ แต่พื้นที่ตรรกะคงที่ 1200x600
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from './config';
+import { CANVAS_W, CANVAS_H } from './config';
 import { BaseScene } from './scenes/BaseScene';
 import { BagScene } from './scenes/BagScene';
 import { UpgradeScene } from './scenes/UpgradeScene';
@@ -9,19 +9,16 @@ import { SkillScene } from './scenes/SkillScene';
 import { GameScene } from './scenes/GameScene';
 import { WorldScene } from './scenes/WorldScene';
 import { TouchControlsScene } from './ui/TouchControlsScene';
-import { isTouchDevice } from './systems/Controls';
 
 const config = {
   type: Phaser.AUTO,
-  width: GAME_WIDTH,
-  height: GAME_HEIGHT,
-  backgroundColor: '#1a1a1a',
+  width: CANVAS_W,
+  height: CANVAS_H,
+  backgroundColor: '#0a0a0a',
   parent: 'app',
-  pixelArt: true,
-  // มือถือ/แท็บเล็ต: ย่อขยายให้พอดีจอ · เดสก์ท็อป: ขนาดเดิม 800x600 (ไม่เปลี่ยนหน้าตา)
-  scale: isTouchDevice()
-    ? { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }
-    : { mode: Phaser.Scale.NONE },
+  pixelArt: false,
+  // FIT ย่อแคนวาสลงให้พอดีจอเมื่อจอเล็กกว่าความละเอียดวาด (รักษาสัดส่วน 2:1)
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   input: { keyboard: { target: window } },
   physics: {
     default: 'arcade',

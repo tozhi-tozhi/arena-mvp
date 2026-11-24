@@ -1,15 +1,14 @@
 // src/ui/TouchControlsScene.ts — ปุ่มสัมผัสสำหรับมือถือ (ฉากซ้อนบนสุด วาดเฉพาะเมื่อโหมด = touch)
-// จอยซ้าย (ลอยตามนิ้ว) · ปุ่มตี (ค้าง = ชาร์จ) · ปุ่มสกิล · E · B · Q · M · R
-// สื่อสารผ่าน `touch` ใน Controls.ts เท่านั้น — PlayerActor อ่านจากที่นั่น ฉากเกมรับปุ่มผ่าน pressed()
-// ปุ่ม B/Q ส่งเหตุการณ์ keydown ไปที่ฉากเกมตรง ๆ (ฉากเดิมฟังด้วย kb.on อยู่แล้ว)
-// ไม่ใช้ Container — เป็นวัตถุแบน (ตามกฎ UI ของโปรเจกต์)
+// จอยซ้าย (ลอยตามนิ้ว) · ปุ่มตี (ค้าง = ชาร์จ) · ปุ่มสกิล · E · B · Q · M · R · เต็มจอ
+// กล้องฉากนี้ตั้งจุดกำเนิด (0,0) + ซูม VIEW_SCALE → พิกัดนิ้วหาร VIEW_SCALE แล้วเทียบกับพื้นที่ออกแบบได้เลย
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from '../config';
+import { GAME_WIDTH, GAME_HEIGHT, VIEW_SCALE } from '../config';
 import { controls, touch } from '../systems/Controls';
 import { sfx } from '../systems/sfx';
+import { canFullscreen, toggleFullscreen } from '../systems/screenMode';
 
 type Ctx = 'none' | 'world' | 'base' | 'menu';
-type BtnName = 'attack' | 'skill' | 'E' | 'B' | 'Q' | 'M' | 'R' | 'back';
+type BtnName = 'attack' | 'skill' | 'E' | 'B' | 'Q' | 'M' | 'R' | 'back' | 'full';
 
 interface Btn {
   bg: Phaser.GameObjects.Arc;
@@ -18,20 +17,19 @@ interface Btn {
   r: number;
 }
 
-// ปุ่มไหนแสดงในบริบทไหน
 const SHOW: Record<Ctx, BtnName[]> = {
   none: [],
-  world: ['attack', 'skill', 'E', 'B', 'Q', 'M', 'R'],
-  base: ['E', 'B', 'M'],
-  menu: ['back']
+  world: ['attack', 'skill', 'E', 'B', 'Q', 'M', 'R', 'full'],
+  base: ['E', 'B', 'M', 'full'],
+  menu: ['back', 'full']
 };
 
-const JOY_R = 62; // รัศมีฐานจอย
-const JOY_KNOB_R = 28;
-const JOY_DEAD = 0.22; // ต่ำกว่านี้ถือว่าไม่เดิน
-const JOY_ZONE_X = GAME_WIDTH * 0.5; // แตะซีกซ้ายของจอเพื่อเริ่มจอย
-const JOY_IDLE_X = 120;
-const JOY_IDLE_Y = GAME_HEIGHT - 130;
+const JOY_R = 68;
+const JOY_KNOB_R = 32;
+const JOY_DEAD = 0.22;
+const JOY_ZONE_X = GAME_WIDTH * 0.5;
+const JOY_IDLE_X = 124;
+const JOY_IDLE_Y = GAME_HEIGHT - 132;
 
 export class TouchControlsScene extends Phaser.Scene {
   private btns = new Map<BtnName, Btn>();
@@ -43,26 +41,29 @@ export class TouchControlsScene extends Phaser.Scene {
   private attackId = -1;
   private skillId = -1;
   private ctx: Ctx = 'none';
+  private fullOk = canFullscreen();
 
   constructor() {
     super({ key: 'TouchControlsScene' });
   }
 
   create() {
-    // จอยซ้าย + ปุ่มตี + ปุ่มสกิล ต้องกดพร้อมกันได้ (ค่าเริ่มต้นมีนิ้วเดียว)
     this.input.addPointer(3);
+    this.applyRig();
 
     this.joyBase = this.add.circle(JOY_IDLE_X, JOY_IDLE_Y, JOY_R, 0xffffff, 0.1).setStrokeStyle(3, 0xffffff, 0.45).setDepth(10);
     this.joyKnob = this.add.circle(JOY_IDLE_X, JOY_IDLE_Y, JOY_KNOB_R, 0xffffff, 0.3).setStrokeStyle(2, 0xffffff, 0.7).setDepth(11);
 
-    this.addBtn('attack', 708, GAME_HEIGHT - 122, 50, 0xff6a5a, 'ตี', 22);
-    this.addBtn('skill', 598, GAME_HEIGHT - 66, 36, 0x9de7ff, 'สกิล', 16);
-    this.addBtn('E', 612, GAME_HEIGHT - 168, 28, 0xffd166, 'E', 20);
-    this.addBtn('B', 654, 72, 19, 0x9de7ff, 'B', 15);
-    this.addBtn('Q', 704, 72, 19, 0xe8e0c8, 'Q', 15);
-    this.addBtn('M', 754, 72, 19, 0xe8e0c8, 'M', 15);
-    this.addBtn('R', GAME_WIDTH / 2, 24, 16, 0x7dff9b, 'R', 14);
-    this.addBtn('back', 46, GAME_HEIGHT - 44, 26, 0xe8e0c8, '←', 24);
+    // ปุ่มขยายใหญ่ขึ้นทุกปุ่ม — ระยะห่างตรวจแล้วไม่ทับกัน
+    this.addBtn('attack', GAME_WIDTH - 100, GAME_HEIGHT - 130, 62, 0xff6a5a, 'ตี', 26);
+    this.addBtn('skill', GAME_WIDTH - 225, GAME_HEIGHT - 72, 46, 0x9de7ff, 'สกิล', 19);
+    this.addBtn('E', GAME_WIDTH - 210, GAME_HEIGHT - 190, 36, 0xffd166, 'E', 24);
+    this.addBtn('B', GAME_WIDTH - 170, 78, 26, 0x9de7ff, 'B', 19);
+    this.addBtn('Q', GAME_WIDTH - 108, 78, 26, 0xe8e0c8, 'Q', 19);
+    this.addBtn('M', GAME_WIDTH - 46, 78, 26, 0xe8e0c8, 'M', 19);
+    this.addBtn('R', GAME_WIDTH / 2, 30, 24, 0x7dff9b, 'R', 18);
+    this.addBtn('back', 52, GAME_HEIGHT - 52, 32, 0xe8e0c8, '←', 28);
+    this.addBtn('full', GAME_WIDTH - 46, GAME_HEIGHT - 46, 28, 0xe8e0c8, '⛶', 24);
 
     this.input.on('pointerdown', this.onDown, this);
     this.input.on('pointermove', this.onMove, this);
@@ -78,9 +79,27 @@ export class TouchControlsScene extends Phaser.Scene {
     this.applyContext();
   }
 
-  // ---------------------------------------------------------------
-  // สร้างปุ่ม
-  // ---------------------------------------------------------------
+  /** กล้องฉากปุ่ม: ขยายจากมุมซ้ายบน ให้พื้นที่ออกแบบคลุมเต็มแคนวาส */
+  private applyRig() {
+    const c = this.cameras.main;
+    c.setPosition(0, 0);
+    c.setScroll(0, 0);
+    c.setZoom(VIEW_SCALE);
+    c.originX = 0;
+    c.originY = 0;
+  }
+
+  update() {
+    this.applyRig();
+    const next = this.detectContext();
+    if (next !== this.ctx) {
+      this.ctx = next;
+      this.releaseAll();
+      this.applyContext();
+      if (next === 'none') touch.reset();
+    }
+  }
+
   private addBtn(name: BtnName, x: number, y: number, r: number, color: number, text: string, fontSize: number) {
     const bg = this.add.circle(x, y, r, color, 0.2).setStrokeStyle(3, color, 0.85).setDepth(10);
     bg.setInteractive(new Phaser.Geom.Circle(r, r, r), Phaser.Geom.Circle.Contains);
@@ -134,10 +153,13 @@ export class TouchControlsScene extends Phaser.Scene {
         this.emitKey('ESC');
         this.time.delayedCall(120, () => this.lit('back', false));
         break;
+      case 'full':
+        toggleFullscreen();
+        this.time.delayedCall(120, () => this.lit('full', false));
+        break;
     }
   }
 
-  /** ส่งเหตุการณ์ปุ่มคีย์บอร์ดไปที่ฉากเกมที่กำลังทำงาน (ฉากเดิมฟัง kb.on('keydown-X') อยู่แล้ว) */
   private emitKey(key: string) {
     const target = this.gameScene();
     if (!target) return;
@@ -145,19 +167,18 @@ export class TouchControlsScene extends Phaser.Scene {
     if (kb && typeof kb.emit === 'function') kb.emit('keydown-' + key, {});
   }
 
-  // ---------------------------------------------------------------
-  // จอย (ลอยตามนิ้ว — แตะซีกซ้ายของจอตรงไหนก็ได้)
-  // ---------------------------------------------------------------
   private onDown(p: Phaser.Input.Pointer) {
     if (!this.isOn()) return;
     sfx.unlock();
     if (this.joyId !== -1) return;
     if (this.ctx !== 'world' && this.ctx !== 'base') return;
-    if (p.x > JOY_ZONE_X) return;
-    if (this.input.hitTestPointer(p).length > 0) return; // โดนปุ่ม ไม่ใช่จอย
+    const px = p.x / VIEW_SCALE;
+    const py = p.y / VIEW_SCALE;
+    if (px > JOY_ZONE_X) return;
+    if (this.input.hitTestPointer(p).length > 0) return;
     this.joyId = p.id;
-    this.joyOx = Phaser.Math.Clamp(p.x, JOY_R + 8, JOY_ZONE_X);
-    this.joyOy = Phaser.Math.Clamp(p.y, 110 + JOY_R, GAME_HEIGHT - JOY_R - 8);
+    this.joyOx = Phaser.Math.Clamp(px, JOY_R + 8, JOY_ZONE_X);
+    this.joyOy = Phaser.Math.Clamp(py, 120 + JOY_R, GAME_HEIGHT - JOY_R - 8);
     this.joyBase.setPosition(this.joyOx, this.joyOy).setAlpha(1);
     this.moveStick(p);
   }
@@ -168,8 +189,8 @@ export class TouchControlsScene extends Phaser.Scene {
   }
 
   private moveStick(p: Phaser.Input.Pointer) {
-    const dx = p.x - this.joyOx;
-    const dy = p.y - this.joyOy;
+    const dx = p.x / VIEW_SCALE - this.joyOx;
+    const dy = p.y / VIEW_SCALE - this.joyOy;
     const dist = Math.hypot(dx, dy);
     const k = dist > JOY_R ? JOY_R / dist : 1;
     this.joyKnob.setPosition(this.joyOx + dx * k, this.joyOy + dy * k);
@@ -189,9 +210,7 @@ export class TouchControlsScene extends Phaser.Scene {
       touch.releaseAttack();
       this.lit('attack', false);
     }
-    if (p.id === this.skillId) {
-      this.skillId = -1;
-    }
+    if (p.id === this.skillId) this.skillId = -1;
   }
 
   private releaseJoy() {
@@ -212,9 +231,6 @@ export class TouchControlsScene extends Phaser.Scene {
     for (const name of this.btns.keys()) this.lit(name, false);
   }
 
-  // ---------------------------------------------------------------
-  // บริบท — ฉากเกมตัวไหนทำงานอยู่ → โชว์ปุ่มชุดไหน
-  // ---------------------------------------------------------------
   private isOn(): boolean {
     return controls.mode === 'touch';
   }
@@ -240,22 +256,12 @@ export class TouchControlsScene extends Phaser.Scene {
   private applyContext() {
     const show = new Set<BtnName>(SHOW[this.ctx]);
     for (const [name, b] of this.btns) {
-      const v = show.has(name);
+      const v = show.has(name) && (name !== 'full' || this.fullOk);
       b.bg.setVisible(v);
       b.label.setVisible(v);
     }
     const joy = this.ctx === 'world' || this.ctx === 'base';
     this.joyBase.setVisible(joy);
     this.joyKnob.setVisible(joy);
-  }
-
-  update() {
-    const next = this.detectContext();
-    if (next !== this.ctx) {
-      this.ctx = next;
-      this.releaseAll();
-      this.applyContext();
-      if (next === 'none') touch.reset();
-    }
   }
 }

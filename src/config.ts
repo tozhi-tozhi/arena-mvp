@@ -1,19 +1,42 @@
 // ค่าคงที่ของเกม — แก้ตัวเลขที่นี่ที่เดียว ทั้งเกมเปลี่ยนตาม
 
-// ทิศทางแสงกลาง (Paper Cutout) — ใช้กับทุก Entity ให้เงาสอดคล้องกัน
-// แสงมาจากซ้ายบน -> เงาทอดไปขวาล่าง
+// ทิศทางแสงกลางของภาพกระดาษ: แสงเข้าซ้ายบน เงาทอดไปขวาล่าง
 export const LIGHT = {
-  DIR_X: 1,        // แสงจากซ้าย -> เงาทอดขวา
-  DIR_Y: 1,        // แสงจากบน -> เงาทอดล่าง
-  OFFSET_X: 6,     // ระยะเยื้องซ้ายขวา
-  OFFSET_Y: 4      // ระยะเยื้องบนล่าง
+  DIR_X: 1,
+  DIR_Y: 1,
+  OFFSET_X: 6,
+  OFFSET_Y: 4
 };
 
-// ขนาดหน้าจอ (Viewport) — คงเดิมเพื่อไม่ให้ HUD และ UI เปลี่ยนสัดส่วน
-export const GAME_WIDTH = 800;
+// =====================================================
+// พื้นที่ออกแบบ กับ ความละเอียดวาด — แยกกันคนละหน้าที่
+// GAME_WIDTH/HEIGHT = พื้นที่ตรรกะที่ UI และกล้องยึด (คงที่ทุกอุปกรณ์)
+// CANVAS_W/H        = จำนวนพิกเซลที่วาดจริง (ยิ่งมากยิ่งคม)
+// VIEW_SCALE        = ตัวคูณซูมของทุกกล้อง เพื่อชดเชยแคนวาสที่ใหญ่กว่า
+// ผล: ทุกเครื่องเห็นสนาม 1200x600 เท่ากัน แต่จอใหญ่/มือถือวาดละเอียดกว่า
+// =====================================================
+export const GAME_WIDTH = 1200;
 export const GAME_HEIGHT = 600;
 
-// ขนาดโลกเกม — สนามใหญ่กว่าหน้าจอ 4 เท่าในแต่ละแกน
+/** อ่านขนาดจอจริงเพื่อตั้งความละเอียดวาด — รันครั้งเดียวตอนโหลดโมดูล */
+function canvasSize(): { w: number; h: number } {
+  if (typeof window === 'undefined') return { w: GAME_WIDTH, h: GAME_HEIGHT };
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // ยึดความสูงจอ ไม่เกิน 1080 กันภาระเครื่อง · แล้วคงสัดส่วน 2:1 ของพื้นที่ออกแบบ
+  const h = Math.max(GAME_HEIGHT, Math.min(Math.round(window.innerHeight * dpr), 1080));
+  return { w: h * 2, h };
+}
+
+const cv = canvasSize();
+export const CANVAS_W = cv.w;
+export const CANVAS_H = cv.h;
+export const VIEW_SCALE = CANVAS_W / GAME_WIDTH;
+
+// กรอบเมนูที่ออกแบบไว้กว้าง 800 — จัดกลางในพื้นที่ออกแบบเสมอ
+export const MENU_W = 800;
+export const MENU_OX = (GAME_WIDTH - MENU_W) / 2;
+
+// ขนาดโลกเกม — สนามใหญ่กว่าหน้าจอหลายเท่าในแต่ละแกน
 export const WORLD_WIDTH = 3200;
 export const WORLD_HEIGHT = 2400;
 export const WALL_THICKNESS = 32;
@@ -41,6 +64,7 @@ export const DEPTH = {
   OVERLAY: 120,
   OVERLAY_TEXT: 121
 } as const;
+
 // ปรับความรู้สึกการควบคุม
 export const DASH_COOLDOWN_MS = 700;   // พัก dash กี่ ms
 export const AIM_ASSIST_RANGE = 190;   // บอสอยู่ใกล้กว่านี้ ถึงจะช่วยเล็ง

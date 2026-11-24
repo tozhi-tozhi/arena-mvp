@@ -2,7 +2,7 @@
 // เข้าจากฐานด้วย E ที่วงม่วง (หรือปุ่ม L) · ออกแล้วกลับไปยืน "จุดเดิม" ในฐาน
 // ซ้าย = เวทีกระจกเห็นตัวละครที่เลือกจริง · ขวา = การ์ดเลือก (คลิกหรือปุ่มลัด)
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, DEPTH } from '../config';
+import { GAME_WIDTH, GAME_HEIGHT, MENU_OX, DEPTH } from '../config';
 import { BASE_COLOR } from '../data/base';
 import { CHARACTERS, CHARACTER_IDS, type CharacterId } from '../data/characters';
 import { CHARMS, CHARM_IDS, type CharmId } from '../data/charms';
@@ -20,14 +20,14 @@ import { trainingState } from '../systems/trainingState';
 const L = {
   titleY: 32,
   hintY: 58,
-  stageX: 172,
+  stageX: 172 + MENU_OX,
   stageTop: 86,
   stageW: 268,
   stageH: 400,
   previewY: 322,
   nameY: 424,
   tagY: 448,
-  listX: 320,
+  listX: 320 + MENU_OX,
   listW: 456,
   charHeadY: 96,
   charTop: 112,
@@ -60,10 +60,13 @@ export class LoadoutScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#14100a');
 
     // พื้นเดียวกับฐาน = รู้สึกว่าเป็นห้องในบ้านเดียวกัน
-    this.add.image(0, 0, BASE_TEX.floorA).setOrigin(0).setDepth(DEPTH.FLOOR);
-    this.add.image(400, 0, BASE_TEX.floorB).setOrigin(0).setDepth(DEPTH.FLOOR);
-    this.add.image(0, 400, BASE_TEX.floorB).setOrigin(0).setDepth(DEPTH.FLOOR);
-    this.add.image(400, 400, BASE_TEX.floorA).setOrigin(0).setDepth(DEPTH.FLOOR);
+    // ปูพื้นเต็มความกว้างจอ (ลายสลับเดียวกับฐาน)
+    for (let x = 0; x < GAME_WIDTH; x += 400) {
+      for (let y = 0; y < GAME_HEIGHT; y += 400) {
+        const key = (x / 400 + y / 400) % 2 === 0 ? BASE_TEX.floorA : BASE_TEX.floorB;
+        this.add.image(x, y, key).setOrigin(0).setDepth(DEPTH.FLOOR);
+      }
+    }
     this.add.tileSprite(0, 0, GAME_WIDTH, 26, BASE_TEX.wallH).setOrigin(0).setDepth(DEPTH.WALL);
     makeVignette(this);
 

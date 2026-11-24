@@ -2,7 +2,7 @@
 // เข้าจากห้องแต่งตัวด้วยปุ่ม K หรือปุ่ม "สกิล" · ชี้ (หรือแตะ) การ์ดเพื่อดูรายละเอียดด้านล่าง · คลิกเพื่อใส่
 // ตัวเลขในรายละเอียดอ่านจาก data/skills.ts โดยตรง จึงตรงกับของจริงในเกมเสมอ
 import Phaser from 'phaser';
-import { GAME_WIDTH, DEPTH } from '../config';
+import { GAME_WIDTH, GAME_HEIGHT, MENU_W, MENU_OX, DEPTH } from '../config';
 import { CHARACTERS } from '../data/characters';
 import { SKILL_SLOTS, SLOT_LABEL, skillsOf, skillDetail, type SkillDef, type SkillSlot } from '../data/skills';
 import { loadout } from '../systems/Loadout';
@@ -18,8 +18,8 @@ const L = {
   rowTop: 84,
   rowStep: 92,
   cardH: 80,
-  labelX: 24,
-  cardX: 150,
+  labelX: 24 + MENU_OX,
+  cardX: 150 + MENU_OX,
   cardW: 204,
   cardGap: 6,
   detailTop: 452,
@@ -212,16 +212,16 @@ export class SkillScene extends Phaser.Scene {
     }
     const cx = GAME_WIDTH / 2;
     const cy = L.detailTop + L.detailH / 2;
-    this.rect(o, cx, cy, GAME_WIDTH - 40, L.detailH, 0x1b1810, 0.95, 0x4a4130);
+    this.rect(o, cx, cy, MENU_W - 40, L.detailH, 0x1b1810, 0.95, 0x4a4130);
     if (!found || !foundSlot) {
       this.text(o, cx, cy, 'ชี้ที่สกิลเพื่อดูรายละเอียด', 13, '#a89f8c');
       return;
     }
     const color = '#' + SLOT_COLOR[foundSlot].toString(16).padStart(6, '0');
     const state = !found.playable ? ' · ยังไม่มีท่า' : loadout.skillOf(foundSlot) === found.id ? ' · ใช้อยู่' : '';
-    this.text(o, 36, L.detailTop + 14, `${SLOT_LABEL[foundSlot]} ${OPTION_LETTER[found.option]} — ${found.name}${state}`, 14, color, 0, true);
+    this.text(o, cx - (MENU_W - 40) / 2 + 18, L.detailTop + 14, `${SLOT_LABEL[foundSlot]} ${OPTION_LETTER[found.option]} — ${found.name}${state}`, 14, color, 0, true);
     skillDetail(found.id).slice(0, 4).forEach((line, i) => {
-      this.text(o, 36, L.detailTop + 34 + i * 17, line, 11, '#e8e0c8', 0);
+      this.text(o, cx - (MENU_W - 40) / 2 + 36, L.detailTop + 34 + i * 17, line, 11, '#e8e0c8', 0);
     });
   }
 }

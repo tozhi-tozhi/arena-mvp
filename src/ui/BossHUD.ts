@@ -1,6 +1,6 @@
 // แถบเลือดบอส: อยู่บนกำแพงด้านล่างของจอ (ติดจอ ไม่ขยับตามกล้อง)
 import Phaser from 'phaser';
-import { DEPTH } from '../config';
+import { DEPTH, GAME_WIDTH } from '../config';
 
 export class BossHUD {
   private maxHP: number;
@@ -28,7 +28,7 @@ export class BossHUD {
     g.clear();
     const x = 200;
     const y = 577;
-    const w = 550;
+    const w = GAME_WIDTH - 250; // ยาวถึงขอบขวาเว้น 50 (เดิม 550 ตอนจอกว้าง 800)
     const h = 14;
     g.fillStyle(0x000000, 0.85);
     g.fillRect(x - 3, y - 3, w + 6, h + 6);

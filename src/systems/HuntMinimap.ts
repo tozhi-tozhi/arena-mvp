@@ -25,6 +25,9 @@ export interface MinimapSources {
 
 type Mode = 'full' | 'small' | 'off';
 
+// จำขนาดที่ผู้เล่นเลือกล่าสุดไว้ข้ามแอเรีย — เริ่มที่ขนาดกลางตามที่ต้องการ
+let savedMode: Mode = 'small';
+
 const C = MINIMAP.colors;
 const D = DEPTH.HUD - 1; // ใต้ HUD อื่น — ลูกศรนำทางประตูยังวาดทับแผนที่ได้
 
@@ -40,7 +43,7 @@ export class HuntMinimap {
   private pctText: Phaser.GameObjects.Text | null = null;
   private noteText: Phaser.GameObjects.Text | null = null;
 
-  private mode: Mode = 'full';
+  private mode: Mode = savedMode;
   private explored: Uint8Array;
   private found = new Set<string>();
   private lairs: { x: number; y: number; alive: () => boolean }[] = [];
@@ -72,6 +75,7 @@ export class HuntMinimap {
   // =====================================================
   cycleMode() {
     this.mode = this.mode === 'full' ? 'small' : this.mode === 'small' ? 'off' : 'full';
+    savedMode = this.mode; // จำไว้ใช้ต่อในแอเรียถัดไป
     sfx.open();
     this.build();
   }

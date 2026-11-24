@@ -1,9 +1,9 @@
-// src/systems/UiCamera.ts — กล้องแยกสำหรับ UI (Phase 3B)
-// ปัญหา: setScrollFactor(0) กันการเลื่อน แต่ไม่กันการซูม — พอ 3F ซูมกล้องตอนสู้บอส HUD จะโตตาม
-// ทางแก้: กล้องโลกวาดเฉพาะของในโลก กล้อง UI วาดเฉพาะของที่ scrollFactor = 0 (HUD, vignette, หน้าจอจบ)
-// ตัวแยกทำเองอัตโนมัติทุกเฟรม — ฉากไม่ต้องจำว่าอะไรเป็น UI
+// src/systems/UiCamera.ts — กล้องแยกสำหรับ UI
+// วัตถุ UI ตั้ง scrollFactor(0) = ไม่รับ scroll ของกล้อง ดังนั้นการชดเชยด้วย scroll ใช้ไม่ได้
+// วิธีที่ถูก: ตั้งจุดกำเนิดกล้องเป็น (0,0) แล้วซูมด้วย VIEW_SCALE
+// ผลคือ แคนวาส = พิกัดออกแบบ x VIEW_SCALE ตรงตัว → HUD วางที่ 0..1200 / 0..600 ได้เหมือนเดิมทุกจอ
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from '../config';
+import { CANVAS_W, CANVAS_H, VIEW_SCALE } from '../config';
 
 export class UiCamera {
   readonly cam: Phaser.Cameras.Scene2D.Camera;
@@ -12,12 +12,31 @@ export class UiCamera {
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
-    this.cam = scene.cameras.add(0, 0, GAME_WIDTH, GAME_HEIGHT, false, 'ui');
-    // จัดประเภทหลังอัปเดตทุกเฟรม (ของที่เพิ่งสร้างจะถูกแยกก่อนวาดเฟรมถัดไป)
-    scene.events.on(Phaser.Scenes.Events.POST_UPDATE, this.classify, this);
+    this.cam = scene.cameras.add(0, 0, CANVAS_W, CANVAS_H, false, 'ui');
+    this.applyRig();
+
+    // ย้ำค่าทุกเฟรม — กันการเปลี่ยนขนาดจอหรือกล้องถูกรีเซ็ตแล้วค่าเพี้ยน
+    scene.events.on(Phaser.Scenes.Events.POST_UPDATE, this.tick, this);
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      scene.events.off(Phaser.Scenes.Events.POST_UPDATE, this.classify, this);
+      scene.events.off(Phaser.Scenes.Events.POST_UPDATE, this.tick, this);
     });
+    this.classify();
+  }
+
+  /** ตั้งกล้องให้วาดพื้นที่ออกแบบ 1200x600 ลงเต็มแคนวาสจริง */
+  private applyRig() {
+    const c = this.cam;
+    if (c.width !== CANVAS_W || c.height !== CANVAS_H) c.setSize(CANVAS_W, CANVAS_H);
+    c.setPosition(0, 0);
+    c.setScroll(0, 0);
+    c.setZoom(VIEW_SCALE);
+    // จุดกำเนิด (0,0) = ขยายจากมุมซ้ายบน ไม่ใช่กลางจอ
+    c.originX = 0;
+    c.originY = 0;
+  }
+
+  private tick() {
+    this.applyRig();
     this.classify();
   }
 

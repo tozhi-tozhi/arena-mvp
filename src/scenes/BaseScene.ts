@@ -3,7 +3,7 @@
 // จำที่ยืนตอนไปห้องแต่งตัว/โรงตีเหล็ก/หีบ · กลับจากทริปเกิดกลางฐาน (ตั้งใจ)
 // ห้องฝึก = สนามทดสอบของผู้พัฒนาเท่านั้น ปิดไว้เมื่อปล่อยเกมจริง
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, DEPTH, DEV_TOOLS } from '../config';
+import { GAME_WIDTH, GAME_HEIGHT, DEPTH, DEV_TOOLS, VIEW_SCALE } from '../config';
 import { BASE, BASE_COLOR, BASE_SPOTS, type BaseSpotDef, type BaseSpotId } from '../data/base';
 import { CHARACTERS, CHARACTER_IDS, type CharacterId } from '../data/characters';
 import { CHARMS } from '../data/charms';
@@ -18,6 +18,7 @@ import { levelOf, starsOf, MAX_STARS } from '../systems/Upgrades';
 import { PlayerActor } from '../actors/PlayerActor';
 import { makeGlow, makeVignette, burst, ringEffect } from '../systems/effects';
 import { AmbientDust } from '../systems/AmbientDust';
+import { UiCamera } from '../systems/UiCamera';
 import { bakeBaseTextures, BASE_TEX } from '../systems/baseTextures';
 import { LogbookPanel } from '../ui/LogbookPanel';
 import { sfx } from '../systems/sfx';
@@ -50,6 +51,7 @@ export class BaseScene extends Phaser.Scene {
   private keyM!: Phaser.Input.Keyboard.Key;
   private keyEsc!: Phaser.Input.Keyboard.Key;
   private controlLabel!: Phaser.GameObjects.Text;
+  private uiCam!: UiCamera;
 
   constructor() { super({ key: 'BaseScene' }); }
 
@@ -68,7 +70,9 @@ export class BaseScene extends Phaser.Scene {
     this.uiTexts = [];
     this.spots = [];
     this.logbook = null;
+    this.uiCam = new UiCamera(this);
     this.cameras.main.setBackgroundColor('#0f0c07');
+    this.cameras.main.setZoom(VIEW_SCALE);
 
     const inset = BASE.wall;
     this.physics.world.setBounds(inset, inset, BASE.width - inset * 2, BASE.height - inset * 2);
@@ -94,7 +98,7 @@ export class BaseScene extends Phaser.Scene {
     const cam = this.cameras.main;
     cam.setBounds(0, 0, BASE.width, BASE.height);
     cam.startFollow(this.actor.sprite, true, 0.08, 0.08);
-    cam.setDeadzone(440, 340);
+    cam.setDeadzone(440 / VIEW_SCALE, 340 / VIEW_SCALE);
     cam.fadeIn(320, 0, 0, 0);
 
     makeVignette(this);
