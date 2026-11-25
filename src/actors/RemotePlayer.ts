@@ -41,6 +41,8 @@ export class RemotePlayer {
   private targetY: number;
   private lastSeq: number = -1;
   private lastClip: string = '';
+  private clipStartAt: number = 0;
+  private clipMs: number | number[] = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, charId: CharacterId, name: string) {
     this.scene = scene;
@@ -113,6 +115,8 @@ export class RemotePlayer {
       this.lastSeq = s.clipSeq;
       this.lastClip = s.clip;
       // เวลาเริ่มคลิปคิดจากนาฬิกาเครื่องเราเอง (ลบ age) เพราะนาฬิกาแต่ละเครื่องไม่ตรงกัน
+      this.clipStartAt = now - s.age;
+      this.clipMs = s.ms;
       this.clips.play(s.clip, s.ms, now - s.age);
     }
   }
@@ -124,7 +128,7 @@ export class RemotePlayer {
     this.sprite.y += (this.targetY - this.sprite.y) * k;
 
     if (this.clips.ready) {
-      const key = this.clips.frameKeyAt(now);
+      const key = this.frameKey(now);
       if (key && key !== this.currentTexture && this.scene.textures.exists(key)) {
         this.sprite.setTexture(key);
         this.currentTexture = key;
@@ -133,7 +137,17 @@ export class RemotePlayer {
     syncShadow(this.shadow, this.sprite, 0, false, this.shadowOffset);
     this.placeLabel();
   }
-
+  /** เลือกเฟรมที่ควรโชว์ — charge_hold เล่นรอบเดียวแล้วค้างเฟรมสุดท้าย (กฎเดียวกับ PlayerActor.updateAkkVisual) */
+  private frameKey(now: number): string {
+    if (this.clips.current === 'charge_hold') {
+      const n = this.clips.frames.charge_hold ?? 7;
+      const total = Array.isArray(this.clipMs)
+        ? this.clipMs.reduce((a, b) => a + b, 0)
+        : this.clipMs * n;
+      if (now - this.clipStartAt >= total) return this.clips.keyOf('charge_hold', n);
+    }
+    return this.clips.frameKeyAt(now);
+  }
   private placeLabel() {
     this.label.setPosition(this.sprite.x, this.sprite.y - this.sprite.displayHeight / 2 - 6);
   }

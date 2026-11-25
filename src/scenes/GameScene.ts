@@ -639,6 +639,8 @@ export class GameScene extends Phaser.Scene {
       `VIEW_SCALE ${VIEW_SCALE.toFixed(3)} · ui ${uc ? uc.zoom.toFixed(3) + ' / ' + uc.width + '×' + uc.height : 'ไม่มีกล้อง ui'} · main ${this.cameras.main.zoom.toFixed(3)}`
     );
     lines.push(`FPS ${Math.round(this.game.loop.actualFps)}`);
+    const gh = this.ghosts[0];
+    if (gh) lines.push(`ผี 1 · คลิป ${gh.clipName || '—'} · seq ${gh.seq}`);
 
     // วัดพื้นที่ที่กล้อง ui มองเห็นจริง — ถ้าจุดเริ่มไม่ใช่ 0,0 คือต้นเหตุที่ UI เลื่อน
     if (uc) {
