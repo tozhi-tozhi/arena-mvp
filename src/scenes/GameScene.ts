@@ -27,6 +27,8 @@ import { DpsMeter } from '../systems/DpsMeter';
 import { trainingState, type TrainingRun } from '../systems/trainingState';
 import { controls, pressed, CONTROL_LABEL } from '../systems/Controls';
 import { profiles } from '../systems/PlayerProfile';
+import { RemotePlayer } from '../actors/RemotePlayer';
+import { GhostFeeder } from '../systems/ghostFeeder';
 
 const TIMER_MS = 30000; // จับเวลาทดสอบ DPS
 const HITBOX_HOLD_MS = 500; // ค้างภาพกรวยฟันไว้ให้ดูหลังฟันออก
@@ -45,6 +47,8 @@ export class GameScene extends Phaser.Scene {
   private dummies: StrawDummy[] = [];
   private targets: CombatTarget[] = [];
   private colliders: any[] = [];
+  private ghosts: RemotePlayer[] = [];
+  private feeders: GhostFeeder[] = [];
 
   private keyM!: Phaser.Input.Keyboard.Key;
   private leaving: boolean = false;
@@ -100,6 +104,8 @@ export class GameScene extends Phaser.Scene {
     this.dummies = [];
     this.targets = [];
     this.colliders = [];
+    this.ghosts = [];
+    this.feeders = [];
     this.timer = null;
     this.frozenDps = null;
     this.sweepRef = null;
@@ -145,6 +151,12 @@ export class GameScene extends Phaser.Scene {
     this.spawnDummies(W / 2, H / 2, W, H);
     this.applyCollide();
 
+    // ตัวผีทดสอบ D1 — บอทเดินวนรอบจุดเริ่มของผู้เล่น
+    const feeder = new GhostFeeder(px, py, 180, this.time.now);
+    const fp = feeder.startPos();
+    this.feeders.push(feeder);
+    this.ghosts.push(new RemotePlayer(this, fp.x, fp.y, 'akkhani', 'ผี 1'));
+
     this.keyM = (this.input.keyboard as any).addKey(Phaser.Input.Keyboard.KeyCodes.M);
     this.bindKeys();
     this.buildPanel();
@@ -159,6 +171,7 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       (this.input.keyboard as any).removeAllListeners();
       for (const d of this.dummies) d.destroy();
+      for (const g of this.ghosts) g.destroy();
     });
 
     this.refreshPanel(this.time.now, true);
@@ -178,6 +191,11 @@ export class GameScene extends Phaser.Scene {
     if (this.actor.isDead) return; // เริ่มห้องใหม่เองใน onPlayerDeath
 
     for (const d of this.dummies) d.update();
+    for (let i = 0; i < this.ghosts.length; i++) {
+      const st = this.feeders[i]?.tick(now);
+      if (st) this.ghosts[i].applyState(st, now);
+      this.ghosts[i].update(now, delta);
+    }
     this.trackLunge(now);
     this.updateTimer(now);
     this.drawHitboxes(now);
