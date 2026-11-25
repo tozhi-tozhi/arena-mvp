@@ -40,6 +40,9 @@ const RULER_RINGS = [100, 200, 300, 400, 500];
 const SELF_HIT = 100;
 const PATROL_INDEX = 4; // หุ่นตัวที่ 5 เป็นหุ่นเดินวน
 const SLOT_SHORT: Record<string, string> = { passive: 'P', combo: 'Cb', charge: 'Ch', ultimate: 'U' };
+// จำนวนตัวผีทดสอบ (D1-4) — เก็บระดับโมดูล ไม่รีเซ็ตตอนล้มแล้วเริ่มห้องใหม่
+const GHOST_COUNTS = [0, 1, 3];
+let ghostCountIdx = 1;
 
 export class GameScene extends Phaser.Scene {
   private actor!: PlayerActor;
@@ -74,6 +77,7 @@ export class GameScene extends Phaser.Scene {
   private panel!: Phaser.GameObjects.Text;
   private panelAt: number = 0;
   private controlLabel!: Phaser.GameObjects.Text;
+  private ghostLabel!: Phaser.GameObjects.Text;
   private uiCam!: UiCamera;
 
   constructor() {
@@ -151,16 +155,14 @@ export class GameScene extends Phaser.Scene {
     this.spawnDummies(W / 2, H / 2, W, H);
     this.applyCollide();
 
-    // ตัวผีทดสอบ D1 — บอทเดินวนรอบจุดเริ่มของผู้เล่น
-    const feeder = new GhostFeeder(px, py, 180, this.time.now);
-    const fp = feeder.startPos();
-    this.feeders.push(feeder);
-    this.ghosts.push(new RemotePlayer(this, fp.x, fp.y, 'akkhani', 'ผี 1'));
+    // ตัวผีทดสอบ D1 — บอทเดินวนรอบจุดเริ่มของผู้เล่น (จำนวนตามปุ่ม P)
+    this.spawnGhosts(px, py);
 
     this.keyM = (this.input.keyboard as any).addKey(Phaser.Input.Keyboard.KeyCodes.M);
     this.bindKeys();
     this.buildPanel();
     this.buildControlLabel();
+    this.buildGhostLabel();
 
     const camera = this.cameras.main;
     camera.setZoom(VIEW_SCALE);
@@ -222,7 +224,61 @@ export class GameScene extends Phaser.Scene {
     // สร้าง CombatTarget ครั้งเดียว ไม่สร้างใน getTargets()
     this.targets = this.dummies.map((d) => dummyAsTarget(d));
   }
+  // =====================================================
+  //  ตัวผีทดสอบ (D1)
+  // =====================================================
+  /** สร้างตัวผีตามจำนวนที่เลือก — แต่ละตัวเดินวงรัศมีต่างกัน และเริ่มลำดับท่าเหลื่อมกัน */
+  private spawnGhosts(cx: number, cy: number) {
+    const count = GHOST_COUNTS[ghostCountIdx];
+    const radii = [180, 120, 240];
+    for (let i = 0; i < count; i++) {
+      // ลบเวลาเริ่มของบอทตัวหลัง ๆ ให้ท่าที่เล่นไม่ตรงกันพอดี
+      const feeder = new GhostFeeder(cx, cy, radii[i], this.time.now - i * 1100);
+      const fp = feeder.startPos();
+      this.feeders.push(feeder);
+      this.ghosts.push(new RemotePlayer(this, fp.x, fp.y, 'akkhani', `ผี ${i + 1}`));
+    }
+  }
 
+  private clearGhosts() {
+    for (const g of this.ghosts) g.destroy();
+    this.ghosts = [];
+    this.feeders = [];
+  }
+
+  /** สลับจำนวนตัวผี 0 → 1 → 3 → 0 · ตัวผีใหม่วนรอบตำแหน่งที่ผู้เล่นยืนอยู่ตอนนี้ */
+  private cycleGhosts() {
+    if (this.leaving || this.actor.isDead) return;
+    ghostCountIdx = (ghostCountIdx + 1) % GHOST_COUNTS.length;
+    this.clearGhosts();
+    this.spawnGhosts(this.actor.x, this.actor.y);
+    this.refreshGhostLabel();
+    sfx.open();
+    this.showToast(`ตัวผี: ${GHOST_COUNTS[ghostCountIdx]} ตัว`);
+  }
+
+  /** ป้ายมุมซ้ายล่าง (เหนือป้ายควบคุม): จำนวนตัวผี — กด P หรือแตะเพื่อสลับ */
+  private buildGhostLabel() {
+    this.ghostLabel = this.add
+      .text(12, GAME_HEIGHT - 32, '', {
+        fontFamily: '"Noto Sans Thai", monospace',
+        fontSize: '12px',
+        fontStyle: 'bold',
+        color: '#c084fc',
+        stroke: '#000000',
+        strokeThickness: 3
+      })
+      .setOrigin(0, 1)
+      .setDepth(DEPTH.HUD)
+      .setScrollFactor(0);
+    this.ghostLabel.setInteractive({ useHandCursor: true });
+    this.ghostLabel.on('pointerdown', () => this.cycleGhosts());
+    this.refreshGhostLabel();
+  }
+
+  private refreshGhostLabel() {
+    this.ghostLabel.setText(`ตัวผี: ${GHOST_COUNTS[ghostCountIdx]}  ([P] หรือแตะเพื่อสลับ)`);
+  }
   /** เปิด/ปิดการชนระหว่างผู้เล่นกับหุ่น (หุ่นเป็นของแข็งเหมือนบอสตอนเปิด) */
   private applyCollide() {
     for (const c of this.colliders) c.destroy();
@@ -261,6 +317,7 @@ export class GameScene extends Phaser.Scene {
     kb.on('keydown-CLOSED_BRACKET', () => this.tuneFx(1));
     kb.on('keydown-ESC', () => this.exitRoom());
     kb.on('keydown-V', () => this.cycleControls());
+    kb.on('keydown-P', () => this.cycleGhosts());
   }
 
   /** เปิดห้องแต่งตัว (ตัวละคร/สกิล/เครื่องราง/สัตว์เลี้ยง) — ปิดแล้วกลับมาห้องนี้ ยืนจุดเดิม สกิลใหม่มีผลทันที */
@@ -569,7 +626,7 @@ export class GameScene extends Phaser.Scene {
       .text(
         GAME_WIDTH / 2,
         GAME_HEIGHT - 34,
-        'L Loadout · R รีเซ็ต · G โดนตี · T จับเวลา · H hitbox · X ไม้บรรทัด · C ชนหุ่น · N หุ่นเดิน · [ ] เอฟเฟกต์ · ESC กลับฐาน',
+        'L Loadout · R รีเซ็ต · G โดนตี · T จับเวลา · H hitbox · X ไม้บรรทัด · C ชนหุ่น · N หุ่นเดิน · P ตัวผี · [ ] เอฟเฟกต์ · ESC กลับฐาน',
         {
           fontFamily: '"Noto Sans Thai", monospace',
           fontSize: '10px',
@@ -640,7 +697,7 @@ export class GameScene extends Phaser.Scene {
     );
     lines.push(`FPS ${Math.round(this.game.loop.actualFps)}`);
     const gh = this.ghosts[0];
-    if (gh) lines.push(`ผี 1 · คลิป ${gh.clipName || '—'} · seq ${gh.seq}`);
+    lines.push(`ตัวผี ${this.ghosts.length} ตัว` + (gh ? ` · ผี 1 · คลิป ${gh.clipName || '—'} · seq ${gh.seq}` : ''));
 
     // วัดพื้นที่ที่กล้อง ui มองเห็นจริง — ถ้าจุดเริ่มไม่ใช่ 0,0 คือต้นเหตุที่ UI เลื่อน
     if (uc) {
