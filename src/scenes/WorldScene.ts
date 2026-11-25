@@ -41,7 +41,7 @@ import type { MinionHooks, Minion } from '../entities/Minion';
 import type { BossHooks, BossBase } from '../entities/BossBase';
 import { loadBossAssets, initBossTextures } from '../systems/BossLoader';
 import { AmbientDust } from '../systems/AmbientDust';
-
+import { profiles } from '../systems/PlayerProfile';
 import { HuntMinimap, type MinimapSources } from '../systems/HuntMinimap';
 
 const DETECT_RADIUS = 500;
@@ -232,7 +232,7 @@ const cam = this.cameras.main;
           .map((s) => s.target)
       ],
       onDeathShown: () => this.onPlayerDied()
-    });
+    }, profiles.local);
     this.lastHpForChannel = this.actor.hp;
 
     this.bossAliveTracker.value = 0;

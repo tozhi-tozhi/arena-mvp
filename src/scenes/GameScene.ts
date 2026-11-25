@@ -26,6 +26,7 @@ import { StrawDummy, dummyAsTarget, DUMMY } from '../entities/StrawDummy';
 import { DpsMeter } from '../systems/DpsMeter';
 import { trainingState, type TrainingRun } from '../systems/trainingState';
 import { controls, pressed, CONTROL_LABEL } from '../systems/Controls';
+import { profiles } from '../systems/PlayerProfile';
 
 const TIMER_MS = 30000; // จับเวลาทดสอบ DPS
 const HITBOX_HOLD_MS = 500; // ค้างภาพกรวยฟันไว้ให้ดูหลังฟันออก
@@ -139,7 +140,7 @@ export class GameScene extends Phaser.Scene {
     this.actor = new PlayerActor(this, px, py, {
       getTargets: () => this.targets,
       onDeathShown: () => this.onPlayerDeath()
-    });
+    }, profiles.local);
 
     this.spawnDummies(W / 2, H / 2, W, H);
     this.applyCollide();

@@ -15,6 +15,7 @@ import { ClipSet } from '../systems/ClipSet';
 import { createKit } from '../characters/registry';
 import type { CharacterKit } from '../characters/CharacterKit';
 import { huntSession } from '../systems/HuntSession';
+import { profiles, type PlayerProfile } from '../systems/PlayerProfile';
 import { Perks } from '../systems/Perks';
 import { charStarEffectNow, type CharStarEffect } from '../systems/Upgrades';
 import { BURN } from '../data/bosses';
@@ -86,6 +87,8 @@ export class PlayerActor {
 
   scene: Phaser.Scene;
   host: PlayerActorHost;
+  /** ข้อมูลของผู้เล่นที่ตัวละครนี้ใช้ (ท้องถิ่น = profiles.local · อนาคตส่งของคนอื่นได้) */
+  private profile: PlayerProfile;
   private baseScale: number = CLAY_SCALE;
 
   private keyW: any;
@@ -179,10 +182,17 @@ export class PlayerActor {
     ClipSet.loadAll(scene);
   }
 
-  constructor(scene: Phaser.Scene, x: number, y: number, host: PlayerActorHost) {
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    host: PlayerActorHost,
+    profile: PlayerProfile = profiles.local
+  ) {
     this.scene = scene;
     this.host = host;
-    this.character = CHARACTERS[loadout.characterId];
+    this.profile = profile;
+    this.character = CHARACTERS[profile.characterId];
     this.starFx = charStarEffectNow(this.character.id);
 
     this.useClay =
@@ -197,7 +207,7 @@ if (this.clips.ready) this.useClay = true;
 this.maxPlayerHP = this.character.maxHP;
 // เลือดข้ามแอเรีย: มีค่าค้างจากแมพก่อน → ใช้ค่านั้น (The World เท่านั้นที่ฝากค่าไว้)
 // ห้องฝึก/ทริปแรกไม่ได้ฝาก → เต็มตามปกติ
-const carriedHP = huntSession.getTripHP();
+const carriedHP = profile.getTripHP();
 this.playerHP = carriedHP !== null ? Phaser.Math.Clamp(carriedHP, 1, this.maxPlayerHP) : this.maxPlayerHP;
     this.facing.set(1, 0);
 
@@ -1041,7 +1051,7 @@ private getAimDir(): Phaser.Math.Vector2 {
 
   /** ชื่อไม้ตายที่ใส่ไว้จริง — ไม่มีในตารางก็ใช้ชื่อเดิมของตัวละคร */
   private ultimateName(): string {
-    const d = findSkill(loadout.skillOf('ultimate'));
+    const d = findSkill(this.profile.skillOf('ultimate'));
     return d ? d.name : this.character.skillName;
   }
 

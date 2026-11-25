@@ -1,20 +1,31 @@
 // ระบบอัปเกรดเครื่องราง/สัตว์เลี้ยง + ดาวตัวละคร — ตัวเลขสมดุลอยู่ที่นี่ที่เดียว
 // UI เรียกใช้เฉพาะผลลัพธ์สำเร็จรูป ไม่คำนวณเอง
+// หมายเหตุ 5A-1: ขั้นถุงพกพา (pouchLevel) ย้ายไปอยู่ใน PlayerProfile แล้ว
+//   คลาสเหลือ getter/setter ส่งต่อ — ชื่อ upgrades.pouchLevel เดิมยังใช้ได้ทุกรูปแบบ
+//   เลเวลเครื่องราง/สัตว์/ดาว ยังเป็นค่ากลางโดยตั้งใจ (ระบบนี้จะถูกถอดหลัง Playtest-1 — มติ S10)
 import { huntSession } from './HuntSession';
+import { profiles } from './PlayerProfile';
 import { LOOT_TABLE } from '../data/loot';
 import type { Rarity } from '../data/rarity';
+import { POUCH_MAX_LEVEL, pouchCapacityAt, clampPouchLevel } from '../data/pouch';
+
+// ค่าคงที่/สูตรความจุถุงย้ายไป data/pouch.ts — re-export ชื่อเดิมกันคน import พัง
+export { POUCH_BASE_SLOTS, POUCH_SLOTS_PER_LEVEL, POUCH_MAX_LEVEL, pouchCapacityAt } from '../data/pouch';
 
 export type UpgradeType = 'charm' | 'pet';
 export const MAX_LEVEL = 10;
 export const MELT_NEED = 10;
 export const MAX_STARS = 3;
 
-// ---------- เก็บเลเวล + ดาว ----------
+// ---------- เก็บเลเวล + ดาว (ขั้นถุงส่งต่อไป PlayerProfile) ----------
 class UpgradeStore {
   public charmLevels: Record<string, number> = {};
   public petLevels: Record<string, number> = {};
   public charStars: Record<string, number> = {};
-  public pouchLevel: number = 0; // ถุงพกพา 0..POUCH_MAX_LEVEL (0 = 12 ช่องเริ่มต้น)
+
+  /** ขั้นถุงพกพาของผู้เล่นท้องถิ่น — ของจริงอยู่ที่ PlayerProfile (Phase 5A-1) */
+  get pouchLevel(): number { return profiles.local.pouchLevel; }
+  set pouchLevel(v: number) { profiles.local.pouchLevel = v; }
 
   getCharmLevel(id: string): number { return clampLevel(this.charmLevels[id] ?? 1); }
   getPetLevel(id: string): number { return clampLevel(this.petLevels[id] ?? 1); }
@@ -37,7 +48,7 @@ class UpgradeStore {
     this.charmLevels = sanitize(data?.charmLevels, clampLevel);
     this.petLevels = sanitize(data?.petLevels, clampLevel);
     this.charStars = sanitize(data?.charStars, clampStars);
-    this.pouchLevel = clampPouch(data?.pouchLevel);
+    this.pouchLevel = clampPouchLevel(data?.pouchLevel);
   }
 
   reset() { this.charmLevels = {}; this.petLevels = {}; this.charStars = {}; this.pouchLevel = 0; }
@@ -47,12 +58,6 @@ function clampLevel(lv: any): number {
   const n = Number(lv);
   if (!Number.isFinite(n)) return 1;
   return Math.max(1, Math.min(MAX_LEVEL, Math.floor(n)));
-}
-
-function clampPouch(v: any): number {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(POUCH_MAX_LEVEL, Math.floor(n)));
 }
 
 function clampStars(v: any): number {
@@ -350,10 +355,8 @@ export function meltItems(itemId: string, fromRarity: Rarity): boolean {
 // =====================================================
 // ถุงพกพา (Pouch) — Phase 3C
 // ความจุเริ่มต้น 12 ช่อง · +4 ช่องต่อขั้น · 12 ขั้น · สูงสุด 60 ช่อง · ใช้แร่ (ore) ไล่ระดับ rarity
+// ตัวเลขความจุอยู่ data/pouch.ts · ขั้นถุงของผู้เล่นอยู่ PlayerProfile · ราคาอยู่ด้านล่าง
 // =====================================================
-export const POUCH_BASE_SLOTS = 12;
-export const POUCH_SLOTS_PER_LEVEL = 4;
-export const POUCH_MAX_LEVEL = 12;
 export const POUCH_MATERIAL = 'ore';
 
 // ราคาขั้น 0→1, 1→2, ... 11→12 (ยังไม่ผ่านการเล่นจริง — ปรับได้ที่นี่ที่เดียว)
@@ -373,11 +376,6 @@ export const POUCH_COSTS: UpgradeCost[] = [
 ];
 
 export function pouchLevelNow(): number { return upgrades.pouchLevel; }
-
-export function pouchCapacityAt(level: number): number {
-  const lv = Math.max(0, Math.min(POUCH_MAX_LEVEL, Math.floor(level)));
-  return POUCH_BASE_SLOTS + lv * POUCH_SLOTS_PER_LEVEL;
-}
 
 export function pouchCapacityNow(): number { return pouchCapacityAt(upgrades.pouchLevel); }
 
@@ -399,7 +397,7 @@ export function performUpgradePouch(): boolean {
   if (!cost || !canUpgradePouch()) return false;
   huntSession.spend(POUCH_MATERIAL, cost.reqRarity, cost.amount);
   if (cost.reqRarity2) huntSession.spend(POUCH_MATERIAL, cost.reqRarity2, cost.amount2 ?? 0);
-  upgrades.pouchLevel = clampPouch(upgrades.pouchLevel + 1);
+  upgrades.pouchLevel = clampPouchLevel(upgrades.pouchLevel + 1);
   void import('./SaveGame').then((m) => m.saveGame()).catch(() => {});
   return true;
 }

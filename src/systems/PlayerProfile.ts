@@ -13,7 +13,7 @@ import type { DroppedLoot } from '../data/loot';
 import { DEATH_LOSS_RATIO } from '../data/world';
 import { LOOT_TABLE } from '../data/loot';
 import { migrateRarity, type Rarity } from '../data/rarity';
-import { pouchCapacityNow } from './Upgrades';
+import { pouchCapacityAt, clampPouchLevel } from '../data/pouch';
 
 // =====================================================
 //  กระเป๋าถาวร + สมุดบันทึก (ของเก่าที่ย้ายมาจาก HuntSession)
@@ -79,6 +79,8 @@ export class PlayerProfile {
   private bag = new Map<string, BagEntry>();
   private log: TripLogEntry[] = [];
   private stats: TripStats = emptyStats();
+  /** ขั้นถุงพกพา — เซฟผ่านก้อน upgrades ของ SaveGame (รูปเซฟเดิมไม่เปลี่ยน) */
+  private _pouchLevel: number = 0;
 
   // ---------- ของชั่วคราวระหว่างทริป (ไม่เซฟ — ปิดเกมกลางทริปคือจบทริป) ----------
   private pouchItems: DroppedLoot[] = [];
@@ -137,7 +139,10 @@ export class PlayerProfile {
     this.pouchStartedAt = Date.now();
   }
   get pouchCount(): number { return this.pouchItems.length; }
-  get pouchCapacity(): number { return pouchCapacityNow(); }
+  /** ขั้นถุงพกพาของผู้เล่นคนนี้ — 0..12 (ค่าถูก clamp ตอนเขียนเสมอ) */
+  get pouchLevel(): number { return this._pouchLevel; }
+  set pouchLevel(v: number) { this._pouchLevel = clampPouchLevel(v); }
+  get pouchCapacity(): number { return pouchCapacityAt(this._pouchLevel); }
   get pouchFull(): boolean { return this.pouchItems.length >= this.pouchCapacity; }
   pouchList(): DroppedLoot[] { return this.pouchItems.slice(); }
 
@@ -352,6 +357,7 @@ export class PlayerProfile {
     this.skills = defaultSkillsAll();
     this.bag.clear();
     this.clearLog();
+    this._pouchLevel = 0;
     this.pouchItems = [];
     this.tripHP = null;
     this.basePos = null;

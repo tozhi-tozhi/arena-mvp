@@ -12,6 +12,7 @@ import { LOOT_TABLE } from '../data/loot';
 import type { Rarity } from '../data/rarity';
 import { huntSession } from '../systems/HuntSession';
 import { loadout } from '../systems/Loadout';
+import { profiles } from '../systems/PlayerProfile';
 import { loadGame, saveGame, resetSave } from '../systems/SaveGame';
 import { ensureItemIcons } from '../systems/itemIcons';
 import { levelOf, starsOf, MAX_STARS } from '../systems/Upgrades';
@@ -90,10 +91,10 @@ export class BaseScene extends Phaser.Scene {
     if (!back) huntSession.clearBasePos(); // จบทริป/เปิดเกมใหม่ = เริ่มกลางฐาน
 
     this.actor = new PlayerActor(this, px, py, {
-      getTargets: () => [],   // ไม่มีศัตรูในฐาน
-      onDeathShown: () => {}, // ไม่มีทางตายในฐาน
-      suppressKeyCombat: true // ฐานไม่มีการต่อสู้ — ปุ่ม J/K ของโหมดคีย์บอร์ดจะได้ไม่ชนปุ่มลัด (J = สมุดบันทึก)
-    });
+      getTargets: () => [],
+      onDeathShown: () => {},
+      suppressKeyCombat: true
+    }, profiles.local);
 
     const cam = this.cameras.main;
     cam.setBounds(0, 0, BASE.width, BASE.height);
