@@ -30,6 +30,7 @@ import { profiles } from '../systems/PlayerProfile';
 import { RemotePlayer } from '../actors/RemotePlayer';
 import { GhostFeeder } from '../systems/ghostFeeder';
 import { net } from '../systems/NetManager';
+import { NetGhosts } from '../systems/NetGhosts';
 import { BaseMenu, makeMenuButton, type MenuItem, type MenuToggle } from '../ui/BaseMenu';
 import { canFullscreen, toggleFullscreen } from '../systems/screenMode';
 
@@ -82,6 +83,7 @@ export class GameScene extends Phaser.Scene {
   private controlLabel!: Phaser.GameObjects.Text;
   private ghostLabel!: Phaser.GameObjects.Text;
   private menu!: BaseMenu;
+  private netGhosts!: NetGhosts;
   private uiCam!: UiCamera;
 
   constructor() {
@@ -166,6 +168,7 @@ export class GameScene extends Phaser.Scene {
     this.bindKeys();
     this.buildPanel();
     this.buildMenu();
+    this.netGhosts = new NetGhosts(this, this.actor);
     net.onLog = (msg) => this.showToast(msg);
 
     const camera = this.cameras.main;
@@ -178,6 +181,7 @@ export class GameScene extends Phaser.Scene {
       (this.input.keyboard as any).removeAllListeners();
       net.onLog = null; // การต่อเน็ตอยู่ต่อได้ข้ามฉาก แค่เลิกโชว์ toast ของฉากนี้
       if (this.menu) this.menu.destroy(); // ปล่อยธงซ่อนปุ่มสัมผัส
+      if (this.netGhosts) this.netGhosts.destroy();
       for (const d of this.dummies) d.destroy();
       for (const g of this.ghosts) g.destroy();
     });
@@ -193,6 +197,9 @@ export class GameScene extends Phaser.Scene {
       const off = sfx.toggleMute();
       this.showToast(off ? 'ปิดเสียง' : 'เปิดเสียง');
     }
+
+    // ตัวผีจากเน็ต — อยู่ก่อนจุดหยุด เพื่อให้เพื่อนยังเห็นเราตอนเปิดเมนู
+    this.netGhosts.update(now, delta);
 
     // เมนูเปิดอยู่ = ห้องหยุดนิ่ง
     if (this.menu.isOpen) return;
@@ -237,7 +244,7 @@ export class GameScene extends Phaser.Scene {
   // =====================================================
   /** สร้างตัวผีตามจำนวนที่เลือก — แต่ละตัวเดินวงรัศมีต่างกัน และเริ่มลำดับท่าเหลื่อมกัน */
   private spawnGhosts(cx: number, cy: number) {
-    const count = GHOST_COUNTS[ghostCountIdx];
+    const count = net.role ? 0 : GHOST_COUNTS[ghostCountIdx];
     const radii = [180, 120, 240];
     for (let i = 0; i < count; i++) {
       // ลบเวลาเริ่มของบอทตัวหลัง ๆ ให้ท่าที่เล่นไม่ตรงกันพอดี
@@ -305,7 +312,12 @@ export class GameScene extends Phaser.Scene {
       { label: () => `ไม้บรรทัด: ${onoff(trainingState.ruler)}`, color: 0x9de7ff, keepOpen: true, onUse: () => this.toggleRuler() },
       { label: () => `ชนหุ่น: ${onoff(trainingState.collide)}`, color: 0x9de7ff, keepOpen: true, onUse: () => this.toggleCollide() },
       { label: () => `หุ่นเดิน: ${onoff(trainingState.patrol)}`, color: 0x9de7ff, keepOpen: true, onUse: () => this.togglePatrol() },
-      { label: () => `ตัวผี: ${GHOST_COUNTS[ghostCountIdx]} ตัว`, color: 0xc084fc, keepOpen: true, onUse: () => this.cycleGhosts() },
+      {
+        label: () => (net.role ? 'ตัวผีทดสอบ: ปิด (ต่อเน็ต)' : `ตัวผีทดสอบ: ${GHOST_COUNTS[ghostCountIdx]} ตัว`),
+        color: 0xc084fc,
+        keepOpen: true,
+        onUse: () => this.cycleGhosts()
+      },
       {
         label: () => `เอฟเฟกต์ ใหญ่ขึ้น (×${(FX_DEFAULT_REF / FX_TUNE.refWidth).toFixed(2)})`,
         color: 0xe8e0c8,
@@ -767,6 +779,7 @@ export class GameScene extends Phaser.Scene {
     );
     lines.push(`FPS ${Math.round(this.game.loop.actualFps)}`);
     for (const nl of net.panelLines()) lines.push(nl);
+    if (net.role) lines.push(`ผีจากเน็ต ${this.netGhosts.count()} ตัว`);
     const gh = this.ghosts[0];
     lines.push(`ตัวผี ${this.ghosts.length} ตัว` + (gh ? ` · ผี 1 · คลิป ${gh.clipName || '—'} · seq ${gh.seq}` : ''));
 

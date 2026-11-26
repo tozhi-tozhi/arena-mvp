@@ -20,6 +20,10 @@ export class ClipSet {
   private durations: number[] = [];
   private looping = false;
 
+  /** บันทึกคลิปล่าสุดที่เริ่มเล่น — ไว้ส่งสถานะข้ามเน็ตให้ตัวผีของเพื่อน (ไม่กระทบการเล่นภาพ) */
+  seq = 0;
+  lastMs: number | number[] = 1000;
+  lastStartAt = 0;
   constructor(scene: Phaser.Scene, char: CharacterId) {
     this.scene = scene;
     this.char = char;
@@ -99,6 +103,9 @@ export class ClipSet {
     const def = artOf(this.char).clips[clip];
     this.clip = clip;
     this.startAt = now;
+    this.seq++;
+    this.lastMs = frameMs;
+    this.lastStartAt = now;
     this.looping = !!def?.loop;
     this.durations = Array.isArray(frameMs) ? frameMs.slice() : new Array(n).fill(frameMs);
   }
