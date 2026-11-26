@@ -19,7 +19,7 @@ interface Btn {
 
 const SHOW: Record<Ctx, BtnName[]> = {
   none: [],
-  world: ['attack', 'skill', 'E', 'R'],
+  world: ['attack', 'skill'],
   base: [],
   menu: ['back', 'full']
 };

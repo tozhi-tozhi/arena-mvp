@@ -8,7 +8,7 @@ import { generateArea, type AreaLayout } from '../systems/AreaGenerator';
 import { bakeAreaTextures, tileKey, propKey } from '../systems/areaTextures';
 import { UiCamera } from '../systems/UiCamera';
 import { PlayerActor } from '../actors/PlayerActor';
-import { controls, pressed } from '../systems/Controls';
+import { controls, pressed, touch } from '../systems/Controls';
 import { AreaGate } from '../entities/AreaGate';
 import { makeVignette, showDamage, showRarityBanner } from '../systems/effects';
 import { showEndScreen } from '../ui/GameOverScreen';
@@ -67,6 +67,9 @@ export class WorldScene extends Phaser.Scene {
   private lastPouchLabel = '';
   private pouchPanel!: PouchPanel;
   private menu!: BaseMenu;
+  private actionBtn!: Phaser.GameObjects.Rectangle;
+  private actionLabel!: Phaser.GameObjects.Text;
+  private actionShown: string = '';
   // === สถานะแอเรีย ===
   private areaBosses: SpawnedBoss[] = [];
   private areaMinions: SpawnedMinion[] = [];
@@ -289,6 +292,7 @@ const cam = this.cameras.main;
     });
     this.pouchPanel = new PouchPanel(this);
     this.buildMenu();
+    this.buildActionButton();
 
     this.questTitleText = this.add.text(44, 124, '', {
       fontFamily: '"Noto Sans Thai", monospace', fontSize: '14px', fontStyle: 'bold',
@@ -405,6 +409,7 @@ const cam = this.cameras.main;
     this.updatePouchHud();
     this.pouchPanel.refresh();
     this.updateGateNavigator();
+    this.updateActionButton();
     this.updateCameraZoom(delta);
     if (this.minimap) this.minimap.update(delta, this.time.now);
 
@@ -852,6 +857,63 @@ const cam = this.cameras.main;
       this.menu.open();
     }
     sfx.open();
+  }
+    // =====================================================
+  // ปุ่มแอ็กชัน — แทนปุ่ม E/R: ขึ้นชื่อการกระทำตรงหน้า กดหรือแตะได้ (คอมกด E ได้เหมือนเดิม)
+  // ปุ่มแค่ส่งสัญญาณ E/R ให้ตรรกะเดิมใน update() ไม่ได้ทำงานแทน
+  // =====================================================
+  private buildActionButton() {
+    const x = GAME_WIDTH - 270;
+    const y = GAME_HEIGHT - 220;
+    this.actionShown = '';
+    this.actionBtn = this.add.rectangle(x, y, 210, 56, 0x1b1810, 0.94)
+      .setStrokeStyle(3, 0xffd166).setDepth(DEPTH.HUD + 2).setScrollFactor(0).setVisible(false);
+    this.actionBtn.setInteractive({ useHandCursor: true });
+    this.actionBtn.on('pointerover', () => this.actionBtn.setFillStyle(0x34290f, 0.97));
+    this.actionBtn.on('pointerout', () => this.actionBtn.setFillStyle(0x1b1810, 0.94));
+    this.actionBtn.on('pointerdown', () => {
+      touch.pulse(this.actor.isDead || this.actor.isVictory ? 'R' : 'E');
+    });
+    this.actionLabel = this.add.text(x, y, '', {
+      fontFamily: '"Noto Sans Thai", monospace', fontSize: '20px', fontStyle: 'bold',
+      color: '#ffffff', stroke: '#000000', strokeThickness: 4
+    }).setOrigin(0.5).setDepth(DEPTH.HUD + 3).setScrollFactor(0).setVisible(false);
+  }
+
+  /** ชื่อการกระทำที่กด E แล้วจะเกิดขึ้นตอนนี้ — ลำดับต้องตรงกับบล็อก E ใน update() ('' = ไม่มี) */
+  private currentAction(): string {
+    if (this.actor.isDead || this.actor.isVictory) return 'กลับฐาน';
+    if (this.tripEnded || this.isTransitioning || this.menu.isOpen) return '';
+    if (this.minigame) return 'กด!';
+    const px = this.actor.x;
+    const py = this.actor.y;
+    const cache = this.quest.cache;
+    if (cache && !cache.isResolved && cache.isNear(px, py)) return 'เปิดผนึก';
+    const nearItem = this.items.some(
+      (it) => !it.isCollected && Phaser.Math.Distance.Between(it.sprite.x, it.sprite.y, px, py) <= 50
+    );
+    if (nearItem) return 'เก็บของ';
+    const shrine = this.healShrines.find((s) => s.isNear(px, py));
+    if (shrine && !shrine.isChanneling) return 'พักฟื้น';
+    if (this.returnGate.isNear(px, py)) return 'กลับฐาน';
+    if (this.exitGate.isNear(px, py)) return this.exitGate.isLocked ? 'ประตูล็อก' : 'ไปแอเรียถัดไป';
+    return '';
+  }
+
+  private updateActionButton() {
+    const label = this.currentAction();
+    if (label === this.actionShown) return;
+    this.actionShown = label;
+    if (!label) {
+      this.actionBtn.setVisible(false);
+      this.actionLabel.setVisible(false);
+      return;
+    }
+    const end = this.actor.isDead || this.actor.isVictory;
+    // จบทริป/ตาย: ยกเหนือหน้าจบ ไม่งั้นแตะไม่โดน
+    const z: number = end ? DEPTH.OVERLAY_TEXT + 10 : DEPTH.HUD + 2;
+    this.actionBtn.setDepth(z).setStrokeStyle(3, end ? 0x7dff9b : 0xffd166).setVisible(true);
+    this.actionLabel.setDepth(z + 1).setText(label).setVisible(true);
   }
   private unlockNextGate(): void {
     if (this.nextGateUnlocked) return;
