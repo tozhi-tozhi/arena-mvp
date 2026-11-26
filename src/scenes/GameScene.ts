@@ -29,6 +29,7 @@ import { controls, pressed, CONTROL_LABEL } from '../systems/Controls';
 import { profiles } from '../systems/PlayerProfile';
 import { RemotePlayer } from '../actors/RemotePlayer';
 import { GhostFeeder } from '../systems/ghostFeeder';
+import { net, NetManager } from '../systems/NetManager';
 
 const TIMER_MS = 30000; // จับเวลาทดสอบ DPS
 const HITBOX_HOLD_MS = 500; // ค้างภาพกรวยฟันไว้ให้ดูหลังฟันออก
@@ -78,6 +79,8 @@ export class GameScene extends Phaser.Scene {
   private panelAt: number = 0;
   private controlLabel!: Phaser.GameObjects.Text;
   private ghostLabel!: Phaser.GameObjects.Text;
+  private netLabel!: Phaser.GameObjects.Text;
+  private netLabelShown: string = '';
   private uiCam!: UiCamera;
 
   constructor() {
@@ -163,6 +166,7 @@ export class GameScene extends Phaser.Scene {
     this.buildPanel();
     this.buildControlLabel();
     this.buildGhostLabel();
+    this.buildNetLabel();
 
     const camera = this.cameras.main;
     camera.setZoom(VIEW_SCALE);
@@ -172,6 +176,7 @@ export class GameScene extends Phaser.Scene {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       (this.input.keyboard as any).removeAllListeners();
+      net.onLog = null; // การต่อเน็ตอยู่ต่อได้ข้ามฉาก แค่เลิกโชว์ toast ของฉากนี้
       for (const d of this.dummies) d.destroy();
       for (const g of this.ghosts) g.destroy();
     });
@@ -279,6 +284,51 @@ export class GameScene extends Phaser.Scene {
   private refreshGhostLabel() {
     this.ghostLabel.setText(`ตัวผี: ${GHOST_COUNTS[ghostCountIdx]}  ([P] หรือแตะเพื่อสลับ)`);
   }
+    // =====================================================
+  //  เน็ต (D2) — ตัวต่ออยู่ที่ systems/NetManager.ts ฉากแค่สั่งและแสดงผล
+  // =====================================================
+  /** O: ยังไม่อยู่ในห้อง = สร้างห้อง (หรือเข้าห้องถ้าเปิดจากลิงก์ ?room=) · อยู่ในห้องแล้ว = ออกห้อง */
+  private toggleNet() {
+    if (this.leaving) return;
+    if (net.role) {
+      net.leave();
+      this.showToast('ออกจากห้องเน็ตแล้ว');
+    } else {
+      const code = NetManager.roomFromUrl();
+      if (code) net.joinRoom(code);
+      else net.createRoom();
+    }
+    sfx.open();
+    this.refreshNetLabel();
+  }
+
+  /** ป้ายมุมซ้ายล่าง (เหนือป้ายตัวผี): สถานะเน็ต — กด O หรือแตะเพื่อสลับ */
+  private buildNetLabel() {
+    net.onLog = (msg) => this.showToast(msg);
+    this.netLabelShown = '';
+    this.netLabel = this.add
+      .text(12, GAME_HEIGHT - 54, '', {
+        fontFamily: '"Noto Sans Thai", monospace',
+        fontSize: '12px',
+        fontStyle: 'bold',
+        color: '#9de7ff',
+        stroke: '#000000',
+        strokeThickness: 3
+      })
+      .setOrigin(0, 1)
+      .setDepth(DEPTH.HUD)
+      .setScrollFactor(0);
+    this.netLabel.setInteractive({ useHandCursor: true });
+    this.netLabel.on('pointerdown', () => this.toggleNet());
+    this.refreshNetLabel();
+  }
+
+  private refreshNetLabel() {
+    const txt = net.labelText();
+    if (txt === this.netLabelShown) return;
+    this.netLabelShown = txt;
+    this.netLabel.setText(txt);
+  }
   /** เปิด/ปิดการชนระหว่างผู้เล่นกับหุ่น (หุ่นเป็นของแข็งเหมือนบอสตอนเปิด) */
   private applyCollide() {
     for (const c of this.colliders) c.destroy();
@@ -318,6 +368,7 @@ export class GameScene extends Phaser.Scene {
     kb.on('keydown-ESC', () => this.exitRoom());
     kb.on('keydown-V', () => this.cycleControls());
     kb.on('keydown-P', () => this.cycleGhosts());
+    kb.on('keydown-O', () => this.toggleNet());
   }
 
   /** เปิดห้องแต่งตัว (ตัวละคร/สกิล/เครื่องราง/สัตว์เลี้ยง) — ปิดแล้วกลับมาห้องนี้ ยืนจุดเดิม สกิลใหม่มีผลทันที */
@@ -696,6 +747,8 @@ export class GameScene extends Phaser.Scene {
       `VIEW_SCALE ${VIEW_SCALE.toFixed(3)} · ui ${uc ? uc.zoom.toFixed(3) + ' / ' + uc.width + '×' + uc.height : 'ไม่มีกล้อง ui'} · main ${this.cameras.main.zoom.toFixed(3)}`
     );
     lines.push(`FPS ${Math.round(this.game.loop.actualFps)}`);
+    this.refreshNetLabel();
+    for (const nl of net.panelLines()) lines.push(nl);
     const gh = this.ghosts[0];
     lines.push(`ตัวผี ${this.ghosts.length} ตัว` + (gh ? ` · ผี 1 · คลิป ${gh.clipName || '—'} · seq ${gh.seq}` : ''));
 
