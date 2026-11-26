@@ -1,10 +1,11 @@
 // src/systems/NetManager.ts — ตัวจัดการต่อเน็ตของเกม (PeerJS · แบบดาว: client ต่อ host เท่านั้น)
-// อยู่ระดับโมดูล (เหมือน profiles / trainingState) เพื่อให้การต่อไม่หลุดตอนฉากถูกสร้างใหม่ (L / ESC / ล้มแล้วเริ่มใหม่)
-// ตรรกะก๊อปปี้จาก netspike/src/main.js: รหัสห้อง 4 ตัว · json + reliable:false · ping ทุก 1 วิ · ดู ICE ตั้งแต่เริ่มต่อ
+// อยู่ระดับโมดูล (เหมือน profiles / trainingState) เพื่อให้การต่อไม่หลุดตอนฉากถูกสร้างใหม่
+// ตรรกะก๊อปปี้จาก netspike/src/main.js: json + reliable:false · ping ทุก 1 วิ · ดู ICE ตั้งแต่เริ่มต่อ
+// รหัสห้อง = เลข 4 หลัก · host ส่งรายชื่อห้อง + สถานะ "เริ่มแล้ว" ซ้ำทุก 1 วิ (เน็ตไม่รับประกันแพ็กเก็ต)
 import { Peer } from 'peerjs';
 
 const ROOM_PREFIX = 'phnt-';
-const MAX_PLAYERS = 4;
+export const NET_MAX_PLAYERS = 4;
 const CONNECT_TIMEOUT_MS = 15000;
 const PING_EVERY_MS = 1000;
 const TYPE_EVERY_MS = 3000;
@@ -13,6 +14,12 @@ const SILENCE_SHOW_MS = 3000;
 
 export type NetStatus = 'idle' | 'connecting' | 'online' | 'failed';
 export type NetRole = 'host' | 'client' | null;
+
+export interface RosterEntry {
+  id: string;
+  name: string;
+  host: boolean;
+}
 
 interface PeerStats {
   id: string;
@@ -41,29 +48,26 @@ export class NetManager {
   status: NetStatus = 'idle';
   roomCode: string = '';
   myId: string = '';
-  link: string = '';
   lastError: string = '';
+  /** รายชื่อคนในห้อง (host สร้างเอง · client รับจาก host) */
+  roster: RosterEntry[] = [];
+  /** host กดเริ่มแล้ว — client เห็นค่านี้แล้วพาตัวเองเข้าห้องฝึก */
+  started: boolean = false;
   /** ฉากตั้งไว้แสดงข้อความสั้น ๆ (toast) — ฉากต้องตั้งเป็น null ตอน SHUTDOWN */
   onLog: ((msg: string) => void) | null = null;
-  /** ข้อความเกมที่ไม่ใช่ ping/pong/full — D2-2 ใช้รับสถานะผู้เล่น */
+  /** ข้อความเกมที่ไม่ใช่ ping/pong/full/room — D2-2 ใช้รับสถานะผู้เล่น */
   onMessage: ((fromId: string, m: any) => void) | null = null;
 
   private peer: any = null;
   private conns = new Map<string, any>();
   private stats = new Map<string, PeerStats>();
+  private names = new Map<string, string>();
+  private nextNo: number = 2;
   private pingTimer: any = null;
   private typeTimer: any = null;
   private connectTimer: any = null;
   /** เลขรอบการต่อ — handler ของรอบเก่าที่ยิงมาหลังออกห้องจะถูกทิ้ง */
   private session: number = 0;
-
-  /** รหัสห้องจากลิงก์เชิญ ?room=XXXX — ไม่มี/ไม่ครบ 4 ตัว = '' */
-  static roomFromUrl(): string {
-    if (typeof location === 'undefined') return '';
-    const raw = new URLSearchParams(location.search).get('room') || '';
-    const code = raw.toUpperCase().slice(0, 4);
-    return code.length === 4 ? code : '';
-  }
 
   /** จำนวนผู้เล่นในห้อง (รวมเรา) — 0 ถ้าไม่ได้อยู่ในห้อง */
   playerCount(): number {
@@ -78,14 +82,15 @@ export class NetManager {
   }
 
   // ---------------------------------------------------------------
-  // สร้างห้อง / เข้าห้อง / ออก
+  // สร้างห้อง / เข้าห้อง / เริ่ม / ออก
   // ---------------------------------------------------------------
   createRoom(retry: number = 0) {
     if (this.peer && retry === 0) return;
     this.role = 'host';
     this.status = 'connecting';
     this.lastError = '';
-    this.roomCode = Math.random().toString(36).slice(2, 6).toUpperCase();
+    this.started = false;
+    this.roomCode = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
     this.openPeer(ROOM_PREFIX + this.roomCode, (e: any) => {
       if (e.type === 'unavailable-id' && retry < 5) {
         this.destroyPeerOnly();
@@ -98,18 +103,31 @@ export class NetManager {
 
   joinRoom(code: string) {
     if (this.peer) return;
-    const c = code.trim().toUpperCase();
-    if (c.length !== 4) {
-      this.notice('รหัสห้องต้องครบ 4 ตัว');
+    const c = code.trim();
+    if (!/^[0-9]{4}$/.test(c)) {
+      this.notice('รหัสห้องต้องเป็นเลข 4 หลัก');
       return;
     }
     this.role = 'client';
     this.status = 'connecting';
     this.lastError = '';
+    this.started = false;
     this.roomCode = c;
     this.openPeer(null, null);
   }
 
+  /** host กดเริ่ม — ประกาศให้ทุกคนพาตัวเองเข้าห้องฝึก */
+  startGame() {
+    if (this.role !== 'host') return;
+    this.started = true;
+    this.sendRoom();
+  }
+  /** host กลับมาหน้าห้อง — รีเซ็ตสถานะเริ่มเกมเพื่อให้กดเริ่มใหม่ได้ (client เรียกไม่มีผล) */
+  endGame() {
+    if (this.role !== 'host') return;
+    this.started = false;
+    this.sendRoom();
+  }
   leave() {
     this.session++;
     this.clearTimers();
@@ -119,11 +137,14 @@ export class NetManager {
     this.destroyPeerOnly();
     this.conns.clear();
     this.stats.clear();
+    this.names.clear();
+    this.nextNo = 2;
+    this.roster = [];
+    this.started = false;
     this.role = null;
     this.status = 'idle';
     this.roomCode = '';
     this.myId = '';
-    this.link = '';
     this.lastError = '';
   }
 
@@ -184,6 +205,18 @@ export class NetManager {
     this.connectTimer = null;
   }
 
+  /** host: สร้างรายชื่อห้องแล้วส่งให้ทุกคน (เรียกซ้ำทุก 1 วิ + ทุกครั้งที่มีคนเข้า/ออก) */
+  private sendRoom() {
+    if (this.role !== 'host') return;
+    const list: RosterEntry[] = [{ id: this.myId, name: 'ผู้เล่น 1', host: true }];
+    for (const [id, c] of this.conns) {
+      if (!c.open) continue;
+      list.push({ id, name: this.names.get(id) || 'ผู้เล่น', host: false });
+    }
+    this.roster = list;
+    this.broadcast({ t: 'room', players: list, started: this.started });
+  }
+
   private openPeer(id: string | null, onError: ((e: any) => boolean) | null) {
     const s = ++this.session;
     const opts: any = { config: this.iceConfig(), debug: 1 };
@@ -216,7 +249,7 @@ export class NetManager {
     if (this.role === 'host') {
       peer.on('connection', (conn: any) => {
         if (s !== this.session) return;
-        if (this.conns.size >= MAX_PLAYERS - 1) {
+        if (this.conns.size >= NET_MAX_PLAYERS - 1) {
           conn.on('open', () => {
             conn.send({ t: 'full' });
             setTimeout(() => { try { conn.close(); } catch (_e) { /* ปล่อยผ่าน */ } }, 300);
@@ -231,15 +264,8 @@ export class NetManager {
   private onPeerOpen(s: number) {
     if (this.role === 'host') {
       this.status = 'online';
-      this.link = `${location.origin}${location.pathname}?room=${this.roomCode}`;
+      this.sendRoom();
       this.startTimers();
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(this.link)
-          .then(() => this.notice(`สร้างห้อง ${this.roomCode} แล้ว — คัดลอกลิงก์เชิญแล้ว`))
-          .catch(() => this.notice(`สร้างห้อง ${this.roomCode} แล้ว — คัดลอกลิงก์เองจากแผง`));
-      } else {
-        this.notice(`สร้างห้อง ${this.roomCode} แล้ว — คัดลอกลิงก์เองจากแผง`);
-      }
     } else {
       const conn = this.peer.connect(ROOM_PREFIX + this.roomCode, { serialization: 'json', reliable: false });
       this.attachConn(conn, s);
@@ -267,6 +293,7 @@ export class NetManager {
           st.sent++;
         }
       }
+      this.sendRoom(); // ส่งรายชื่อ + สถานะเริ่มซ้ำ กันแพ็กเก็ตหาย
     }, PING_EVERY_MS);
     this.typeTimer = setInterval(() => {
       for (const st of this.stats.values()) this.readType(st);
@@ -300,7 +327,13 @@ export class NetManager {
         clearTimeout(this.connectTimer);
         this.connectTimer = null;
       }
-      this.notice(this.role === 'host' ? `เพื่อนเข้าห้อง (${this.playerCount()}/${MAX_PLAYERS})` : 'ต่อ host สำเร็จ');
+      if (this.role === 'host') {
+        this.names.set(conn.peer, `ผู้เล่น ${this.nextNo++}`);
+        this.sendRoom();
+        this.notice(`เพื่อนเข้าห้อง (${this.playerCount()}/${NET_MAX_PLAYERS})`);
+      } else {
+        this.notice('เข้าห้องแล้ว');
+      }
       this.readType(st);
     });
 
@@ -318,7 +351,9 @@ export class NetManager {
         this.lastError = 'host หลุด';
         this.notice('host หลุด — เล่นคนเดียวต่อได้');
       } else {
-        this.notice(`เพื่อนหลุด (${this.playerCount()}/${MAX_PLAYERS})`);
+        this.names.delete(conn.peer);
+        this.sendRoom();
+        this.notice(`เพื่อนหลุด (${this.playerCount()}/${NET_MAX_PLAYERS})`);
       }
     });
 
@@ -341,6 +376,12 @@ export class NetManager {
         st.pongRecv++;
         st.rtts.push(performance.now() - m.ts);
         if (st.rtts.length > RTT_KEEP) st.rtts.shift();
+        break;
+      case 'room':
+        if (this.role === 'client' && Array.isArray(m.players)) {
+          this.roster = m.players;
+          this.started = m.started === true;
+        }
         break;
       case 'full':
         this.status = 'failed';
@@ -409,28 +450,17 @@ export class NetManager {
   }
 
   // ---------------------------------------------------------------
-  // บรรทัดสำหรับแผงวินิจฉัยและป้าย
+  // บรรทัดสำหรับแผงวินิจฉัย
   // ---------------------------------------------------------------
-  /** ข้อความสั้นสำหรับป้ายมุมซ้ายล่าง */
-  labelText(): string {
-    if (!this.role) {
-      const code = NetManager.roomFromUrl();
-      return code ? `เน็ต: ปิด  ([O] เข้าห้อง ${code})` : 'เน็ต: ปิด  ([O] สร้างห้อง)';
-    }
-    return `เน็ต: ${STATUS_TEXT[this.status]} · ${this.roomCode} · ${this.playerCount()}/${MAX_PLAYERS}  ([O] ออกห้อง)`;
-  }
-
-  /** บรรทัดของแผงวินิจฉัย */
   panelLines(): string[] {
     const lines: string[] = [];
     if (!this.role) {
       lines.push('เน็ต: ปิด');
       return lines;
     }
-    let head = `เน็ต: ${STATUS_TEXT[this.status]} · ${this.role === 'host' ? 'host' : 'client'} · ห้อง ${this.roomCode} · ${this.playerCount()}/${MAX_PLAYERS} คน`;
+    let head = `เน็ต: ${STATUS_TEXT[this.status]} · ${this.role === 'host' ? 'host' : 'client'} · ห้อง ${this.roomCode} · ${this.playerCount()}/${NET_MAX_PLAYERS} คน`;
     if (this.lastError) head += ` · ${this.lastError}`;
     lines.push(head);
-    if (this.role === 'host' && this.conns.size === 0 && this.link) lines.push(`ลิงก์เชิญ: ${this.link}`);
     const now = performance.now();
     for (const st of this.stats.values()) {
       const open = this.conns.has(st.id);

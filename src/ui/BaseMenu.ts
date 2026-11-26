@@ -1,17 +1,20 @@
-// src/ui/BaseMenu.ts — เมนูรวมของฐาน: แผงปุ่มใหญ่ชื่อเต็ม กดหรือแตะได้เหมือนกันทุกอุปกรณ์
+// src/ui/BaseMenu.ts — เมนูรวมของทุกฉาก: แผงปุ่มใหญ่ชื่อเต็ม กดหรือแตะได้เหมือนกันทุกอุปกรณ์
 // ไม่ใช้ Container (UiCamera ดูวัตถุชั้นเดียว + scrollFactor 0) · วัตถุทุกชิ้นตั้ง scrollFactor(0)
-// เปิดอยู่ = ซ่อนจอยสัมผัสและไม่รับนิ้วใหม่ผ่าน touch.blockJoy
+// เปิดอยู่ = ซ่อนปุ่มสัมผัสและไม่รับนิ้วใหม่ผ่าน touch.blockJoy
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, DEPTH } from '../config';
 import { touch } from '../systems/Controls';
 
 export interface MenuItem {
-  label: string;
+  /** ข้อความปุ่ม — ฟังก์ชันได้ (อ่านใหม่ทุกครั้งที่ refresh) */
+  label: string | (() => string);
   /** บรรทัดเล็กใต้ชื่อ เช่น "เร็ว ๆ นี้" */
   sub?: string;
   color: number;
   /** false = ปุ่มสีเทา กดแล้วไม่ทำอะไร */
   enabled?: boolean;
+  /** true = กดแล้วเมนูไม่ปิด (ปุ่มสลับค่า) ข้อความอัปเดตเอง */
+  keepOpen?: boolean;
   onUse: () => void;
 }
 
@@ -31,12 +34,35 @@ const TITLE_H = 30;
 const TOG_H = 46;
 const TOG_GAP = 12;
 
+/** ปุ่ม ☰ เมนู — ทุกฉากใช้ตัวเดียวกัน (กึ่งกลางที่ x,y) */
+export function makeMenuButton(scene: Phaser.Scene, x: number, y: number, onPress: () => void, w: number = 112, h: number = 42) {
+  const box = scene.add.rectangle(x, y, w, h, 0x221d10, 0.95)
+    .setStrokeStyle(3, 0xffd166).setDepth(DEPTH.HUD).setScrollFactor(0);
+  box.setInteractive({ useHandCursor: true });
+  box.on('pointerover', () => box.setFillStyle(0x3d3016, 0.97));
+  box.on('pointerout', () => box.setFillStyle(0x221d10, 0.95));
+  box.on('pointerdown', () => scene.time.delayedCall(0, onPress));
+  scene.add.text(x, y, '☰ เมนู', {
+    fontFamily: '"Noto Sans Thai", monospace',
+    fontSize: '18px',
+    fontStyle: 'bold',
+    color: '#ffe9a3',
+    stroke: '#000000',
+    strokeThickness: 3
+  }).setOrigin(0.5).setDepth(DEPTH.HUD + 1).setScrollFactor(0);
+}
+
+function resolve(label: string | (() => string)): string {
+  return typeof label === 'function' ? label() : label;
+}
+
 export class BaseMenu {
   private scene: Phaser.Scene;
   private items: MenuItem[];
   private toggles: MenuToggle[];
   private onClose: (() => void) | null;
   private objs: Phaser.GameObjects.GameObject[] = [];
+  private itemTexts: { tx: Phaser.GameObjects.Text; fn: (() => string) | null }[] = [];
   private toggleTexts: Phaser.GameObjects.Text[] = [];
   private opened: boolean = false;
 
@@ -51,8 +77,11 @@ export class BaseMenu {
     return this.opened;
   }
 
-  /** ให้ปุ่มเปลี่ยนค่า (เช่น โหมดควบคุม) อัปเดตข้อความ */
+  /** ให้ปุ่มที่มีค่าเปลี่ยนได้ (เช่น โหมดควบคุม, Hitbox) อัปเดตข้อความ */
   refresh() {
+    for (const it of this.itemTexts) {
+      if (it.fn && it.tx.active) it.tx.setText(it.fn());
+    }
     this.toggles.forEach((t, i) => {
       const tx = this.toggleTexts[i];
       if (tx && tx.active) tx.setText(t.label());
@@ -69,7 +98,7 @@ export class BaseMenu {
     const z: number = DEPTH.OVERLAY;
     const cx = GAME_WIDTH / 2;
     const n = this.items.length;
-    const rows = Math.ceil(n / 2);
+    const rows = Math.max(1, Math.ceil(n / 2));
     const gridH = rows * BTN_H + (rows - 1) * GAP_Y;
     const panelH = PAD + TITLE_H + 14 + gridH + 18 + TOG_H + PAD;
     const top = (GAME_HEIGHT - panelH) / 2;
@@ -104,6 +133,7 @@ export class BaseMenu {
     // ปุ่มฟังก์ชันหลัก 2 คอลัมน์ (ถ้าเหลือปุ่มเดียวท้ายสุดจัดกลาง)
     const startY = top + PAD + TITLE_H + 14;
     const half = (BTN_W + GAP_X) / 2;
+    this.itemTexts = [];
     this.items.forEach((it, i) => {
       const row = Math.floor(i / 2);
       const col = i % 2;
@@ -111,7 +141,12 @@ export class BaseMenu {
       const x = alone ? cx : cx + (col === 0 ? -half : half);
       const y = startY + row * (BTN_H + GAP_Y) + BTN_H / 2;
       const enabled = it.enabled !== false;
-      this.makeButton(x, y, BTN_W, BTN_H, it.label, it.sub, it.color, enabled, 18, () => it.onUse(), true);
+      const act = () => {
+        it.onUse();
+        if (it.keepOpen) this.refresh();
+      };
+      const tx = this.makeButton(x, y, BTN_W, BTN_H, resolve(it.label), it.sub, it.color, enabled, 17, act, !it.keepOpen);
+      this.itemTexts.push({ tx, fn: typeof it.label === 'function' ? it.label : null });
     });
 
     // แถวล่าง: เสียง / ควบคุม / เต็มจอ (ไม่ปิดเมนู กดแล้วข้อความอัปเดตเอง)
@@ -146,6 +181,7 @@ export class BaseMenu {
     touch.blockJoy = false;
     for (const o of this.objs) o.destroy();
     this.objs = [];
+    this.itemTexts = [];
     this.toggleTexts = [];
   }
 

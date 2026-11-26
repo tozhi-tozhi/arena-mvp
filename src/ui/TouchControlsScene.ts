@@ -19,7 +19,7 @@ interface Btn {
 
 const SHOW: Record<Ctx, BtnName[]> = {
   none: [],
-  world: ['attack', 'skill', 'E', 'B', 'Q', 'M', 'R', 'full'],
+  world: ['attack', 'skill', 'E', 'R'],
   base: [],
   menu: ['back', 'full']
 };
@@ -42,7 +42,8 @@ export class TouchControlsScene extends Phaser.Scene {
   private skillId = -1;
   private ctx: Ctx = 'none';
   private fullOk = canFullscreen();
-
+  /** เมนูของฉากเปิดอยู่ = ซ่อนจอยและปุ่มทั้งหมด */
+  private blocked = false;
   constructor() {
     super({ key: 'TouchControlsScene' });
   }
@@ -92,8 +93,10 @@ export class TouchControlsScene extends Phaser.Scene {
   update() {
     this.applyRig();
     const next = this.detectContext();
-    if (next !== this.ctx) {
+    const blk = touch.blockJoy;
+    if (next !== this.ctx || blk !== this.blocked) {
       this.ctx = next;
+      this.blocked = blk;
       this.releaseAll();
       this.applyContext();
       if (next === 'none') touch.reset();
@@ -259,13 +262,13 @@ export class TouchControlsScene extends Phaser.Scene {
   }
 
   private applyContext() {
-    const show = new Set<BtnName>(SHOW[this.ctx]);
+    const show = new Set<BtnName>(this.blocked ? [] : SHOW[this.ctx]);
     for (const [name, b] of this.btns) {
       const v = show.has(name) && (name !== 'full' || this.fullOk);
       b.bg.setVisible(v);
       b.label.setVisible(v);
     }
-    const joy = this.ctx === 'world' || this.ctx === 'base';
+    const joy = (this.ctx === 'world' || this.ctx === 'base') && !this.blocked;
     this.joyBase.setVisible(joy);
     this.joyKnob.setVisible(joy);
   }

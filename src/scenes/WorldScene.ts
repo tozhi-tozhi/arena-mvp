@@ -43,6 +43,8 @@ import { loadBossAssets, initBossTextures } from '../systems/BossLoader';
 import { AmbientDust } from '../systems/AmbientDust';
 import { profiles } from '../systems/PlayerProfile';
 import { HuntMinimap, type MinimapSources } from '../systems/HuntMinimap';
+import { BaseMenu, makeMenuButton, type MenuItem, type MenuToggle } from '../ui/BaseMenu';
+import { canFullscreen, toggleFullscreen } from '../systems/screenMode';
 
 const DETECT_RADIUS = 500;
 // ความรู้สึกซูมกล้อง (ภาพล้วน — ไม่แตะการต่อสู้)
@@ -64,7 +66,7 @@ export class WorldScene extends Phaser.Scene {
   private pouchText!: Phaser.GameObjects.Text;
   private lastPouchLabel = '';
   private pouchPanel!: PouchPanel;
-
+  private menu!: BaseMenu;
   // === สถานะแอเรีย ===
   private areaBosses: SpawnedBoss[] = [];
   private areaMinions: SpawnedMinion[] = [];
@@ -286,6 +288,7 @@ const cam = this.cameras.main;
       if (!this.tripEnded && !this.minigame) this.pouchPanel.toggle();
     });
     this.pouchPanel = new PouchPanel(this);
+    this.buildMenu();
 
     this.questTitleText = this.add.text(44, 124, '', {
       fontFamily: '"Noto Sans Thai", monospace', fontSize: '14px', fontStyle: 'bold',
@@ -352,6 +355,7 @@ const cam = this.cameras.main;
       this.sys.game.canvas.removeEventListener('click', this.focusCanvas);
       sfx.stopAmbient();
       if (this.minimap) { this.minimap.destroy(); this.minimap = null; }
+      if (this.menu) this.menu.destroy(); // ปล่อยธงซ่อนปุ่มสัมผัส
     });
   }
 
@@ -771,6 +775,8 @@ const cam = this.cameras.main;
   private stopAllChannels() {
     this.activeShrine?.stopChannel();
     this.activeShrine = null;
+    // เรียกตอนจบทริป/ตาย/ข้ามแมพ — ปิดเมนูไปด้วย กันค้างทับหน้าสรุป
+    if (this.menu) this.menu.close();
   }
 
   private beginAreaTransition(): void {
@@ -800,7 +806,53 @@ const cam = this.cameras.main;
     destroyAreaBosses(this.areaBosses);
     this.items = [];
   }
+  // =====================================================
+  // เมนู ☰ (เกมไม่หยุดเวลา เหมือนแผงถุง)
+  // =====================================================
+  private buildMenu() {
+    makeMenuButton(this, GAME_WIDTH - 62, 78, () => this.toggleMenu());
 
+    const items: MenuItem[] = [
+      {
+        label: () => `ถุงพกพา ${pouch.count}/${pouch.capacity}`,
+        color: 0x9de7ff,
+        onUse: () => {
+          if (!this.tripEnded && !this.minigame) this.pouchPanel.toggle();
+        }
+      },
+      { label: 'แผนที่ เปลี่ยนขนาด', color: 0xe8e0c8, onUse: () => this.minimap?.cycleMode() }
+    ];
+
+    const shortName: Record<string, string> = { mouse: 'เมาส์', keys: 'คีย์บอร์ด', touch: 'จอสัมผัส' };
+    const toggles: MenuToggle[] = [
+      {
+        label: () => 'เสียง',
+        onUse: () => {
+          const off = sfx.toggleMute();
+          showDamage(this, this.actor.x, this.actor.y - 40, off ? 'ปิดเสียง' : 'เปิดเสียง', '#ffffff', 900);
+        }
+      },
+      {
+        label: () => 'ควบคุม: ' + (shortName[controls.mode] ?? controls.mode),
+        onUse: () => controls.cycle()
+      }
+    ];
+    if (canFullscreen()) toggles.push({ label: () => 'เต็มจอ', onUse: () => toggleFullscreen() });
+
+    this.menu = new BaseMenu(this, items, toggles);
+    (this.input.keyboard as any).on('keydown-ESC', () => this.toggleMenu());
+  }
+
+  private toggleMenu() {
+    if (this.tripEnded || this.isTransitioning || this.minigame) return;
+    if (this.menu.isOpen) {
+      this.menu.close();
+    } else {
+      this.pouchPanel.close();
+      this.menu.open();
+    }
+    sfx.open();
+  }
   private unlockNextGate(): void {
     if (this.nextGateUnlocked) return;
     this.nextGateUnlocked = true;

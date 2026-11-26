@@ -34,7 +34,7 @@ const CX = BASE.width / 2;
 const CY = BASE.height / 2;
 
 /** ห้องออนไลน์พร้อมใช้ไหม — รอบ 2 (ฉาก OnlineScene) เปลี่ยนเป็น true */
-const ONLINE_READY = false;
+const ONLINE_READY = true;
 
 /** ขอบบนของกรอบสถานะมุมขวา (ใต้ปุ่มเมนู) */
 const STATUS_TOP = 66;

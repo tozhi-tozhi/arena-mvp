@@ -8,6 +8,7 @@ import { LoadoutScene } from './scenes/LoadoutScene';
 import { SkillScene } from './scenes/SkillScene';
 import { GameScene } from './scenes/GameScene';
 import { WorldScene } from './scenes/WorldScene';
+import { OnlineScene } from './scenes/OnlineScene';
 import { TouchControlsScene } from './ui/TouchControlsScene';
 
 const config = {
@@ -26,7 +27,7 @@ const config = {
   },
   // ลำดับสำคัญ: ตัวแรกใน array = ฉากที่ Phaser สตาร์ทอัตโนมัติ
   // TouchControlsScene อยู่ท้ายสุด = วาดทับทุกฉาก (ปุ่มสัมผัสโผล่เฉพาะโหมด "จอสัมผัส")
-  scene: [BaseScene, BagScene, UpgradeScene, LoadoutScene, SkillScene, GameScene, WorldScene, TouchControlsScene]
+  scene: [BaseScene, BagScene, UpgradeScene, LoadoutScene, SkillScene, GameScene, WorldScene, OnlineScene, TouchControlsScene]
 };
 
 const game = new Phaser.Game(config);
