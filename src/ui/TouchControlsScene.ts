@@ -20,7 +20,7 @@ interface Btn {
 const SHOW: Record<Ctx, BtnName[]> = {
   none: [],
   world: ['attack', 'skill', 'E', 'B', 'Q', 'M', 'R', 'full'],
-  base: ['E', 'B', 'M', 'full'],
+  base: [],
   menu: ['back', 'full']
 };
 
@@ -98,6 +98,11 @@ export class TouchControlsScene extends Phaser.Scene {
       this.applyContext();
       if (next === 'none') touch.reset();
     }
+    // เมนูของฉากเปิดอยู่ = ปล่อยจอยที่ค้างและซ่อนไว้ (ไม่ให้วาดทับเมนู)
+    if (touch.blockJoy && this.joyId !== -1) this.releaseJoy();
+    const joyShow = (this.ctx === 'world' || this.ctx === 'base') && !touch.blockJoy;
+    this.joyBase.setVisible(joyShow);
+    this.joyKnob.setVisible(joyShow);
   }
 
   private addBtn(name: BtnName, x: number, y: number, r: number, color: number, text: string, fontSize: number) {
@@ -170,7 +175,7 @@ export class TouchControlsScene extends Phaser.Scene {
   private onDown(p: Phaser.Input.Pointer) {
     if (!this.isOn()) return;
     sfx.unlock();
-    if (this.joyId !== -1) return;
+    if (this.joyId !== -1 || touch.blockJoy) return;
     if (this.ctx !== 'world' && this.ctx !== 'base') return;
     const px = p.x / VIEW_SCALE;
     const py = p.y / VIEW_SCALE;

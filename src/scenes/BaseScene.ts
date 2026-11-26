@@ -1,5 +1,5 @@
 // src/scenes/BaseScene.ts — ฐานนักล่าแบบเดินได้ (Phase 4 ฉบับสมบูรณ์)
-// เดิน WASD · ยืนในวงเรืองแสงแล้วกด E · ปุ่มลัดใช้ได้ทุกจุด
+// เดิน WASD / จอยสัมผัส · ยืนในวงเรืองแสงแล้วกดปุ่มแอ็กชันที่ขึ้นมา (คอมกด E ได้) · ปุ่ม ☰ เมนู รวมทุกฟังก์ชัน
 // จำที่ยืนตอนไปห้องแต่งตัว/โรงตีเหล็ก/หีบ · กลับจากทริปเกิดกลางฐาน (ตั้งใจ)
 // ห้องฝึก = สนามทดสอบของผู้พัฒนาเท่านั้น ปิดไว้เมื่อปล่อยเกมจริง
 import Phaser from 'phaser';
@@ -22,14 +22,43 @@ import { AmbientDust } from '../systems/AmbientDust';
 import { UiCamera } from '../systems/UiCamera';
 import { bakeBaseTextures, BASE_TEX } from '../systems/baseTextures';
 import { LogbookPanel } from '../ui/LogbookPanel';
+import { BaseMenu, type MenuItem, type MenuToggle } from '../ui/BaseMenu';
 import { sfx } from '../systems/sfx';
 import { trainingState } from '../systems/trainingState';
 import { controls, pressed, CONTROL_LABEL } from '../systems/Controls';
+import { canFullscreen, toggleFullscreen } from '../systems/screenMode';
 
 let saveLoaded = false; // โหลดเซฟแค่ครั้งแรกที่เปิดเกม
 
 const CX = BASE.width / 2;
 const CY = BASE.height / 2;
+
+/** ห้องออนไลน์พร้อมใช้ไหม — รอบ 2 (ฉาก OnlineScene) เปลี่ยนเป็น true */
+const ONLINE_READY = false;
+
+/** ขอบบนของกรอบสถานะมุมขวา (ใต้ปุ่มเมนู) */
+const STATUS_TOP = 66;
+
+/** ตำแหน่งปุ่มแอ็กชัน (ขวาล่าง — อยู่นอกโซนจอยซ้าย) */
+const ACTION_X = GAME_WIDTH - 130;
+const ACTION_Y = GAME_HEIGHT - 70;
+
+/** ชื่อการกระทำที่ขึ้นบนปุ่มเมื่อยืนในวง (แทนคำว่า "กด E") */
+const ACTION_NAME: Record<BaseSpotId, string> = {
+  wardrobe: 'แต่งตัวและสกิล',
+  forge: 'ตีเหล็ก',
+  chest: 'เปิดหีบ',
+  desk: 'อ่านสมุดบันทึก',
+  gate: 'ออกสำรวจ',
+  dummy: 'เข้าห้องฝึก'
+};
+
+/** ชื่อโหมดควบคุมแบบสั้น สำหรับปุ่มในเมนู */
+const CONTROL_SHORT: Record<string, string> = {
+  mouse: 'เมาส์',
+  keys: 'คีย์บอร์ด',
+  touch: 'จอสัมผัส'
+};
 
 interface Spot {
   def: BaseSpotDef;
@@ -42,7 +71,10 @@ interface Spot {
 export class BaseScene extends Phaser.Scene {
   private actor!: PlayerActor;
   private spots: Spot[] = [];
-  private prompt!: Phaser.GameObjects.Text;
+  private nearSpot: Spot | null = null;
+  private actionBtn!: Phaser.GameObjects.Rectangle;
+  private actionLabel!: Phaser.GameObjects.Text;
+  private menu!: BaseMenu;
   private uiTexts: Phaser.GameObjects.Text[] = [];
   private dust: AmbientDust | null = null;
   private logbook: LogbookPanel | null = null;
@@ -51,7 +83,6 @@ export class BaseScene extends Phaser.Scene {
   private keyE!: Phaser.Input.Keyboard.Key;
   private keyM!: Phaser.Input.Keyboard.Key;
   private keyEsc!: Phaser.Input.Keyboard.Key;
-  private controlLabel!: Phaser.GameObjects.Text;
   private uiCam!: UiCamera;
 
   constructor() { super({ key: 'BaseScene' }); }
@@ -68,6 +99,7 @@ export class BaseScene extends Phaser.Scene {
     this.starting = false;
     trainingState.loadoutReturn = ''; // เข้าฐานแล้ว Loadout ต้องกลับฐานตามปกติ ไม่ใช่ห้องฝึก
     this.nearId = '';
+    this.nearSpot = null;
     this.uiTexts = [];
     this.spots = [];
     this.logbook = null;
@@ -103,9 +135,9 @@ export class BaseScene extends Phaser.Scene {
     cam.fadeIn(320, 0, 0, 0);
 
     makeVignette(this);
+    this.buildMenu();
     this.buildHudFrame();
     this.bindKeys();
-    this.buildControlLabel();
 
     // ---------- บรรยากาศ ----------
     this.dust = new AmbientDust(this, BASE.dust);
@@ -119,6 +151,7 @@ export class BaseScene extends Phaser.Scene {
       sfx.stopAmbient();
       if (this.dust) { this.dust.destroy(); this.dust = null; }
       if (this.logbook) { this.logbook.destroy(); this.logbook = null; }
+      if (this.menu) this.menu.destroy(); // ปล่อยธงบล็อกจอยสัมผัส
     });
 
     this.renderHUD();
@@ -283,10 +316,6 @@ export class BaseScene extends Phaser.Scene {
         fontFamily: '"Noto Sans Thai", monospace', fontSize: '15px', fontStyle: 'bold',
         color: '#ffffff', stroke: '#000000', strokeThickness: 4, align: 'center'
       }).setOrigin(0.5).setDepth(DEPTH.ENEMY_HP_BAR);
-      this.add.text(x, y + 62, `ปุ่มลัด ${def.key}`, {
-        fontFamily: '"Noto Sans Thai", monospace', fontSize: '10px',
-        color: '#c9c2b2', stroke: '#000000', strokeThickness: 3
-      }).setOrigin(0.5).setDepth(DEPTH.ENEMY_HP_BAR);
       this.spots.push({ def, x, y, ring, onUse: this.handlerFor(def.id) });
     }
   }
@@ -303,7 +332,7 @@ export class BaseScene extends Phaser.Scene {
   }
 
   // =====================================================
-  //  ปุ่ม
+  //  ปุ่ม (คีย์ลัดของคนเล่นคอม — ไม่โชว์บนจอ)
   // =====================================================
   private bindKeys() {
     const kb = this.input.keyboard as any;
@@ -315,6 +344,7 @@ export class BaseScene extends Phaser.Scene {
     kb.on('keydown-ONE', () => this.chooseCharacter(CHARACTER_IDS[0]));
     kb.on('keydown-TWO', () => this.chooseCharacter(CHARACTER_IDS[1]));
     kb.on('keydown-V', () => this.cycleControls());
+    kb.on('keydown-ESC', () => this.toggleMenu());
     if (DEV_TOOLS) {
       kb.on('keydown-ENTER', () => this.startHunt());
       kb.on('keydown-F2', () => {
@@ -365,6 +395,9 @@ export class BaseScene extends Phaser.Scene {
       return;
     }
 
+    // เปิดเมนูอยู่ = หยุดเดิน (ปิดด้วย ESC หรือปุ่ม ✕ ในเมนู)
+    if (this.menu.isOpen) return;
+
     this.actor.update(delta);
     if (this.starting) return;
 
@@ -375,42 +408,48 @@ export class BaseScene extends Phaser.Scene {
       if (d <= s.def.radius && d < bestD) { bestD = d; best = s; }
     }
 
-    // วงที่ใกล้ที่สุดสว่างขึ้น = รู้ทันทีว่ากด E ได้
+    // วงที่ใกล้ที่สุดสว่างขึ้น + ปุ่มแอ็กชันขึ้นชื่อการกระทำ
     const id = best ? best.def.id : '';
     if (id !== this.nearId) {
       this.nearId = id;
+      this.nearSpot = best;
       for (const s of this.spots) {
         const on = s === best;
         s.ring.setAlpha(on ? 1 : 0.7);
         s.ring.setScale(on ? 1.08 : 1);
       }
+      if (best) {
+        this.actionBtn.setStrokeStyle(3, best.def.color).setVisible(true);
+        this.actionLabel.setText(ACTION_NAME[best.def.id]).setVisible(true);
+      } else {
+        this.actionBtn.setVisible(false);
+        this.actionLabel.setVisible(false);
+      }
     }
 
-    if (best) {
-      this.prompt.setPosition(GAME_WIDTH / 2, GAME_HEIGHT - 80).setVisible(true)
-        .setText(`[E] ${best.def.name}`)
-        .setColor(Phaser.Display.Color.IntegerToColor(best.def.color).rgba);
-      if (pressed(this.keyE, 'E')) {
-        burst(this, best.x, best.y, best.def.color, 10, 52, 4);
-        ringEffect(this, best.x, best.y, 70, best.def.color, 300);
-        sfx.pickup();
-        best.onUse();
-      }
-    } else {
-      this.prompt.setVisible(false);
-    }
+    // คอมกด E ได้เหมือนปุ่มแอ็กชัน
+    if (best && pressed(this.keyE, 'E')) this.useSpot(best);
   }
 
   // =====================================================
   //  การกระทำ
   // =====================================================
+  /** ใช้งานจุด — ทั้งปุ่มแอ็กชันบนจอและปุ่ม E เรียกที่นี่ที่เดียว */
+  private useSpot(s: Spot) {
+    if (this.starting || this.logbook || this.menu.isOpen) return;
+    burst(this, s.x, s.y, s.def.color, 10, 52, 4);
+    ringEffect(this, s.x, s.y, 70, s.def.color, 300);
+    sfx.pickup();
+    s.onUse();
+  }
+
   /** จำที่ยืนก่อนออกจากฐาน — กลับมายืนจุดเดิม */
   private rememberSpot() {
     huntSession.setBasePos(this.actor.x, this.actor.y);
   }
 
   private openScene(key: string) {
-    if (this.starting || this.logbook) return;
+    if (this.starting || this.logbook || this.menu.isOpen) return;
     this.starting = true;
     saveGame();
     this.rememberSpot();
@@ -420,14 +459,14 @@ export class BaseScene extends Phaser.Scene {
   }
 
   private openLogbook() {
-    if (this.starting || this.logbook) return;
+    if (this.starting || this.logbook || this.menu.isOpen) return;
     sfx.open();
     this.actor.sprite.setVelocity(0);
     this.logbook = new LogbookPanel(this, () => { this.logbook = null; });
   }
 
   private chooseCharacter(id: CharacterId) {
-    if (this.starting || this.logbook || loadout.characterId === id) return;
+    if (this.starting || this.logbook || this.menu.isOpen || loadout.characterId === id) return;
     this.starting = true;
     loadout.characterId = id;
     saveGame();
@@ -437,7 +476,7 @@ export class BaseScene extends Phaser.Scene {
   }
 
   private startWorld() {
-    if (this.starting || this.logbook) return;
+    if (this.starting || this.logbook || this.menu.isOpen) return;
     this.starting = true;
     saveGame();
     huntSession.clearBasePos(); // ทริปใหม่ = กลับมาเกิดกลางฐาน
@@ -446,7 +485,7 @@ export class BaseScene extends Phaser.Scene {
   }
 
   private startHunt() {
-    if (this.starting || this.logbook || !DEV_TOOLS) return;
+    if (this.starting || this.logbook || this.menu.isOpen || !DEV_TOOLS) return;
     this.starting = true;
     saveGame();
     huntSession.clearBasePos();
@@ -454,26 +493,94 @@ export class BaseScene extends Phaser.Scene {
   }
 
   // =====================================================
+  //  เมนูรวม
+  // =====================================================
+  private buildMenu() {
+    const items: MenuItem[] = [
+      { label: 'ออกสำรวจ', color: BASE_COLOR.green, onUse: () => this.startWorld() },
+      {
+        label: 'ห้องออนไลน์',
+        sub: ONLINE_READY ? undefined : 'เร็ว ๆ นี้',
+        color: BASE_COLOR.violet,
+        enabled: ONLINE_READY,
+        onUse: () => this.openScene('OnlineScene')
+      },
+      { label: 'แต่งตัวและสกิล', color: BASE_COLOR.violet, onUse: () => this.openScene('LoadoutScene') },
+      { label: 'ตีเหล็ก', color: BASE_COLOR.gold, onUse: () => this.openScene('UpgradeScene') },
+      { label: 'หีบเก็บของ', color: BASE_COLOR.blue, onUse: () => this.openScene('BagScene') },
+      { label: 'สมุดบันทึก', color: BASE_COLOR.paper, onUse: () => this.openLogbook() }
+    ];
+    if (DEV_TOOLS) {
+      items.push({ label: 'ห้องฝึก (ทดสอบ)', color: BASE_COLOR.danger, onUse: () => this.startHunt() });
+    }
+
+    const toggles: MenuToggle[] = [
+      {
+        label: () => 'เสียง',
+        onUse: () => {
+          const off = sfx.toggleMute();
+          this.showToast(off ? 'ปิดเสียง' : 'เปิดเสียง');
+        }
+      },
+      {
+        label: () => 'ควบคุม: ' + (CONTROL_SHORT[controls.mode] ?? controls.mode),
+        onUse: () => this.cycleControls()
+      }
+    ];
+    if (canFullscreen()) {
+      toggles.push({ label: () => 'เต็มจอ', onUse: () => toggleFullscreen() });
+    }
+
+    this.menu = new BaseMenu(this, items, toggles);
+  }
+
+  private toggleMenu() {
+    if (this.starting || this.logbook) return;
+    if (this.menu.isOpen) {
+      this.menu.close();
+    } else {
+      this.actor.sprite.setVelocity(0);
+      this.menu.open();
+    }
+    sfx.open();
+  }
+
+  // =====================================================
   //  UI มุมจอ (ชิดขวา — ไม่ทับหลอดเลือดผู้เล่นมุมซ้ายบน)
   // =====================================================
   private buildHudFrame() {
-    this.add.rectangle(GAME_WIDTH - 14, 14, 268, 126, 0x14100a, 0.88)
+    // กรอบสถานะ: ชิดขวา ใต้ปุ่มเมนู
+    this.add.rectangle(GAME_WIDTH - 14, STATUS_TOP, 268, 126, 0x14100a, 0.88)
       .setOrigin(1, 0).setStrokeStyle(2, BASE_COLOR.gold)
       .setDepth(DEPTH.HUD).setScrollFactor(0);
 
-    this.prompt = this.add.text(0, 0, '', {
-      fontFamily: '"Noto Sans Thai", monospace', fontSize: '17px', fontStyle: 'bold',
-      color: '#ffffff', stroke: '#000000', strokeThickness: 4,
-      backgroundColor: 'rgba(0,0,0,0.62)', padding: { x: 10, y: 5 }
-    }).setOrigin(0.5).setDepth(DEPTH.HUD).setScrollFactor(0).setVisible(false);
+    // ปุ่ม ☰ เมนู มุมขวาบน
+    const mb = this.add.rectangle(GAME_WIDTH - 74, 36, 120, 44, 0x221d10, 0.95)
+      .setStrokeStyle(3, BASE_COLOR.gold).setDepth(DEPTH.HUD).setScrollFactor(0);
+    mb.setInteractive({ useHandCursor: true });
+    mb.on('pointerover', () => mb.setFillStyle(0x3d3016, 0.97));
+    mb.on('pointerout', () => mb.setFillStyle(0x221d10, 0.95));
+    mb.on('pointerdown', () => this.time.delayedCall(0, () => this.toggleMenu()));
+    this.add.text(GAME_WIDTH - 74, 36, '☰ เมนู', {
+      fontFamily: '"Noto Sans Thai", monospace', fontSize: '18px', fontStyle: 'bold',
+      color: '#ffe9a3', stroke: '#000000', strokeThickness: 3
+    }).setOrigin(0.5).setDepth(DEPTH.HUD + 1).setScrollFactor(0);
 
-    const keys = DEV_TOOLS
-      ? 'WASD เดิน · E ใช้งาน · L แต่งตัว · F ตีเหล็ก · B หีบ · J บันทึก · T ออกสำรวจ · M เสียง · ENTER ห้องฝึก'
-      : 'WASD เดิน · E ใช้งาน · L แต่งตัว · F ตีเหล็ก · B หีบ · J บันทึก · T ออกสำรวจ · M เสียง';
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 18, keys, {
-      fontFamily: '"Noto Sans Thai", monospace', fontSize: '10px',
-      color: '#a89f8c', stroke: '#000000', strokeThickness: 2
-    }).setOrigin(0.5, 1).setDepth(DEPTH.HUD).setScrollFactor(0);
+    // ปุ่มแอ็กชัน (ขึ้นเมื่อยืนในวง) — แตะหรือคลิกได้ ไม่ต้องมีปุ่มอักษร
+    this.actionBtn = this.add.rectangle(ACTION_X, ACTION_Y, 220, 58, 0x1b1810, 0.94)
+      .setStrokeStyle(3, BASE_COLOR.gold).setDepth(DEPTH.HUD).setScrollFactor(0).setVisible(false);
+    this.actionBtn.setInteractive({ useHandCursor: true });
+    this.actionBtn.on('pointerover', () => this.actionBtn.setFillStyle(0x34290f, 0.97));
+    this.actionBtn.on('pointerout', () => this.actionBtn.setFillStyle(0x1b1810, 0.94));
+    this.actionBtn.on('pointerdown', () =>
+      this.time.delayedCall(0, () => {
+        if (this.nearSpot) this.useSpot(this.nearSpot);
+      })
+    );
+    this.actionLabel = this.add.text(ACTION_X, ACTION_Y, '', {
+      fontFamily: '"Noto Sans Thai", monospace', fontSize: '20px', fontStyle: 'bold',
+      color: '#ffffff', stroke: '#000000', strokeThickness: 4
+    }).setOrigin(0.5).setDepth(DEPTH.HUD + 1).setScrollFactor(0).setVisible(false);
   }
 
   private renderHUD() {
@@ -489,7 +596,7 @@ export class BaseScene extends Phaser.Scene {
       `ทริป ${stats.trips} · ลึกสุด ${stats.bestArea || '—'} · บอส ${stats.bosses}`
     ];
     lines.forEach((s, i) => {
-      this.uiTexts.push(this.add.text(GAME_WIDTH - 268, 28 + i * 21, s, {
+      this.uiTexts.push(this.add.text(GAME_WIDTH - 268, STATUS_TOP + 14 + i * 21, s, {
         fontFamily: '"Noto Sans Thai", monospace', fontSize: '13px',
         color: i === 4 ? '#9de7ff' : '#ffffff', stroke: '#000000', strokeThickness: 3
       }).setOrigin(0, 0).setDepth(DEPTH.HUD + 1).setScrollFactor(0));
@@ -501,7 +608,7 @@ export class BaseScene extends Phaser.Scene {
       fontFamily: '"Noto Sans Thai", monospace', fontSize: '34px', fontStyle: 'bold',
       color: '#ffd54a', stroke: '#000000', strokeThickness: 6
     }).setOrigin(0.5).setDepth(DEPTH.OVERLAY_TEXT).setScrollFactor(0).setAlpha(0);
-    const sub = this.add.text(GAME_WIDTH / 2, 202, 'ยืนในวงเรืองแสงแล้วกด E', {
+    const sub = this.add.text(GAME_WIDTH / 2, 202, 'ยืนในวงเรืองแสง แล้วกดปุ่มที่ขึ้นมา · ปุ่ม ☰ เมนู อยู่มุมขวาบน', {
       fontFamily: '"Noto Sans Thai", monospace', fontSize: '13px',
       color: '#e8e0c8', stroke: '#000000', strokeThickness: 3
     }).setOrigin(0.5).setDepth(DEPTH.OVERLAY_TEXT).setScrollFactor(0).setAlpha(0);
@@ -513,36 +620,21 @@ export class BaseScene extends Phaser.Scene {
     });
   }
 
-  /** ป้ายมุมซ้ายล่าง: โหมดควบคุมปัจจุบัน — กด V หรือแตะเพื่อสลับ */
-  private buildControlLabel() {
-    this.controlLabel = this.add.text(12, GAME_HEIGHT - 10, '', {
-      fontFamily: '"Noto Sans Thai", monospace', fontSize: '12px', fontStyle: 'bold',
-      color: '#a89f8c', stroke: '#000000', strokeThickness: 3
-    }).setOrigin(0, 1).setDepth(DEPTH.HUD).setScrollFactor(0);
-    this.controlLabel.setInteractive({ useHandCursor: true });
-    this.controlLabel.on('pointerdown', () => this.cycleControls());
-    this.refreshControlLabel();
-  }
-
-  private refreshControlLabel() {
-    this.controlLabel.setText(`ควบคุม: ${CONTROL_LABEL[controls.mode]}  ([V] หรือแตะเพื่อสลับ)`);
-  }
-
   private cycleControls() {
     if (this.starting || this.logbook) return;
     controls.cycle();
-    this.refreshControlLabel();
+    this.menu.refresh();
     sfx.open();
     this.showToast('ควบคุม: ' + CONTROL_LABEL[controls.mode]);
   }
 
   private showToast(msg: string) {
-
+    // ชั้นสูงกว่าเมนู เพื่อให้เห็นตอนกดปุ่มในเมนู
     const toast = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 140, msg, {
       fontFamily: '"Noto Sans Thai", monospace', fontSize: '16px', fontStyle: 'bold',
       color: '#7dff9b', stroke: '#000000', strokeThickness: 4,
       backgroundColor: 'rgba(0,0,0,0.72)', padding: { x: 12, y: 6 }
-    }).setOrigin(0.5).setDepth(DEPTH.OVERLAY).setScrollFactor(0);
+    }).setOrigin(0.5).setDepth(DEPTH.OVERLAY_TEXT + 5).setScrollFactor(0);
     this.tweens.add({
       targets: toast, alpha: 0, y: toast.y - 20, delay: 1400, duration: 480,
       onComplete: () => toast.destroy()

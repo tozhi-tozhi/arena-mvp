@@ -82,6 +82,8 @@ class TouchBridge {
   /** ทิศเดิน (ทำให้เป็นเวกเตอร์หน่วยแล้ว · 0,0 = ไม่เดิน) */
   moveX = 0;
   moveY = 0;
+    /** เมนูของฉากเปิดอยู่ = ซ่อนจอยและไม่รับนิ้วใหม่ (ฉากเมนูตั้ง/ปล่อยเอง · reset() ไม่แตะค่านี้) */
+  blockJoy = false;
   /** ปุ่มตีถูกกดค้างอยู่ไหม (ใช้ชาร์จ) */
   attackDown = false;
   private attackPressedFlag = false;
