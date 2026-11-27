@@ -12,7 +12,7 @@ import {
   DEPTH,
   VIEW_SCALE
 } from '../config';
-import { makeVignette } from '../systems/effects';
+import { makeVignette, showDamage } from '../systems/effects';
 import { UiCamera } from '../systems/UiCamera';
 import { sfx } from '../systems/sfx';
 import { loadout } from '../systems/Loadout';
@@ -84,6 +84,8 @@ export class GameScene extends Phaser.Scene {
   private ghostLabel!: Phaser.GameObjects.Text;
   private menu!: BaseMenu;
   private netGhosts!: NetGhosts;
+  /** DPS ทีม: ดาเมจของทุกคนรวมกัน (ของเราเอง + ฮิตที่เพื่อนส่งมา) */
+  private teamMeter: DpsMeter = new DpsMeter();
   private uiCam!: UiCamera;
 
   constructor() {
@@ -127,6 +129,7 @@ export class GameScene extends Phaser.Scene {
     this.panelAt = 0;
     this.rulerLabels = [];
     this.meter = new DpsMeter();
+    this.teamMeter = new DpsMeter();
 
     const W = WORLD_WIDTH;
     const H = WORLD_HEIGHT;
@@ -169,6 +172,7 @@ export class GameScene extends Phaser.Scene {
     this.buildPanel();
     this.buildMenu();
     this.netGhosts = new NetGhosts(this, this.actor);
+    this.netGhosts.onRemoteHit = (i, dmg) => this.showRemoteHit(i, dmg);
     net.onLog = (msg) => this.showToast(msg);
 
     const camera = this.cameras.main;
@@ -232,9 +236,9 @@ export class GameScene extends Phaser.Scene {
     });
     // กลุ่ม 3 ตัวใกล้ (ทดสอบฟันโดนหลายเป้า) · ตัวไกลสุด (ทดสอบระยะพุ่ง) · ตัวเดินวนซ้ายมือ
     const spots = [place(240, 0), place(290, -80), place(290, 80), place(560, 0), place(-280, 0)];
-    for (const p of spots) {
-      this.dummies.push(new StrawDummy(this, p.x, p.y, (damage) => this.onDummyHit(damage)));
-    }
+    spots.forEach((p, idx) => {
+      this.dummies.push(new StrawDummy(this, p.x, p.y, (damage) => this.onDummyHit(damage, idx)));
+    });
     this.dummies[PATROL_INDEX].setPatrol(trainingState.patrol);
     // สร้าง CombatTarget ครั้งเดียว ไม่สร้างใน getTargets()
     this.targets = this.dummies.map((d) => dummyAsTarget(d));
@@ -359,6 +363,13 @@ export class GameScene extends Phaser.Scene {
     }
     sfx.open();
   }
+    /** เพื่อนตีหุ่นตัวที่ i — ขึ้นตัวเลขสีม่วงที่หุ่น + นับเข้า DPS ทีม (ไม่เรียก takeHit เพื่อไม่ปนกับ DPS ของเรา) */
+  private showRemoteHit(i: number, dmg: number) {
+    const d = this.dummies[i];
+    if (!d || !d.sprite.active) return;
+    this.teamMeter.record(this.time.now, dmg);
+    d.takeHit(dmg, true); // หุ่นกะพริบ ส่าย มีตัวเลขสีม่วง เหมือนโดนตีจริง แต่ไม่นับ DPS ของเรา
+  }
   /** เปิด/ปิดการชนระหว่างผู้เล่นกับหุ่น (หุ่นเป็นของแข็งเหมือนบอสตอนเปิด) */
   private applyCollide() {
     for (const c of this.colliders) c.destroy();
@@ -369,7 +380,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private onDummyHit(damage: number) {
+  private onDummyHit(damage: number, idx: number) {
     const now = this.time.now;
     // จับเวลาเริ่มนับตอนตีฮิตแรก
     if (this.timer && this.timer.armed) {
@@ -378,6 +389,8 @@ export class GameScene extends Phaser.Scene {
       this.timer.endAt = now + TIMER_MS;
     }
     this.meter.record(now, damage);
+    this.teamMeter.record(now, damage);
+    this.netGhosts?.recordHit(idx, damage); // ส่งให้เพื่อนเห็น (ไม่ได้ต่อเน็ตอยู่ = ไม่ทำอะไร)
   }
 
   // =====================================================
@@ -441,6 +454,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.meter.reset();
+    this.teamMeter.reset();
     this.frozenDps = null;
     this.timer = null;
     this.lastMove = 0;
@@ -779,7 +793,10 @@ export class GameScene extends Phaser.Scene {
     );
     lines.push(`FPS ${Math.round(this.game.loop.actualFps)}`);
     for (const nl of net.panelLines()) lines.push(nl);
-    if (net.role) lines.push(`ผีจากเน็ต ${this.netGhosts.count()} ตัว`);
+    if (net.role) {
+      lines.push(`ผีจากเน็ต ${this.netGhosts.count()} ตัว · ${this.netGhosts.statsText()}`);
+      lines.push(`DPS ทีม ${this.teamMeter.dps(now).toFixed(1)} · รวม ${this.teamMeter.total.toLocaleString()} · ${this.teamMeter.count} ฮิต`);
+    }
     const gh = this.ghosts[0];
     lines.push(`ตัวผี ${this.ghosts.length} ตัว` + (gh ? ` · ผี 1 · คลิป ${gh.clipName || '—'} · seq ${gh.seq}` : ''));
 

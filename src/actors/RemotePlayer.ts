@@ -25,6 +25,8 @@ export interface GhostState {
   clipSeq: number;
   /** คลิปเริ่มมาแล้วกี่ ms ตอนส่ง */
   age: number;
+  /** ภาพที่สไปรต์โชว์อยู่ (เฉพาะตัวละครที่ยังไม่มีคลิป เช่น ลูมิ) */
+  tex?: string;
 }
 
 export class RemotePlayer {
@@ -43,6 +45,7 @@ export class RemotePlayer {
   private lastClip: string = '';
   private clipStartAt: number = 0;
   private clipMs: number | number[] = 0;
+  private remoteTex: string = '';
 
   constructor(scene: Phaser.Scene, x: number, y: number, charId: CharacterId, name: string) {
     this.scene = scene;
@@ -110,6 +113,7 @@ export class RemotePlayer {
     this.targetX = s.x;
     this.targetY = s.y;
     this.sprite.setFlipX(s.flip);
+    this.remoteTex = s.tex ?? '';
     // เริ่มคลิปใหม่เมื่อชื่อเปลี่ยน หรือ clipSeq เปลี่ยน (เล่นคลิปเดิมซ้ำ)
     if (s.clipSeq !== this.lastSeq || s.clip !== this.lastClip) {
       this.lastSeq = s.clipSeq;
@@ -126,6 +130,11 @@ export class RemotePlayer {
     const k = 1 - Math.exp(-delta / LERP_MS);
     this.sprite.x += (this.targetX - this.sprite.x) * k;
     this.sprite.y += (this.targetY - this.sprite.y) * k;
+    // ตัวละครที่ไม่มีคลิป (ลูมิ): โชว์ภาพตามที่เจ้าของส่งมา
+    if (!this.clips.ready && this.remoteTex && this.remoteTex !== this.currentTexture && this.scene.textures.exists(this.remoteTex)) {
+      this.sprite.setTexture(this.remoteTex);
+      this.currentTexture = this.remoteTex;
+    }
 
     if (this.clips.ready) {
       const key = this.frameKey(now);

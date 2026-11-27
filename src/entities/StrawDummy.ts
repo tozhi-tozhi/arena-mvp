@@ -115,15 +115,15 @@ export class StrawDummy {
     }
   }
 
-  takeHit(damage: number) {
-    this.onHit(damage);
+  takeHit(damage: number, remote: boolean = false) {
+    if (!remote) this.onHit(damage); // ฮิตของเพื่อน (remote) ไม่นับเข้า DPS ของเรา และไม่ส่งซ้ำออกเน็ต
     const s = this.sprite;
     // แฟลชทึบตามกฎ Phaser 4 (setTint + FILL แล้วคืนด้วย clearTint)
     s.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
     this.scene.time.delayedCall(70, () => {
       if (s.active) s.clearTint();
     });
-    showDamage(this.scene, s.x, s.y - s.displayHeight / 2, String(damage), '#ffe066', 450);
+    showDamage(this.scene, s.x, s.y - s.displayHeight / 2, String(damage), remote ? '#c084fc' : '#ffe066', 450);
     burst(this.scene, s.x, s.y - 10, 0xd9b86a, 4, 34, 3);
     // ส่ายตามแรงตี
     this.scene.tweens.killTweensOf(s);
