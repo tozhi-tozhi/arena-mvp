@@ -1,18 +1,22 @@
-// src/systems/NetGhosts.ts — ตัวผีจากเน็ต + เหตุการณ์ตีหุ่น
+// src/systems/NetGhosts.ts — ตัวผีจากเน็ต + เหตุการณ์ตีหุ่น + เอฟเฟกต์ท่าของเพื่อน
 // แบบดาว: client ส่ง 'state' หา host · host รวมทุกคนส่ง 'world' ให้ทุกคน · 20 ครั้งต่อวินาที
 // ส่งครบทุกแพ็กเก็ต ไม่พึ่งแพ็กเก็ตก่อนหน้า (เน็ต reliable:false) · ตัดแพ็กเก็ตเก่าด้วย ts ต่อผู้ส่ง
-// ฮิต (ตีหุ่นตัวไหน ดาเมจเท่าไร) แนบไปกับสถานะ 1 วินาที ฝั่งรับตัดซ้ำด้วยเลขฮิต
+// ฮิต และ fx (เอฟเฟกต์ภาพ) แนบไปกับสถานะ 1 วินาที ฝั่งรับตัดซ้ำด้วยเลขเหตุการณ์
 // ไม่แตะ PlayerActor: อ่านสถานะจาก actor.clips (ClipSet บันทึกคลิปล่าสุดไว้ให้แล้ว)
 import Phaser from 'phaser';
 import { RemotePlayer, type GhostState } from '../actors/RemotePlayer';
 import type { PlayerActor } from '../actors/PlayerActor';
 import type { CharacterId } from '../data/characters';
 import { net } from './NetManager';
+import { setNetFxSink, playRemoteFx } from './netFx';
 
 const SEND_EVERY_MS = 50; // 20 ครั้งต่อวินาที
 const STALE_MS = 3000; // เงียบเกินนี้ = ถอดตัวผี
 const HIT_KEEP_MS = 1000; // แนบฮิตซ้ำกี่ ms (กันแพ็กเก็ตหาย)
-const SEEN_KEEP_MS = 5000; // จำเลขฮิตที่เห็นแล้วกี่ ms
+const SEEN_KEEP_MS = 5000; // จำเลขเหตุการณ์ที่เห็นแล้วกี่ ms
+const FX_KEEP_MS = 1000; // แนบ fx ซ้ำกี่ ms
+const FX_MAX = 16; // เพดาน fx ของเราต่อแพ็กเก็ต (รัว 5 ฮิต/ระบำสามเหลี่ยมสร้างเยอะ)
+const FX_RELAY_MAX = 24; // เพดาน fx ที่ host ส่งต่อต่อแพ็กเก็ต
 
 interface Entry {
   char: CharacterId;
@@ -26,6 +30,12 @@ interface HitEv {
   hid: number;
   i: number;
   dmg: number;
+  at: number;
+  from: string;
+}
+
+interface FxEv {
+  e: any;
   at: number;
   from: string;
 }
@@ -53,10 +63,21 @@ export class NetGhosts {
   sentHits = 0;
   recvHits = 0;
 
+  // ---------- เอฟเฟกต์ภาพของท่า ----------
+  private fxBase: number = Math.floor(Math.random() * 1000000000);
+  private fxSeq: number = 0;
+  /** fx ของเราเอง (ล่าสุด 1 วิ) */
+  private myFx: FxEv[] = [];
+  /** host เท่านั้น: fx ที่รับจาก client รอส่งต่อให้คนอื่น */
+  private relayFx: FxEv[] = [];
+  sentFx = 0;
+  recvFx = 0;
+
   constructor(scene: Phaser.Scene, actor: PlayerActor) {
     this.scene = scene;
     this.actor = actor;
     net.onMessage = (fromId, m) => this.onMessage(fromId, m);
+    setNetFxSink((e) => this.recordFx(e));
   }
 
   /** จำนวนตัวผีจากเน็ตที่แสดงอยู่ */
@@ -105,6 +126,7 @@ export class NetGhosts {
 
   destroy() {
     net.onMessage = null;
+    setNetFxSink(null);
     this.onRemoteHit = null;
     this.clearAll();
   }
@@ -128,6 +150,22 @@ export class NetGhosts {
     };
   }
 
+  /** ตัวรับจาก netFx: เอฟเฟกต์ที่เราเพิ่งเล่น — จดไว้แนบกับแพ็กเก็ตถัด ๆ ไป */
+  private recordFx(e: any) {
+    if (!net.role || net.status !== 'online') return;
+    if (e.fol) {
+      // เกาะตัว: ส่งระยะเยื้องจากตัวเรา ฝั่งรับเอาไปเกาะตัวผี
+      e.ox = Math.round(e.x - this.actor.x);
+      e.oy = Math.round(e.y - this.actor.y);
+    }
+    e.x = Math.round(e.x);
+    e.y = Math.round(e.y);
+    e.fid = this.fxBase + ++this.fxSeq;
+    this.myFx.push({ e, at: this.scene.time.now, from: '' });
+    if (this.myFx.length > FX_MAX) this.myFx.shift();
+    this.sentFx++;
+  }
+
   private sendTick(now: number) {
     if (this.lastSendAt >= 0 && now - this.lastSendAt < SEND_EVERY_MS) return;
     this.lastSendAt = now;
@@ -138,7 +176,8 @@ export class NetGhosts {
     const s = this.mine(now);
     if (net.role === 'client') {
       const hits = this.myHits.map((h) => ({ hid: h.hid, i: h.i, dmg: h.dmg }));
-      net.sendHost({ t: 'state', ts, char, s, hits });
+      const fx = this.myFx.map((f) => f.e);
+      net.sendHost({ t: 'state', ts, char, s, hits, fx });
     } else {
       const players: any[] = [{ id: net.myId, char, ts, s }];
       for (const [id, e] of this.entries) {
@@ -147,13 +186,18 @@ export class NetGhosts {
       const hits: any[] = [];
       for (const h of this.myHits) hits.push({ from: net.myId, hid: h.hid, i: h.i, dmg: h.dmg });
       for (const h of this.relay) hits.push({ from: h.from, hid: h.hid, i: h.i, dmg: h.dmg });
-      net.broadcast({ t: 'world', players, hits });
+      const fx: any[] = [];
+      for (const f of this.myFx) fx.push({ ...f.e, from: net.myId });
+      for (const f of this.relayFx) fx.push({ ...f.e, from: f.from });
+      net.broadcast({ t: 'world', players, hits, fx: fx.slice(-FX_RELAY_MAX) });
     }
   }
 
   private pruneHits(now: number) {
     this.myHits = this.myHits.filter((h) => now - h.at <= HIT_KEEP_MS);
     this.relay = this.relay.filter((h) => now - h.at <= HIT_KEEP_MS);
+    this.myFx = this.myFx.filter((f) => now - f.at <= FX_KEEP_MS);
+    this.relayFx = this.relayFx.filter((f) => now - f.at <= FX_KEEP_MS);
     for (const [k, t] of this.seen) {
       if (now - t > SEEN_KEEP_MS) this.seen.delete(k);
     }
@@ -169,6 +213,9 @@ export class NetGhosts {
       if (Array.isArray(m.hits)) {
         for (const h of m.hits) this.handleHit(fromId, h, now, true);
       }
+      if (Array.isArray(m.fx)) {
+        for (const f of m.fx) this.handleFx(fromId, f, now, true);
+      }
     } else if (m.t === 'world' && net.role === 'client' && Array.isArray(m.players)) {
       for (const p of m.players) {
         if (!p || p.id === net.myId) continue;
@@ -178,6 +225,12 @@ export class NetGhosts {
         for (const h of m.hits) {
           if (!h || h.from === net.myId) continue; // ฮิตของเราเอง ไม่ต้องแสดงซ้ำ
           this.handleHit(h.from, h, now, false);
+        }
+      }
+      if (Array.isArray(m.fx)) {
+        for (const f of m.fx) {
+          if (!f || f.from === net.myId) continue; // fx ของเราเอง เล่นไปแล้วที่เครื่องเรา
+          this.handleFx(f.from, f, now, false);
         }
       }
     }
@@ -204,12 +257,26 @@ export class NetGhosts {
     if (this.onRemoteHit) this.onRemoteHit(h.i, h.dmg, from);
   }
 
+  private handleFx(from: any, f: any, now: number, relayIt: boolean) {
+    if (typeof from !== 'string' || !f || typeof f.fid !== 'number') return;
+    const key = `${from}:f${f.fid}`;
+    if (this.seen.has(key)) return; // fx เดิมที่แนบมาซ้ำ
+    this.seen.set(key, now);
+    this.recvFx++;
+    if (relayIt) {
+      this.relayFx.push({ e: f, at: now, from });
+      if (this.relayFx.length > FX_RELAY_MAX) this.relayFx.shift();
+    }
+    playRemoteFx(this.scene, f, this.ghosts.get(from));
+  }
+
   // ---------------------------------------------------------------
   // ภายใน
   // ---------------------------------------------------------------
-    statsText(): string {
-    return `ฮิตส่ง ${this.sentHits} · ฮิตรับ ${this.recvHits}`;
+  statsText(): string {
+    return `ฮิตส่ง ${this.sentHits} · ฮิตรับ ${this.recvHits} · fx ส่ง ${this.sentFx} · fx รับ ${this.recvFx}`;
   }
+
   private nameOf(id: string): string {
     const r = net.roster.find((p) => p.id === id);
     return r ? r.name : 'ผู้เล่น';
@@ -228,5 +295,7 @@ export class NetGhosts {
     this.entries.clear();
     this.myHits = [];
     this.relay = [];
+    this.myFx = [];
+    this.relayFx = [];
   }
 }

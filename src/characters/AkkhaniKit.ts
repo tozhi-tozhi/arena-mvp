@@ -1,13 +1,13 @@
 // src/characters/AkkhaniKit.ts — ชุดท่าของอัคนี (ย้ายมาจาก PlayerActor)
 import Phaser from 'phaser';
 import { DEPTH } from '../config';
-import { showDamage, burst, spawnThrustDir, ringEffect } from '../systems/effects';
-import { spawnArcSlash } from '../systems/combatFx';
+import { showDamage } from '../systems/effects';
+import { burst, spawnThrustDir, ringEffect, spawnArcSlash, spawnPixelFx } from '../systems/netFx';
 import { sfx } from '../systems/sfx';
 import { AKKHANI, type CharacterId } from '../data/characters';
 import { loadout } from '../systems/Loadout';
 import { COMBO3_SPIN, COMBO3_WAVE, COMBO3_TRIANGLE, AKK_PASSIVE_CRIT, AKK_PASSIVE_RUSH, CHARGE_RUSH, CHARGE_HEAL, ULT_SLAM, ULT_STAR, SKILL_SLOTS, findSkill, ultimateCooldownOf, type SkillOption, type SkillSlot } from '../data/skills';
-import { spawnPixelFx, hasPixelFx } from '../systems/pixelFx';
+import { hasPixelFx } from '../systems/pixelFx'
 import type { CombatTarget } from '../systems/CombatTarget';
 import { controls } from '../systems/Controls';
 import type { PlayerActor } from '../actors/PlayerActor';
