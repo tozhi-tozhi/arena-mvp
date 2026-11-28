@@ -2,12 +2,11 @@
 import Phaser from 'phaser';
 import { DEPTH } from '../config';
 import { showDamage } from '../systems/effects';
-import { burst, spawnThrustDir, ringEffect, spawnArcSlash, spawnPixelFx } from '../systems/netFx';
-import { sfx } from '../systems/sfx';
+import { burst, spawnThrustDir, ringEffect, spawnArcSlash, spawnPixelFx, emitWaveFx, slamGroundFx, starFx, bladesFx } from '../systems/netFx';
+import { sfx } from '../systems/netFx';
 import { AKKHANI, type CharacterId } from '../data/characters';
 import { loadout } from '../systems/Loadout';
 import { COMBO3_SPIN, COMBO3_WAVE, COMBO3_TRIANGLE, AKK_PASSIVE_CRIT, AKK_PASSIVE_RUSH, CHARGE_RUSH, CHARGE_HEAL, ULT_SLAM, ULT_STAR, SKILL_SLOTS, findSkill, ultimateCooldownOf, type SkillOption, type SkillSlot } from '../data/skills';
-import { hasPixelFx } from '../systems/pixelFx'
 import type { CombatTarget } from '../systems/CombatTarget';
 import { controls } from '../systems/Controls';
 import type { PlayerActor } from '../actors/PlayerActor';
@@ -575,6 +574,7 @@ export class AkkhaniKit implements CharacterKit {
     g.strokePath();
     g.setPosition(this.p.sprite.x + dir.x * 30, this.p.sprite.y + dir.y * 30);
     g.setRotation(Math.atan2(dir.y, dir.x));
+    emitWaveFx(g.x, g.y, dir.x, dir.y, W.halfWidth, W.range, W.speed);
     this.waves.push({ gfx: g, dx: dir.x, dy: dir.y, traveled: 0, handled: new Set<CombatTarget>(), actionId, dead: false });
   }
 
@@ -849,54 +849,14 @@ export class AkkhaniKit implements CharacterKit {
       sc.time.delayedCall(rg.delay, () => ringEffect(sc, x, fy, rg.r, rg.color, rg.ms));
     }
 
-    // 2) แผ่นแสงวาบบนพื้น ขยายแล้วจาง
-    const disk = sc.add.circle(x, fy, R, 0xffd9a0, 0.35);
-    disk.setBlendMode(Phaser.BlendModes.ADD);
-    disk.setDepth(DEPTH.BURST);
-    disk.setScale(0.2);
-    sc.tweens.add({
-      targets: disk,
-      scale: 1,
-      alpha: 0,
-      duration: 380,
-      onComplete: () => disk.destroy()
-    });
+    // 2) แผ่นแสงวาบ + รอยแตกพื้น (ฟังก์ชันกลาง ส่งให้เพื่อนด้วย)
+    slamGroundFx(sc, x, fy, R);
 
-    // 3) รอยแตกบนพื้น 10 เส้นกระจายออก ค้างสั้น ๆ แล้วจาง
-    const cracks = sc.add.graphics();
-    cracks.setDepth(DEPTH.ENEMY_SHADOW);
-    cracks.setBlendMode(Phaser.BlendModes.ADD);
-    for (const [width, alpha, color] of [[8, 0.25, 0xff6a3a], [3, 0.95, 0xffe2b0]] as Array<[number, number, number]>) {
-      cracks.lineStyle(width, color, alpha);
-      for (let k = 0; k < 10; k++) {
-        const a = (k * Math.PI * 2) / 10 + Phaser.Math.FloatBetween(-0.15, 0.15);
-        const len = R * Phaser.Math.FloatBetween(0.7, 1.05);
-        cracks.beginPath();
-        cracks.moveTo(x, fy);
-        let px = x;
-        let py = fy;
-        for (let s = 1; s <= 3; s++) {
-          const aa = a + Phaser.Math.FloatBetween(-0.25, 0.25);
-          px = x + Math.cos(aa) * (len * s) / 3;
-          py = fy + Math.sin(aa) * (len * s) / 3;
-          cracks.lineTo(px, py);
-        }
-        cracks.strokePath();
-      }
-    }
-    sc.tweens.add({
-      targets: cracks,
-      alpha: 0,
-      delay: 350,
-      duration: 650,
-      onComplete: () => cracks.destroy()
-    });
-
-    // 4) เศษดินกระเด็น + ประกายทอง
+    // 3) เศษดินกระเด็น + ประกายทอง
     burst(sc, x, fy, 0xc9a06a, 26, R * 1.1, 6);
     burst(sc, x, fy, 0xffd166, 18, R * 0.9, 3);
 
-    // 5) แฟลชจอสั้น ๆ
+    // 4) แฟลชจอสั้น ๆ (เฉพาะเครื่องเรา ไม่ส่งให้เพื่อน)
     sc.cameras.main.flash(90, 255, 225, 170);
   }
   // ---------- ไม้ตาย C: ดาบ 7 เล่ม หายตัว ฟันดาว 7 แฉก ----------
@@ -927,29 +887,8 @@ export class AkkhaniKit implements CharacterKit {
       this.p.playSkillClip('ulti_star', total);
     }
 
-    // ช่วงที่ 1: เงาดาบ 7 เล่มล้อมตัว หมุนแล้วรวมเข้าหากลาง
-    const blades = this.p.scene.add.graphics();
-    blades.setDepth(DEPTH.SLASH);
-    blades.setBlendMode(Phaser.BlendModes.ADD);
-    blades.lineStyle(4, 0xffb15a, 0.9);
-    for (let k = 0; k < U.points; k++) {
-      const a = -Math.PI / 2 + (k * Math.PI * 2) / U.points;
-      blades.beginPath();
-      blades.moveTo(Math.cos(a) * 34, Math.sin(a) * 34);
-      blades.lineTo(Math.cos(a) * 66, Math.sin(a) * 66);
-      blades.strokePath();
-    }
-    blades.setPosition(cx, cy);
-    blades.setAlpha(0);
-    this.p.scene.tweens.add({
-      targets: blades,
-      alpha: 1,
-      rotation: 1.2,
-      duration: U.windupMs,
-      onComplete: () => {
-        this.p.scene.tweens.add({ targets: blades, alpha: 0, scale: 0.2, duration: 160, onComplete: () => blades.destroy() });
-      }
-    });
+    // ช่วงที่ 1: เงาดาบ 7 เล่มล้อมตัว หมุนแล้วรวมเข้าหากลาง (ฟังก์ชันกลาง ส่งให้เพื่อนด้วย)
+    bladesFx(this.p.scene, cx, cy, U.points, U.windupMs);
     ringEffect(this.p.scene, cx, cy, 70, 0xffffff, U.windupMs);
 
     // ช่วงที่ 2: หายตัว
@@ -1001,38 +940,9 @@ export class AkkhaniKit implements CharacterKit {
     this.p.time.delayedCall(total, () => this.p.endAction(token));
   }
 
-  /** ดาว 7 แฉกเส้นตัดกัน (จุดยอด k เชื่อมจุด k+3) สีส้มแดงเรืองแสง ค้างสั้น ๆ แล้วจาง */
+  /** ดาว 7 แฉกเส้นตัดกัน สีส้มแดงเรืองแสง — ภาพวาดอยู่ใน netFx ส่งให้เพื่อนด้วย */
   private drawStar(cx: number, cy: number) {
-    const U = ULT_STAR;
-    const g = this.p.scene.add.graphics();
-    g.setDepth(DEPTH.ENEMY_SHADOW);
-    g.setBlendMode(Phaser.BlendModes.ADD);
-    const pts: { x: number; y: number }[] = [];
-    for (let k = 0; k < U.points; k++) {
-      const a = -Math.PI / 2 + (k * Math.PI * 2) / U.points;
-      pts.push({ x: cx + Math.cos(a) * U.radius, y: cy + Math.sin(a) * U.radius });
-    }
-    for (const [width, alpha, color] of [[12, 0.22, 0xff3b2f], [4, 0.95, 0xffb08a]] as Array<[number, number, number]>) {
-      g.lineStyle(width, color, alpha);
-      for (let k = 0; k < U.points; k++) {
-        const a = pts[k];
-        const b = pts[(k + 3) % U.points];
-        g.beginPath();
-        g.moveTo(a.x, a.y);
-        g.lineTo(b.x, b.y);
-        g.strokePath();
-      }
-      g.beginPath();
-      g.arc(cx, cy, U.radius, 0, Math.PI * 2, false);
-      g.strokePath();
-    }
-    this.p.scene.tweens.add({
-      targets: g,
-      alpha: 0,
-      delay: 260,
-      duration: 480,
-      onComplete: () => g.destroy()
-    });
+    starFx(this.p.scene, cx, cy, ULT_STAR.radius, ULT_STAR.points);
   }
     /** รอยฟันตีปกติ/ฮิตท้าย — pixelfx เป็นหลัก ไม่มีภาพก็ใช้เส้นโค้งสำรอง */
   private slashFx(level: number) {

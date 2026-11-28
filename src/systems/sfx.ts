@@ -16,7 +16,8 @@ const AMBIENT_VOL = 0.9;   // ลม/กระดาษพื้นหลัง
 const STEP_VOL = 1;        // เสียงเท้า
 const HEART_VOL = 1;       // หัวใจเต้น
 const TENSION_VOL = 0.05;  // เสียงทุ้มตึงเครียดตอนสู้บอส
-
+// ตัวคูณความดังชั่วคราว — ใช้ตอนเล่นเสียงของท่าเพื่อน (ตั้งแล้วคืนค่าในจังหวะเดียว)
+let volMul = 1;
 function getCtx(): AudioContext | null {
   if (muted) return null;
   if (!ctx) {
@@ -66,7 +67,7 @@ function tone(freq: number, endFreq: number, durMs: number, type: OscillatorType
   osc.type = type;
   osc.frequency.setValueAtTime(Math.max(1, freq), t0);
   osc.frequency.exponentialRampToValueAtTime(Math.max(1, endFreq), t1);
-  gain.gain.setValueAtTime(Math.max(0.0011, vol), t0);
+  gain.gain.setValueAtTime(Math.max(0.0011, vol * volMul), t0);
   gain.gain.exponentialRampToValueAtTime(0.001, t1);
   osc.connect(gain);
   gain.connect(getBus(c));
@@ -85,7 +86,7 @@ function noise(durMs: number, vol: number, delayMs = 0) {
   const src = c.createBufferSource();
   src.buffer = buf;
   const gain = c.createGain();
-  gain.gain.value = vol;
+  gain.gain.value = vol * volMul;
   src.connect(gain);
   gain.connect(getBus(c));
   src.start(c.currentTime + delayMs / 1000);
@@ -114,7 +115,7 @@ function fnoise(
   f.frequency.setValueAtTime(Math.max(20, freq), t0);
   if (endFreq) f.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), t0 + durMs / 1000);
   const g = c.createGain();
-  g.gain.value = vol;
+  g.gain.value = vol * volMul;
   src.connect(f);
   f.connect(g);
   g.connect(getBus(c));
@@ -339,6 +340,17 @@ export const sfx = {
   /** ปลุก AudioContext ตอนแตะจอครั้งแรก (มือถือ/iOS ต้องมีท่าทางผู้ใช้ก่อนถึงจะมีเสียง) */
   unlock: () => { getCtx(); },
 
+  /** เล่นเสียงท่าของเพื่อน — เบากว่าของเรา · รับเฉพาะชื่อที่ซิงก์ */
+  remote: (name: 'swing' | 'dash' | 'hit') => {
+    volMul = 0.45;
+    try {
+      if (name === 'swing') swing();
+      else if (name === 'dash') dash();
+      else if (name === 'hit') hit();
+    } finally {
+      volMul = 1;
+    }
+  },
   // ----- P1: ใหม่ -----
   step,
   startAmbient,

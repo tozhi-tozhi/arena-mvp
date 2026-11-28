@@ -14,9 +14,9 @@ const SEND_EVERY_MS = 50; // 20 ครั้งต่อวินาที
 const STALE_MS = 3000; // เงียบเกินนี้ = ถอดตัวผี
 const HIT_KEEP_MS = 1000; // แนบฮิตซ้ำกี่ ms (กันแพ็กเก็ตหาย)
 const SEEN_KEEP_MS = 5000; // จำเลขเหตุการณ์ที่เห็นแล้วกี่ ms
-const FX_KEEP_MS = 1000; // แนบ fx ซ้ำกี่ ms
-const FX_MAX = 16; // เพดาน fx ของเราต่อแพ็กเก็ต (รัว 5 ฮิต/ระบำสามเหลี่ยมสร้างเยอะ)
-const FX_RELAY_MAX = 24; // เพดาน fx ที่ host ส่งต่อต่อแพ็กเก็ต
+const FX_KEEP_MS = 400; // แนบ fx ซ้ำกี่ ms (ลดจาก 1000: แนบนานไปข้อมูลบวมโดยไม่จำเป็น)
+const FX_MAX = 40; // เพดาน fx ของเราต่อแพ็กเก็ต (ลูมิรัว 7 นัดสร้างเยอะ)
+const FX_RELAY_MAX = 48; // เพดาน fx ที่ host ส่งต่อต่อแพ็กเก็ต
 
 interface Entry {
   char: CharacterId;

@@ -1,7 +1,8 @@
 // src/characters/LumaKit.ts — ชุดท่าของลูมิ (ย้ายมาจาก PlayerActor)
 import Phaser from 'phaser';
-import { showDamage, burst, ringEffect } from '../systems/effects';
-import { sfx } from '../systems/sfx';
+import { showDamage } from '../systems/effects';
+import { burst, ringEffect, shotFx, shotEndFx } from '../systems/netFx';
+import { sfx } from '../systems/netFx';
 import { PlayerShot } from '../entities/PlayerShot';
 import { LUMA } from '../data/characters';
 import { loadout } from '../systems/Loadout';
@@ -212,10 +213,14 @@ this.p.isDashing = true;
     kind: 'light' | 'charge' | 'combo',
     actionId: number
   ) {
+    const sx = this.p.sprite.x + dir.x * 14;
+    const sy = this.p.sprite.y + dir.y * 14;
+    // ส่งให้เพื่อนยิงกระสุนภาพล้วน (ไม่มีดาเมจ) · sid ไว้บอกเพื่อนให้ลบกระสุนเมื่อของเราระเบิด
+    const sid = shotFx(sx, sy, dir.x, dir.y, cfg.speed, cfg.range, cfg.radius, cfg.color);
     const shot = new PlayerShot(
       this.p.scene,
-      this.p.sprite.x + dir.x * 14,
-      this.p.sprite.y + dir.y * 14,
+      sx,
+      sy,
       dir.x,
       dir.y,
       { speed: cfg.speed, range: cfg.range, radius: cfg.radius, color: cfg.color },
@@ -225,7 +230,10 @@ this.p.isDashing = true;
           .getTargets()
           .filter((t) => t.isHittable())
           .map((t) => ({ x: t.x, y: t.y, r: t.radius })),
-      (x, y, ratio) => this.onShotDetonate(kind, actionId, x, y, ratio, cfg.aoeRadius, cfg.color),
+      (x, y, ratio) => {
+        shotEndFx(sid, x, y);
+        this.onShotDetonate(kind, actionId, x, y, ratio, cfg.aoeRadius, cfg.color);
+      },
       // ร่างปลอมระหว่างทาง — กระสุนชนแล้วระเบิดที่ร่างนั้นเลย
       () => this.p.host.getTargets().flatMap((t) => t.getDecoys())
     );

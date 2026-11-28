@@ -20,6 +20,7 @@ import { Perks } from '../systems/Perks';
 import { charStarEffectNow, type CharStarEffect } from '../systems/Upgrades';
 import { BURN } from '../data/bosses';
 import { spawnPixelFx } from '../systems/pixelFx';
+import { muzzleFlashFx, afterimageFx } from '../systems/netFx';
 import type { CombatTarget } from '../systems/CombatTarget';
 import { controls, touch, skillKeyLabel } from '../systems/Controls';
 
@@ -641,21 +642,9 @@ heal(n: number): number {
     const REF_WIDTH = FX_TUNE.refWidth;
     return (this.sprite.displayWidth / REF_WIDTH) * mult;
   }
-    /** แฟลชปากกระบอก — ประกายสั้น ๆ หน้าตัวละครตอนยิง (ภาพล้วน ไม่แตะดาเมจ) */
+  /** แฟลชปากกระบอก — ประกายสั้น ๆ หน้าตัวละครตอนยิง (ภาพล้วน ไม่แตะดาเมจ · ส่งให้เพื่อนเห็นด้วย) */
   muzzleFx(dir: Phaser.Math.Vector2, color: number) {
-    const x = this.sprite.x + dir.x * 34;
-    const y = this.sprite.y + dir.y * 34;
-    const flash = this.scene.add.circle(x, y, 10, color, 0.9);
-    flash.setBlendMode(Phaser.BlendModes.ADD);
-    flash.setDepth(DEPTH.SLASH + 1);
-    this.scene.tweens.add({
-      targets: flash,
-      scale: 2,
-      alpha: 0,
-      duration: 120,
-      onComplete: () => flash.destroy()
-    });
-    burst(this.scene, x, y, color, 4, 22, 3);
+    muzzleFlashFx(this.scene, this.sprite.x + dir.x * 34, this.sprite.y + dir.y * 34, color);
   }
   // ---------------------------------------------------------------
   // โดนตี / ไฟไหม้ / ตาย
@@ -1140,18 +1129,7 @@ private getAimDir(): Phaser.Math.Vector2 {
 
   spawnAfterimage(color: number) {
     const tex = this.useClay ? this.currentTexture : 'hero';
-    const ghost = this.scene.add.sprite(this.sprite.x, this.sprite.y, tex);
-    ghost.setScale(this.sprite.scaleX, this.sprite.scaleY);
-    ghost.setFlipX(this.sprite.flipX);
-    ghost.setTint(color);
-    ghost.setAlpha(0.5);
-    ghost.setDepth(DEPTH.AFTERIMAGE);
-    this.tweens.add({
-      targets: ghost,
-      alpha: 0,
-      duration: 250,
-      onComplete: () => ghost.destroy()
-    });
+    afterimageFx(this.scene, this.sprite.x, this.sprite.y, tex, this.sprite.scaleX, this.sprite.scaleY, this.sprite.flipX, color);
   }
 
   /** บอสส่งความร้อนมา (ไฟของภัสมะ) — ฉากส่งต่อจาก hooks.onBurn */
